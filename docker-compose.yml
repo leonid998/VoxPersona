@@ -63,3 +63,4 @@ services:
 volumes:
   postgres_data:
   logs:
+# ТЕСТ 2: FULL ДЕПЛОЙ - Tue Aug 26 01:30:01 PM UTC 2025
