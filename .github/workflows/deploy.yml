@@ -1,0 +1,61 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |
+          echo "Starting deployment..."
+          
+          # Navigate to application directory
+          cd /home/voxpersona_user
+          
+          # Create git repository if it doesn't exist
+          if [ ! -d "VoxPersona/.git" ]; then
+            echo "Cloning repository..."
+            rm -rf VoxPersona
+            git clone git@github.com:leonid998/VoxPersona.git VoxPersona
+          else
+            echo "Updating existing repository..."
+            cd VoxPersona
+            git fetch origin
+            git reset --hard origin/main
+            cd ..
+          fi
+          
+          # Copy files to app directory
+          echo "Copying files to app directory..."
+          rsync -av --exclude='.git' VoxPersona/ app/
+          
+          # Navigate to app directory
+          cd app
+          
+          # Stop containers
+          echo "Stopping containers..."
+          docker-compose down
+          
+          # Rebuild and start containers
+          echo "Building and starting containers..."
+          docker-compose up -d --build
+          
+          # Show container status
+          echo "Container status:"
+          docker-compose ps
+          
+          echo "Deployment completed successfully!"
+
