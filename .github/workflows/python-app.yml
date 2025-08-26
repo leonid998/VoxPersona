@@ -36,4 +36,13 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        pytest
+        # Run pytest if tests exist, otherwise just validate Python syntax
+        if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+          echo "Running tests with pytest..."
+          pytest
+        else
+          echo "No tests found. Validating Python syntax..."
+          python -m py_compile src/*.py
+          echo "Python syntax validation completed successfully."
+        fi
+
