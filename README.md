@@ -220,3 +220,4 @@ docker stats
 # Test deployment with PEM format key
 # Test with original ED25519 OpenSSH format key
 # Webhook Auto Deploy Test - Tue Aug 26 08:52:27 EDT 2025
+# ТЕСТ 3: NO RESTART - Tue Aug 26 01:32:08 PM UTC 2025
