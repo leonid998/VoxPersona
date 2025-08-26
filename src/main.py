@@ -1,0 +1,22 @@
+import logging
+from pyrogram import Client
+from config import TELEGRAM_BOT_TOKEN, API_ID, API_HASH, SESSION_NAME
+from handlers import register_handlers
+import nest_asyncio
+
+nest_asyncio.apply()
+
+if __name__ == "__main__":
+    app = Client(
+        SESSION_NAME,
+        api_id=int(API_ID),
+        api_hash=API_HASH,
+        bot_token=TELEGRAM_BOT_TOKEN
+    )
+    logging.info("Бот запущен. Ожидаю сообщений...")
+
+    # Подключаем все обработчики
+    register_handlers(app)
+
+    # Запуск бота
+    app.run()

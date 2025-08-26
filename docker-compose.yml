@@ -1,0 +1,65 @@
+version: '3.8'
+services:
+  voxpersona:
+    build: .
+    container_name: voxpersona_app
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 10G
+    environment:
+      # Telegram API & Bot
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - SESSION_BOT_NAME=${SESSION_BOT_NAME:-voxpersona_bot}
+      # OpenAI & Anthropic
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY_2=${ANTHROPIC_API_KEY_2:-}
+      - ANTHROPIC_API_KEY_3=${ANTHROPIC_API_KEY_3:-}
+      - ANTHROPIC_API_KEY_4=${ANTHROPIC_API_KEY_4:-}
+      - ANTHROPIC_API_KEY_5=${ANTHROPIC_API_KEY_5:-}
+      - ANTHROPIC_API_KEY_6=${ANTHROPIC_API_KEY_6:-}
+      - ANTHROPIC_API_KEY_7=${ANTHROPIC_API_KEY_7:-}
+      # Database
+      - DB_NAME=${DB_NAME:-bot_db}
+      - DB_USER=${DB_USER:-voxpersona_user}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      # Application specifics
+      - PASSWORD=${PASSWORD}
+      - TRANSCRIBATION_MODEL_NAME=${TRANSCRIBATION_MODEL_NAME:-whisper-1}
+      - REPORT_MODEL_NAME=${REPORT_MODEL_NAME:-claude-3-7-sonnet-20250219}
+      - RUN_MODE=${RUN_MODE:-PROD}
+      # MinIO
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-}
+    depends_on:
+      - postgres
+    volumes:
+      - ./logs:/app/logs
+
+  postgres:
+    image: postgres:14
+    container_name: voxpersona_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Раскомментируйте следующую строку если у вас есть SQL файл для инициализации
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:
+  logs:
