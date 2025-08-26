@@ -20,3 +20,5 @@ if __name__ == "__main__":
 
     # Запуск бота
     app.run()
+# Тест автоматического деплоя - Tue Aug 26 08:56:17 EDT 2025
+# Webhook test comment added at Tue Aug 26 08:56:17 EDT 2025
