@@ -218,3 +218,4 @@ docker stats
 
 # Test deployment with new RSA key
 # Test deployment with PEM format key
+# Test with original ED25519 OpenSSH format key
