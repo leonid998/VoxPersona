@@ -2,6 +2,7 @@ from datetime import datetime
 import os
 import threading
 import logging
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, Document
 from minio import Minio
@@ -68,12 +69,14 @@ audio_file_name_to_save = ""
 transcription_text = ""
 
 rags = {}
+rags_lock = asyncio.Lock()
 
 
-def set_rags(new_rags: dict) -> None:
+async def set_rags(new_rags: dict) -> None:
     """Allow external modules to update loaded RAGs."""
     global rags
-    rags = new_rags
+    async with rags_lock:
+        rags = new_rags
 
 def ask_client(data: dict, text: str, state: dict, chat_id: int, app: Client):
     data["client"] = parse_name(text)
