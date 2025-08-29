@@ -2,11 +2,19 @@ import logging
 import asyncio
 from pyrogram import Client, idle
 from config import TELEGRAM_BOT_TOKEN, API_ID, API_HASH, SESSION_NAME
-from handlers import register_handlers, set_rags
+import handlers
 from run_analysis import init_rags
+from rag_persistence import save_rag_indices
 import nest_asyncio
 
 nest_asyncio.apply()
+
+
+async def periodic_save_rags():
+    while True:
+        await asyncio.sleep(900)
+        async with handlers.rags_lock:
+            save_rag_indices(handlers.rags)
 
 
 async def load_rags():
@@ -14,7 +22,8 @@ async def load_rags():
     logging.info("Запуск фоновой инициализации RAG моделей")
     try:
         rags = await asyncio.to_thread(init_rags)
-        set_rags(rags)
+        await handlers.set_rags(rags)
+        asyncio.create_task(periodic_save_rags())
         logging.info("RAG модели загружены")
     except Exception as e:
         logging.error(f"Ошибка при инициализации RAG моделей: {e}")
@@ -28,7 +37,7 @@ async def main():
         bot_token=TELEGRAM_BOT_TOKEN
     )
 
-    register_handlers(app)
+    handlers.register_handlers(app)
 
     await app.start()
     asyncio.create_task(load_rags())

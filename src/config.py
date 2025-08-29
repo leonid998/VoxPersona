@@ -81,6 +81,10 @@ for fold in STORAGE_DIRS.values():
 
 PROMPTS_DIR = "/root/Vox/VoxPersona/prompts"
 
+# Каталог для сохранения RAG индексов
+RAG_INDEX_DIR = "rag_indices"
+os.makedirs(RAG_INDEX_DIR, exist_ok=True)
+
 try:
     ENC = tiktoken.encoding_for_model(REPORT_MODEL_NAME)
 except KeyError:
