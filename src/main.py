@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from pyrogram import Client
+from pyrogram import Client, idle
 from config import TELEGRAM_BOT_TOKEN, API_ID, API_HASH, SESSION_NAME
 from handlers import register_handlers, set_rags
 from run_analysis import init_rags
@@ -33,7 +33,7 @@ async def main():
     await app.start()
     asyncio.create_task(load_rags())
     logging.info("Бот запущен. Ожидаю сообщений...")
-    await app.idle()
+    await idle()
     await app.stop()
 
 
