@@ -1,25 +1,44 @@
 import logging
+import asyncio
 from pyrogram import Client
 from config import TELEGRAM_BOT_TOKEN, API_ID, API_HASH, SESSION_NAME
-from handlers import register_handlers
+from handlers import register_handlers, set_rags
+from run_analysis import init_rags
 import nest_asyncio
 
 nest_asyncio.apply()
 
-if __name__ == "__main__":
+
+async def load_rags():
+    """Initialize RAG models without blocking the bot startup."""
+    logging.info("Запуск фоновой инициализации RAG моделей")
+    try:
+        rags = await asyncio.to_thread(init_rags)
+        set_rags(rags)
+        logging.info("RAG модели загружены")
+    except Exception as e:
+        logging.error(f"Ошибка при инициализации RAG моделей: {e}")
+
+
+async def main():
     app = Client(
         SESSION_NAME,
         api_id=int(API_ID),
         api_hash=API_HASH,
         bot_token=TELEGRAM_BOT_TOKEN
     )
-    logging.info("Бот запущен. Ожидаю сообщений...")
 
-    # Подключаем все обработчики
     register_handlers(app)
 
-    # Запуск бота
-    app.run()
+    await app.start()
+    asyncio.create_task(load_rags())
+    logging.info("Бот запущен. Ожидаю сообщений...")
+    await app.idle()
+    await app.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 # Тест автоматического деплоя - Tue Aug 26 08:56:17 EDT 2025
 # Webhook test comment added at Tue Aug 26 08:56:17 EDT 2025
 # Второй тест webhook деплоя - Tue Aug 26 08:57:57 EDT 2025
