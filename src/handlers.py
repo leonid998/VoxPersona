@@ -48,7 +48,7 @@ from analysis import (
     assign_roles
 )
 
-from run_analysis import run_analysis_with_spinner, run_dialog_mode, init_rags
+from run_analysis import run_analysis_with_spinner, run_dialog_mode
 
 from audio_utils import extract_audio_filename, define_audio_file_params, transcribe_audio_and_save
 from auth_utils import handle_unauthorized_user
@@ -67,7 +67,13 @@ filter_wav_document = filters.create(openai_audio_filter)
 audio_file_name_to_save = ""
 transcription_text = ""
 
-rags = init_rags()
+rags = {}
+
+
+def set_rags(new_rags: dict) -> None:
+    """Allow external modules to update loaded RAGs."""
+    global rags
+    rags = new_rags
 
 def ask_client(data: dict, text: str, state: dict, chat_id: int, app: Client):
     data["client"] = parse_name(text)
@@ -183,7 +189,10 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict], message: M
         sp_th = threading.Thread(target=run_loading_animation, args=(c_id, msg.id, st_ev, app))
         sp_th.start()
         try:
-            run_dialog_mode(chat_id=c_id, app=app, text=text_, deep_search=deep, rags=rags)
+            if not rags:
+                app.send_message(c_id, "🔄 База знаний ещё загружается, попробуйте позже.")
+            else:
+                run_dialog_mode(chat_id=c_id, app=app, text=text_, deep_search=deep, rags=rags)
             return
         except Exception as e:
             logging.error(f"Ошибка: {e}")
