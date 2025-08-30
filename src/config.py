@@ -83,7 +83,8 @@ for fold in STORAGE_DIRS.values():
 PROMPTS_DIR = "/root/Vox/VoxPersona/prompts"
 
 # Каталог для сохранения RAG индексов
-RAG_INDEX_DIR = "rag_indices"
+# Используем абсолютный путь, чтобы сохранять данные в смонтированную volume-директорию
+RAG_INDEX_DIR = "/app/rag_indices"
 os.makedirs(RAG_INDEX_DIR, exist_ok=True)
 
 try:
