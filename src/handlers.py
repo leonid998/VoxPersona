@@ -16,6 +16,7 @@ from config import (
     MINIO_ACCESS_KEY,
     MINIO_SECRET_KEY,
     MINIO_BUCKET_NAME,
+    MINIO_AUDIO_BUCKET_NAME,
     STORAGE_DIRS
 )
 from utils import run_loading_animation, openai_audio_filter
@@ -64,10 +65,11 @@ minio_client = Minio(
 )
 
 try:
-    if not minio_client.bucket_exists(MINIO_BUCKET_NAME):
-        minio_client.make_bucket(MINIO_BUCKET_NAME)
+    for bucket in [MINIO_BUCKET_NAME, MINIO_AUDIO_BUCKET_NAME]:
+        if bucket and not minio_client.bucket_exists(bucket):
+            minio_client.make_bucket(bucket)
 except S3Error as err:
-    logging.error("Не удалось создать бакет %s: %s", MINIO_BUCKET_NAME, err)
+    logging.error("Не удалось создать бакет %s: %s", bucket, err)
     print("Не удалось создать бакет для хранения файлов. Проверьте настройки MinIO.")
 
 filter_wav_document = filters.create(openai_audio_filter)
@@ -644,9 +646,9 @@ def register_handlers(app: Client):
             audio_file_name_to_save = os.path.basename(downloaded)
 
             minio_client.fput_object(
-                MINIO_BUCKET_NAME,
-                file_name,  
-                downloaded  
+                MINIO_AUDIO_BUCKET_NAME,
+                file_name,
+                downloaded
             )
             logging.info(f"Аудиофайл {file_name} успешно загружен в MinIO.")
 

@@ -54,9 +54,10 @@ else:
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     SESSION_NAME = os.getenv("SESSION_BOT_NAME")
 
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")  
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
+MINIO_AUDIO_BUCKET_NAME = os.getenv("MINIO_AUDIO_BUCKET_NAME", "voxpersona-audio")
 
 # Проверяем, что все ключи заданы
 if not all([OPENAI_API_KEY, ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH]):
