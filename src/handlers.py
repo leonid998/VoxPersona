@@ -63,6 +63,13 @@ minio_client = Minio(
     secure=False
 )
 
+try:
+    if not minio_client.bucket_exists(MINIO_BUCKET_NAME):
+        minio_client.make_bucket(MINIO_BUCKET_NAME)
+except S3Error as err:
+    logging.error("Не удалось создать бакет %s: %s", MINIO_BUCKET_NAME, err)
+    print("Не удалось создать бакет для хранения файлов. Проверьте настройки MinIO.")
+
 filter_wav_document = filters.create(openai_audio_filter)
 
 audio_file_name_to_save = ""
