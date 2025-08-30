@@ -1,7 +1,8 @@
+import os
 import logging
 import asyncio
 from pyrogram import Client, idle
-from config import TELEGRAM_BOT_TOKEN, API_ID, API_HASH, SESSION_NAME
+from config import TELEGRAM_BOT_TOKEN, API_ID, API_HASH, SESSION_NAME, RAG_INDEX_DIR
 import handlers
 from run_analysis import init_rags
 from rag_persistence import save_rag_indices, load_rag_indices
@@ -15,7 +16,10 @@ async def periodic_save_rags():
     while True:
         await asyncio.sleep(900)
         async with handlers.rags_lock:
-            save_rag_indices(handlers.rags)
+            try:
+                save_rag_indices(handlers.rags)
+            except Exception as e:
+                logging.warning("Не удалось сохранить RAG индексы: %s", e)
 
 
 async def load_rags():
@@ -44,9 +48,16 @@ async def load_rags():
         if missing:
             rags = await asyncio.to_thread(init_rags, mapped_rags)
             await handlers.set_rags(rags)
-            save_rag_indices(rags)
+            current_rags = rags
         else:
             await handlers.set_rags(mapped_rags)
+            current_rags = mapped_rags
+
+        if not os.listdir(RAG_INDEX_DIR):
+            try:
+                save_rag_indices(current_rags)
+            except Exception as e:
+                logging.warning("Не удалось сохранить RAG индексы: %s", e)
 
         asyncio.create_task(periodic_save_rags())
         logging.info("RAG модели загружены")
