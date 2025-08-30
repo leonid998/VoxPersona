@@ -45,6 +45,7 @@ services:
       - postgres
     volumes:
       - ./logs:/app/logs
+      - ./rag_indices:/app/rag_indices
 
   postgres:
     image: postgres:14

@@ -1,0 +1,3 @@
+# Exclude runtime data from Docker build context
+logs/
+rag_indices/
