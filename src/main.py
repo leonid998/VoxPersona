@@ -4,7 +4,8 @@ from pyrogram import Client, idle
 from config import TELEGRAM_BOT_TOKEN, API_ID, API_HASH, SESSION_NAME
 import handlers
 from run_analysis import init_rags
-from rag_persistence import save_rag_indices
+from rag_persistence import save_rag_indices, load_rag_indices
+from storage import safe_filename
 import nest_asyncio
 
 nest_asyncio.apply()
@@ -21,8 +22,32 @@ async def load_rags():
     """Initialize RAG models without blocking the bot startup."""
     logging.info("Запуск фоновой инициализации RAG моделей")
     try:
-        rags = await asyncio.to_thread(init_rags)
-        await handlers.set_rags(rags)
+        loaded_rags = await asyncio.to_thread(load_rag_indices)
+
+        expected_names = [
+            "Интервью",
+            "Дизайн",
+            "Оценка методологии интервью",
+            "Отчет о связках",
+            "Общие факторы",
+            "Факторы в этом заведении",
+            "Оценка методологии аудита",
+            "Соответствие программе аудита",
+            "Структурированный отчет аудита",
+        ]
+
+        safe_map = {safe_filename(name): name for name in expected_names}
+        mapped_rags = {safe_map.get(n, n): idx for n, idx in loaded_rags.items()}
+
+        missing = [name for name in expected_names if name not in mapped_rags]
+
+        if missing:
+            rags = await asyncio.to_thread(init_rags, mapped_rags)
+            await handlers.set_rags(rags)
+            save_rag_indices(rags)
+        else:
+            await handlers.set_rags(mapped_rags)
+
         asyncio.create_task(periodic_save_rags())
         logging.info("RAG модели загружены")
     except Exception as e:
