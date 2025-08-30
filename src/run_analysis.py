@@ -16,8 +16,9 @@ from markups import interview_menu_markup, design_menu_markup, main_menu_markup,
 from analysis import analyze_methodology, classify_query, extract_from_chunk_parallel, aggregate_citations, classify_report_type, generate_db_answer, extract_from_chunk_parallel_async
 from storage import save_user_input_to_db, build_reports_grouped, create_db_in_memory
 
-def init_rags() -> dict:
-    rags = {}
+
+def init_rags(existing_rags: dict | None = None) -> dict:
+    rags = existing_rags.copy() if existing_rags else {}
     rag_configs = [
         ("Интервью", None, None),
         ("Дизайн", None, None),
@@ -33,10 +34,12 @@ def init_rags() -> dict:
     for config in rag_configs:
         scenario_name, report_type, _ = config
         try:
+            rag_name = report_type if report_type else scenario_name
+            if rag_name in rags:
+                continue
             content = build_reports_grouped(scenario_name=scenario_name, report_type=report_type)
             content_str = grouped_reports_to_string(content)
-            rag_name = report_type if report_type else scenario_name
-            
+
             if rag_name == "Интервью" or rag_name == "Дизайн":
                 rag_db = create_db_in_memory(content_str)
                 rags[rag_name] = rag_db
