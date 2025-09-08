@@ -1,46 +1,94 @@
-# Руководство по размещению VoxPersona на GitHub
+# VoxPersona Deployment Guide
 
-## 🚀 Пошаговое размещение проекта
+## 🚀 Automated GitHub Actions Deployment
 
-### Шаг 1: Подготовка GitHub репозитория
+> **New!** VoxPersona now uses intelligent GitHub Actions for automated deployment with smart restart logic.
 
-1. **Создайте новый репозиторий на GitHub**:
-   - Перейдите на [github.com](https://github.com)
-   - Нажмите "New repository"
-   - Название: `VoxPersona` (или любое другое)
-   - Описание: "AI-Powered Voice Analysis Platform"
-   - Выберите Public или Private
-   - НЕ инициализируйте с README (у нас уже есть)
+### Overview
 
-### Шаг 2: Инициализация Git репозитория
+VoxPersona features an intelligent deployment system that automatically determines the optimal deployment strategy based on file changes:
+
+- **NO_RESTART** (5-10s): Documentation changes only
+- **APP_ONLY** (30-60s): Application code changes
+- **FULL_RESTART** (2-3min): Infrastructure changes
+
+### Quick Start
+
+1. **Configure GitHub Secrets** (one-time setup):
+   ```
+   SSH_PRIVATE_KEY - SSH key for server access
+   SERVER_IP - Deployment server IP
+   SERVER_USER - SSH username
+   ```
+
+2. **Push to main branch**:
+   ```bash
+   git push origin main
+   ```
+   
+3. **Monitor deployment** in GitHub Actions tab
+
+### Manual Deployment Control
+
+For manual deployments:
+1. Go to Actions → "Intelligent VoxPersona Deployment"
+2. Click "Run workflow"
+3. Select deployment type: `auto`, `full`, `app-only`, or `no-restart`
+
+### Detailed Setup
+
+See comprehensive guides:
+- [Deployment Setup Guide](.github/DEPLOYMENT_SETUP.md) - SSH keys, secrets, configuration
+- [Testing Guide](.github/TESTING_GUIDE.md) - Test scenarios and validation
+
+---
+
+## 📋 Legacy: Manual GitHub Setup
+
+### Step 1: Repository Setup
+
+1. **Create new GitHub repository**:
+   - Go to [github.com](https://github.com)
+   - Click "New repository"
+   - Name: `VoxPersona`
+   - Description: "AI-Powered Voice Analysis Platform"
+   - Choose Public or Private
+   - Don't initialize with README
+
+### Step 2: Initialize Git Repository
 
 ```bash
-# Перейдите в директорию проекта
-cd VoxPersona-GitHub
+# Navigate to project directory
+cd VoxPersona
 
-# Инициализируйте Git репозиторий
+# Initialize Git repository
 git init
 
-# Добавьте все файлы
+# Add all files
 git add .
 
-# Создайте первый коммит
+# Create initial commit
 git commit -m "Initial commit: VoxPersona AI Voice Analysis Platform"
 
-# Добавьте удаленный репозиторий (замените на ваш URL)
+# Add remote repository
 git remote add origin https://github.com/yourusername/VoxPersona.git
 
-# Отправьте код на GitHub
+# Push code to GitHub
 git push -u origin main
 ```
 
-### Шаг 3: Настройка GitHub Secrets (для CI/CD)
+### Step 3: GitHub Secrets Configuration
 
-Если планируете автоматическое развертывание:
+For automated deployment, configure these secrets in Settings → Secrets and variables → Actions:
 
-1. Перейдите в Settings → Secrets and variables → Actions
-2. Добавьте следующие секреты:
+**Required for Deployment**:
+```
+SSH_PRIVATE_KEY - SSH private key content
+SERVER_IP - Server IP address
+SERVER_USER - SSH username
+```
 
+**Application Secrets**:
 ```
 ANTHROPIC_API_KEY
 OPENAI_API_KEY
@@ -50,21 +98,21 @@ API_HASH
 DB_PASSWORD
 ```
 
-### Шаг 4: Создание релиза
+### Step 4: Create Release
 
 ```bash
-# Создайте тег для первой версии
+# Create version tag
 git tag -a v1.0.0 -m "VoxPersona v1.0.0 - Initial release"
 
-# Отправьте тег на GitHub
+# Push tag to GitHub
 git push origin v1.0.0
 ```
 
-Затем на GitHub:
-1. Перейдите в Releases
-2. Нажмите "Create a new release"
-3. Выберите тег v1.0.0
-4. Заполните описание релиза
+On GitHub:
+1. Go to Releases
+2. Click "Create a new release"
+3. Select tag v1.0.0
+4. Add release description
 
 ## 📋 Чек-лист безопасности
 
