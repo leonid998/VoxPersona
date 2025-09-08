@@ -2,7 +2,7 @@ name: Intelligent VoxPersona Deployment
 
 on:
   push:
-    branches: [ main, test-github-actions-deploy ]
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       force_restart_type:
