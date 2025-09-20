@@ -8,56 +8,101 @@ from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, Document
 from minio.error import S3Error
 
-from minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, MinIOUploadError
+# Enhanced imports with error recovery
+try:
+    from import_utils import safe_import, with_recovery
+    from error_recovery import recover_from_error, recovery_context
+    ENHANCED_SYSTEMS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Enhanced systems not available: {e}")
+    ENHANCED_SYSTEMS_AVAILABLE = False
+    
+    # Fallback decorators
+    def with_recovery(context=None):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def recovery_context(**kwargs):
+        from contextlib import nullcontext
+        return nullcontext()
+    
+    def recover_from_error(error, context=None):
+        return None
 
-from config import (
-    processed_texts,
-    user_states,
-    authorized_users,
-    STORAGE_DIRS
-)
-from utils import run_loading_animation, openai_audio_filter
-from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, check_authorized, validate_building_type
-from parser import parse_message_text, parse_building_type, parse_zone, parse_file_number, parse_place_name, parse_city, parse_name
-
-from storage import delete_tmp_params, safe_filename, find_real_filename
-from datamodels import mapping_building_names, REPORT_MAPPING, mapping_scenario_names
-
-from markups import (
-    help_menu_markup, 
-    storage_menu_markup,
-    interview_or_design_menu,
-    interview_menu_markup,
-    design_menu_markup,
-    building_type_menu_markup,
-    make_dialog_markup
-)
-
-from menus import (
-    send_main_menu, 
-    files_menu_markup,
-    register_menu_message,
-    clear_active_menus,
-    show_confirmation_menu,
-    show_edit_menu
-)
-from storage import process_stored_file
-
-from analysis import (
-    assign_roles
-)
-
-from run_analysis import run_analysis_with_spinner, run_dialog_mode
-
-from audio_utils import extract_audio_filename, define_audio_file_params, transcribe_audio_and_save
-from auth_utils import handle_unauthorized_user
+# Safe imports with fallbacks
+if ENHANCED_SYSTEMS_AVAILABLE:
+    minio_manager_module = safe_import('minio_manager')
+    get_minio_manager = getattr(minio_manager_module, 'get_minio_manager', lambda: None)
+    MinIOError = getattr(minio_manager_module, 'MinIOError', Exception)
+    MinIOConnectionError = getattr(minio_manager_module, 'MinIOConnectionError', Exception)
+    MinIOUploadError = getattr(minio_manager_module, 'MinIOUploadError', Exception)
+    
+    config = safe_import('config')
+    utils = safe_import('utils')
+    validators = safe_import('validators')
+    parser = safe_import('parser')
+    storage = safe_import('storage')
+    datamodels = safe_import('datamodels')
+    markups = safe_import('markups')
+    menus = safe_import('menus')
+    analysis = safe_import('analysis')
+    run_analysis = safe_import('run_analysis')
+    audio_utils = safe_import('audio_utils')
+    auth_utils = safe_import('auth_utils')
+else:
+    # Fallback to regular imports
+    from minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, MinIOUploadError
+    import config
+    import utils
+    import validators
+    import parser
+    import storage
+    import datamodels
+    import markups
+    import menus
+    import analysis
+    import run_analysis
+    import audio_utils
+    import auth_utils
 
 from openai import PermissionDeniedError as OpenAIPermissionError
 
-# Initialize MinIO manager
-minio_manager = get_minio_manager()
+# Initialize MinIO manager with error recovery
+@with_recovery({'operation': 'minio_manager_init'})
+def initialize_minio_manager():
+    """Initialize MinIO manager with error recovery"""
+    try:
+        manager = get_minio_manager()
+        if manager:
+            logging.info("MinIO manager initialized successfully")
+            return manager
+        else:
+            logging.warning("MinIO manager returned None")
+            return None
+    except Exception as e:
+        logging.error(f"Failed to initialize MinIO manager: {e}")
+        # Try recovery
+        recovery_result = recover_from_error(e, {
+            'operation': 'minio_init',
+            'context': 'handlers_module'
+        })
+        return recovery_result
 
-filter_wav_document = filters.create(openai_audio_filter)
+minio_manager = initialize_minio_manager()
+
+# Create filter with error recovery
+@with_recovery({'operation': 'create_audio_filter'})
+def create_audio_filter():
+    """Create audio filter with error handling"""
+    try:
+        return filters.create(openai_audio_filter)
+    except Exception as e:
+        logging.warning(f"Could not create audio filter: {e}")
+        # Return a basic filter as fallback
+        return filters.document
+
+filter_wav_document = create_audio_filter()
 
 audio_file_name_to_save = ""
 transcription_text = ""
@@ -66,22 +111,55 @@ rags = {}
 rags_lock = asyncio.Lock()
 
 
+@with_recovery({'operation': 'set_rags'})
 async def set_rags(new_rags: dict) -> None:
-    """Allow external modules to update loaded RAGs."""
+    """Allow external modules to update loaded RAGs with error recovery."""
     global rags
-    async with rags_lock:
-        rags = new_rags
+    try:
+        async with rags_lock:
+            rags = new_rags
+            logging.info(f"Successfully updated RAGs with {len(new_rags)} models")
+    except Exception as e:
+        logging.error(f"Error setting RAGs: {e}")
+        # Try recovery
+        recovery_result = recover_from_error(e, {
+            'operation': 'set_rags',
+            'rags_count': len(new_rags) if new_rags else 0
+        })
+        if recovery_result:
+            logging.info("RAGs setting recovered")
 
+@with_recovery({'operation': 'ask_client'})
 def ask_client(data: dict, text: str, state: dict, chat_id: int, app: Client):
-    data["client"] = parse_name(text)
-    # Переходим к шагу подтверждения
-    state["step"] = "confirm_data"
-    show_confirmation_menu(chat_id, state, app)
+    try:
+        data["client"] = parse_name(text)
+        # Переходим к шагу подтверждения
+        state["step"] = "confirm_data"
+        show_confirmation_menu(chat_id, state, app)
+    except Exception as e:
+        logging.error(f"Error in ask_client: {e}")
+        recovery_result = recover_from_error(e, {
+            'operation': 'ask_client',
+            'chat_id': chat_id,
+            'text': text[:100] if text else None
+        })
+        if not recovery_result:
+            app.send_message(chat_id, "Произошла ошибка при обработке данных клиента")
 
+@with_recovery({'operation': 'ask_employee'})
 def ask_employee(data: dict, text: str, state: dict, chat_id: int, app: Client):
-    data["employee"] = parse_name(text)
-    state["step"] = "ask_place_name"
-    app.send_message(chat_id, "Введите название заведения:")
+    try:
+        data["employee"] = parse_name(text)
+        state["step"] = "ask_place_name"
+        app.send_message(chat_id, "Введите название заведения:")
+    except Exception as e:
+        logging.error(f"Error in ask_employee: {e}")
+        recovery_result = recover_from_error(e, {
+            'operation': 'ask_employee',
+            'chat_id': chat_id
+        })
+        if not recovery_result:
+            app.send_message(chat_id, "Произошла ошибка при обработке данных сотрудника")
 
 def ask_building_type(data: dict, text: str, state: dict, chat_id: int, app: Client):
     data["building_type"] = parse_building_type(text)
@@ -163,13 +241,14 @@ def handle_edit_field(chat_id: int, field: str, app: Client):
 
     app.send_message(chat_id, prompt_text)
 
+@with_recovery({'operation': 'handle_authorized_text'})
 def handle_authorized_text(app: Client, user_states: dict[int, dict], message: Message):
     """
     Этот хендлер обрабатывает все текстовые сообщения от авторизованного пользователя,
     в т.ч. логику по шагам (сбор данных для интервью/дизайна).
     """
     c_id = message.chat.id
-    text_ = message.text.strip()
+    text_ = message.text.strip() if message.text else ""
 
     # Проверяем, есть ли у пользователя активное состояние
     st = user_states.get(c_id)
@@ -180,23 +259,34 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict], message: M
         return
     
     if st.get("step") == "dialog_mode":
-        deep = st.get("deep_search", False)
-        msg = app.send_message(c_id, "⏳ Думаю...")
-        st_ev = threading.Event()
-        sp_th = threading.Thread(target=run_loading_animation, args=(c_id, msg.id, st_ev, app))
-        sp_th.start()
-        try:
-            if not rags:
-                app.send_message(c_id, "🔄 База знаний ещё загружается, попробуйте позже.")
-            else:
-                run_dialog_mode(chat_id=c_id, app=app, text=text_, deep_search=deep, rags=rags)
-            return
-        except Exception as e:
-            logging.error(f"Ошибка: {e}")
-            app.send_message(c_id, "Произошла ошибка")
-        finally:
-            st_ev.set()
-            sp_th.join()
+        with recovery_context({'operation': 'dialog_mode', 'chat_id': c_id}):
+            deep = st.get("deep_search", False)
+            msg = app.send_message(c_id, "⏳ Думаю...")
+            st_ev = threading.Event()
+            sp_th = threading.Thread(target=run_loading_animation, args=(c_id, msg.id, st_ev, app))
+            sp_th.start()
+            try:
+                if not rags:
+                    app.send_message(c_id, "🔄 База знаний ещё загружается, попробуйте позже.")
+                else:
+                    result = run_dialog_mode(chat_id=c_id, app=app, text=text_, deep_search=deep, rags=rags)
+                    if result:
+                        app.send_message(c_id, result)
+                return
+            except Exception as e:
+                logging.error(f"Ошибка в dialog_mode: {e}")
+                recovery_result = recover_from_error(e, {
+                    'operation': 'dialog_mode',
+                    'chat_id': c_id,
+                    'text': text_[:100] if text_ else None
+                })
+                if recovery_result:
+                    app.send_message(c_id, str(recovery_result))
+                else:
+                    app.send_message(c_id, "Произошла ошибка при обработке запроса")
+            finally:
+                st_ev.set()
+                sp_th.join()
 
     # Если пользователь находится в режиме редактирования
     if st.get("step", "").startswith("edit_"):

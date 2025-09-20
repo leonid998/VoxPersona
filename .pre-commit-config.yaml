@@ -1,0 +1,142 @@
+# Pre-commit hooks for VoxPersona
+# This configuration ensures code quality and prevents issues before they reach the repository
+
+repos:
+  # Python code formatting and linting
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3
+        args: [--line-length=100]
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=100]
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        args: [--max-line-length=100, --extend-ignore=E203,W503]
+
+  # Security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: [-r, src/, -f, json, -o, bandit-report.json]
+        pass_filenames: false
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=10240]  # 10MB limit
+      - id: detect-private-key
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  # VoxPersona-specific validation hooks
+  - repo: local
+    hooks:
+      # Import pattern validation
+      - id: validate-imports
+        name: Validate Import Patterns
+        entry: python scripts/validate_imports.py
+        language: system
+        types: [python]
+        pass_filenames: true
+        files: ^src/.*\.py$
+
+      # Configuration validation
+      - id: validate-config
+        name: Validate Configuration
+        entry: python scripts/validate_config.py
+        language: system
+        files: ^(src/config\.py|\.env\.example|docker-compose\.yml)$
+        pass_filenames: true
+
+      # Environment compatibility check
+      - id: environment-compatibility
+        name: Environment Compatibility Check
+        entry: python scripts/check_environment_compatibility.py
+        language: system
+        types: [python]
+        pass_filenames: true
+        files: ^src/.*\.py$
+
+      # Error recovery validation
+      - id: validate-error-recovery
+        name: Validate Error Recovery Usage
+        entry: python scripts/validate_error_recovery.py
+        language: system
+        types: [python]
+        pass_filenames: true
+        files: ^src/.*\.py$
+
+      # Path management validation
+      - id: validate-path-usage
+        name: Validate Path Usage
+        entry: python scripts/validate_path_usage.py
+        language: system
+        types: [python]
+        pass_filenames: true
+        files: ^src/.*\.py$
+
+      # Quick smoke tests
+      - id: quick-tests
+        name: Quick Smoke Tests
+        entry: python -m pytest tests/test_quick_smoke.py -v
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+      # Documentation checks
+      - id: check-docstrings
+        name: Check Function Docstrings
+        entry: python scripts/check_docstrings.py
+        language: system
+        types: [python]
+        files: ^src/.*\.py$
+        pass_filenames: true
+
+      # Dependency validation
+      - id: validate-dependencies
+        name: Validate Dependencies
+        entry: python scripts/validate_dependencies.py
+        language: system
+        files: ^requirements\.txt$
+        pass_filenames: true
+
+# Configuration for specific hooks
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: [validate-imports, validate-config, environment-compatibility, quick-tests]
+  submodules: false
+
+# Fail fast on first error
+fail_fast: false
+
+# Default language version
+default_language_version:
+  python: python3
+
+# Default stages
+default_stages: [commit, push]
