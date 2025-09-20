@@ -41,11 +41,45 @@ services:
       - MINIO_AUDIO_BUCKET_NAME=${MINIO_AUDIO_BUCKET_NAME:-voxpersona-audio}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
+      # MinIO Health Check Configuration
+      - MINIO_HEALTH_CHECK_INTERVAL=${MINIO_HEALTH_CHECK_INTERVAL:-60}
+      - MINIO_MAX_RETRIES=${MINIO_MAX_RETRIES:-3}
+      - MINIO_RETRY_BACKOFF=${MINIO_RETRY_BACKOFF:-2.0}
+      # Storage Configuration
+      - MINIO_MAX_FILE_SIZE=${MINIO_MAX_FILE_SIZE:-2147483648}
+      - MINIO_CLEANUP_DAYS=${MINIO_CLEANUP_DAYS:-30}
     depends_on:
       - postgres
+      - minio
     volumes:
       - ./logs:/app/logs
       - ./rag_indices:/app/rag_indices
+    networks:
+      - voxpersona_default
+
+  minio:
+    image: minio/minio:RELEASE.2025-01-23T22-51-28Z
+    container_name: voxpersona_minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+      MINIO_BROWSER_REDIRECT_URL: https://minio.localhost
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Web Console
+    volumes:
+      - minio_data:/data
+      - minio_certs:/certs
+    command: server /data --console-address ":9001" --certs-dir /certs
+    networks:
+      - voxpersona_default
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
 
   postgres:
     image: postgres:14
@@ -61,9 +95,22 @@ services:
       # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
+    networks:
+      - voxpersona_default
+
+networks:
+  voxpersona_default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
 
 volumes:
   postgres_data:
+  minio_data:
+    driver: local
+  minio_certs:
+    driver: local
   logs:
 # ТЕСТ 2: FULL ДЕПЛОЙ - Tue Aug 26 01:30:01 PM UTC 2025
 # ТЕСТ ИСПРАВЛЕННОЙ ЛОГИКИ 2: FULL restart - Tue Aug 26 01:38:46 PM UTC 2025

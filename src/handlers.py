@@ -1,22 +1,19 @@
 from datetime import datetime
+from datetime import datetime
 import os
 import threading
 import logging
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, Document
-from minio import Minio
 from minio.error import S3Error
+
+from minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, MinIOUploadError
 
 from config import (
     processed_texts,
     user_states,
     authorized_users,
-    MINIO_ENDPOINT,
-    MINIO_ACCESS_KEY,
-    MINIO_SECRET_KEY,
-    MINIO_BUCKET_NAME,
-    MINIO_AUDIO_BUCKET_NAME,
     STORAGE_DIRS
 )
 from utils import run_loading_animation, openai_audio_filter
@@ -57,20 +54,8 @@ from auth_utils import handle_unauthorized_user
 
 from openai import PermissionDeniedError as OpenAIPermissionError
 
-minio_client = Minio(
-    MINIO_ENDPOINT,
-    access_key=MINIO_ACCESS_KEY,
-    secret_key=MINIO_SECRET_KEY,
-    secure=False
-)
-
-try:
-    for bucket in [MINIO_BUCKET_NAME, MINIO_AUDIO_BUCKET_NAME]:
-        if bucket and not minio_client.bucket_exists(bucket):
-            minio_client.make_bucket(bucket)
-except S3Error as err:
-    logging.error("Не удалось создать бакет %s: %s", bucket, err)
-    print("Не удалось создать бакет для хранения файлов. Проверьте настройки MinIO.")
+# Initialize MinIO manager
+minio_manager = get_minio_manager()
 
 filter_wav_document = filters.create(openai_audio_filter)
 
@@ -645,12 +630,24 @@ def register_handlers(app: Client):
             downloaded = app.download_media(message, file_name=path)
             audio_file_name_to_save = os.path.basename(downloaded)
 
-            minio_client.fput_object(
-                MINIO_AUDIO_BUCKET_NAME,
-                file_name,
-                downloaded
+            # Используем новый MinIOManager для загрузки
+            metadata = {
+                'user_id': str(c_id),
+                'upload_timestamp': datetime.now().isoformat(),
+                'file_type': 'audio',
+                'processing_status': 'uploaded'
+            }
+            
+            success = minio_manager.upload_audio_file(
+                file_path=downloaded,
+                object_name=file_name,
+                metadata=metadata
             )
-            logging.info(f"Аудиофайл {file_name} успешно загружен в MinIO.")
+            
+            if success:
+                logging.info(f"Аудиофайл {file_name} успешно загружен в MinIO.")
+            else:
+                raise MinIOUploadError(f"Не удалось загрузить {file_name}")
 
             transcription_text = transcribe_audio_and_save(downloaded, c_id, processed_texts)
 
@@ -671,9 +668,14 @@ def register_handlers(app: Client):
             else:
                 app.send_message(c_id, "Не удалось автоматически спарсить данные, необходимо заполнить вручную поля.\n Пожалуйста, введите номер файла:")
         
+        except (MinIOError, MinIOConnectionError, MinIOUploadError) as e:
+            logging.error(f"❌ Ошибка MinIO: {e}")
+            app.edit_message_text(c_id, msg_.id, "❌ Ошибка загрузки в хранилище")
+            send_main_menu(c_id, app)
+            return
+            
         except S3Error as e:
             logging.error(f"❌ Ошибка: Не удалось загрузить файл в MinIO.: {e}")
-            # app.edit_message_text(c_id, msg_.id, "❌ Ошибка: Не удалось загрузить файл в MinIO.")
             app.edit_message_text(c_id, msg_.id, "❌ Ошибка обработки аудио")
             send_main_menu(c_id, app)
             return

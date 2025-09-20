@@ -59,6 +59,16 @@ MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 MINIO_AUDIO_BUCKET_NAME = os.getenv("MINIO_AUDIO_BUCKET_NAME", "voxpersona-audio")
 
+# MinIO Health Check Configuration
+MINIO_HEALTH_CHECK_INTERVAL = int(os.getenv("MINIO_HEALTH_CHECK_INTERVAL", "60"))
+MINIO_MAX_RETRIES = int(os.getenv("MINIO_MAX_RETRIES", "3"))
+MINIO_RETRY_BACKOFF = float(os.getenv("MINIO_RETRY_BACKOFF", "2.0"))
+
+# Storage Configuration
+MINIO_MAX_FILE_SIZE = int(os.getenv("MINIO_MAX_FILE_SIZE", "2147483648"))  # 2GB
+MINIO_CLEANUP_DAYS = int(os.getenv("MINIO_CLEANUP_DAYS", "30"))
+MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
+
 # Проверяем, что все ключи заданы
 if not all([OPENAI_API_KEY, ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH]):
     raise ValueError("Не все ключи (OPENAI_API_KEY, VSEGPT_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH) заданы!")
