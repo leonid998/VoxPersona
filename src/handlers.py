@@ -8,7 +8,7 @@ from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, Document
 from minio.error import S3Error
 
-from minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, MinIOUploadError
+from src.minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, MinIOUploadError
 
 from config import (
     processed_texts,

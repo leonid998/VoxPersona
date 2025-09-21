@@ -16,7 +16,9 @@ from pyrogram.types import (
     Document
 )
 from dotenv import load_dotenv
-from openai.error import PermissionError as OpenAIPermissionError
+# Import Claude API function for analysis
+from analysis import send_msg_to_model
+from openai import PermissionDeniedError as OpenAIPermissionError
 
 warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
@@ -24,13 +26,13 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(m
 # ================== Загрузка .env (ключи) ==================
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")    # Whisper
-VSEGPT_API_KEY = os.getenv("VSEGPT_API_KEY")    # VSEGPT-анализ
+# VSEGPT_API_KEY = os.getenv("VSEGPT_API_KEY")    # VSEGPT-анализ (removed - migrated to Claude)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 
-if not all([OPENAI_API_KEY, VSEGPT_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH]):
-    raise ValueError("Не все ключи (OPENAI_API_KEY, VSEGPT_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH) заданы!")
+if not all([OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH]):
+    raise ValueError("Не все ключи (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH) заданы!")
 
 # ================== Глобальные ==================
 processed_texts: dict[int, str] = {}
@@ -247,28 +249,13 @@ def transcribe_audio_raw(file_path: str)->str:
 def transcribe_audio(path_: str)->str:
     return transcribe_audio_raw(path_)
 
-# ========== VSEGPT wrapper ==========
-def vsegpt_complete(prompt: str, err="Ошибка VSEGPT", model="anthropic/claude-3.7-sonnet-thinking-high")->str:
-    import openai
-    old_b=openai.api_base
-    old_k=openai.api_key
-    openai.api_base="https://api.vsegpt.ru/v1"
-    openai.api_key=VSEGPT_API_KEY
-    try:
-        msgs=[{"role":"user","content":prompt}]
-        r_=openai.ChatCompletion.create(
-            model=model,
-            messages=msgs,
-            temperature=0.7,
-            max_tokens=3000
-        )
-        return r_.choices[0].message["content"].strip()
-    except Exception:
-        logging.exception(err)
-        return err
-    finally:
-        openai.api_base=old_b
-        openai.api_key=old_k
+# ========== Claude wrapper (migrated from VSEGPT) ==========
+def claude_complete(prompt: str, err="Ошибка Claude") -> str:
+    """
+    Wrapper function to maintain compatibility with existing code while using Claude API.
+    """
+    messages = [{"role": "user", "content": prompt}]
+    return send_msg_to_model(messages=messages, err=err)
 
 # ========== Для ДИЗАЙНА (auto) ==========
 def auto_detect_category(text:str)->str:
@@ -288,7 +275,7 @@ def assign_roles(text: str)->str:
         base_="Определи, где [Сотрудник:], где [Клиент:]."
     prompt_=f"{base_}\n\nТекст:\n{text}"
     logging.info(f"[assign_roles] Длина сырого текста: {len(text)} символов.")
-    result=vsegpt_complete(prompt_,"Ошибка assign_roles")
+    result=claude_complete(prompt_,"Ошибка assign_roles")
     logging.info(f"[assign_roles] Длина результата: {len(result)} символов.")
     return result
 
@@ -298,35 +285,35 @@ def analyze_interview_methodology(text: str)->str:
     if not base_:
         base_="Проанализируй методологию интервью."
     p=f"{base_}\n\nТекст:\n{text}"
-    return vsegpt_complete(p,"Ошибка методологии интервью")
+    return claude_complete(p,"Ошибка методологии интервью")
 
 def analyze_quality_decision_links(text: str)->str:
     base_=load_prompt("quality_decision_links.txt")
     if not base_:
         base_="Проанализируй связки (качество-принятие)."
     p=f"{base_}\n\nТекст:\n{text}"
-    return vsegpt_complete(p,"Ошибка связок")
+    return claude_complete(p,"Ошибка связок")
 
 def analyze_interview_general(text: str)->str:
     base_=load_prompt("interview_general_factors.txt")
     if not base_:
         base_="Общие факторы (интервью)."
     p=f"{base_}\n\nТекст:\n{text}"
-    return vsegpt_complete(p,"Ошибка общих факторов (интервью)")
+    return claude_complete(p,"Ошибка общих факторов (интервью)")
 
 def analyze_interview_specific(text: str)->str:
     base_=load_prompt("interview_specific_factors.txt")
     if not base_:
         base_="Специфические факторы (интервью)."
     p=f"{base_}\n\nТекст:\n{text}"
-    return vsegpt_complete(p,"Ошибка специф.факторов (интервью)")
+    return claude_complete(p,"Ошибка специф.факторов (интервью)")
 
 def analyze_employee_performance(text: str)->str:
     base_=load_prompt("interview_employee_performance.txt")
     if not base_:
         base_="Проанализируй работу сотрудника."
     p=f"{base_}\n\nТекст:\n{text}"
-    return vsegpt_complete(p,"Ошибка анализа сотрудника")
+    return claude_complete(p,"Ошибка анализа сотрудника")
 
 # ========== ДИЗАЙН ==========
 def analyze_design_audit(text: str)->str:
@@ -334,7 +321,7 @@ def analyze_design_audit(text: str)->str:
     if not base_:
         base_="Оценка методологии аудита дизайна."
     p=f"{base_}\n\nТекст:\n{text}"
-    return vsegpt_complete(p,"Ошибка методологии аудита")
+    return claude_complete(p,"Ошибка методологии аудита")
 
 def analyze_audit_compliance(text: str)->str:
     cat=auto_detect_category(text)
@@ -348,7 +335,7 @@ def analyze_audit_compliance(text: str)->str:
     if not base_:
         base_=f"Соответствие аудита ({cat})."
     p=f"{base_}\n\nТекст:\n{text}"
-    return vsegpt_complete(p,f"Ошибка соответствия аудита ({cat})")
+    return claude_complete(p,f"Ошибка соответствия аудита ({cat})")
 
 def analyze_structured_audit(text: str)->str:
     cat=auto_detect_category(text)
@@ -362,7 +349,7 @@ def analyze_structured_audit(text: str)->str:
     if not base_:
         base_=f"Структурированный отчет ({cat})."
     p=f"{base_}\n\nТекст:\n{text}"
-    return vsegpt_complete(p,f"Ошибка структур.аудита ({cat})")
+    return claude_complete(p,f"Ошибка структур.аудита ({cat})")
 
 # ========== process_stored_file (хранилище) ==========
 def process_stored_file(category: str, filename: str, chat_id: int)->str|None:
@@ -649,8 +636,8 @@ def run_analysis_with_spinner(chat_id: int, func, label: str):
             app.send_message(chat_id, result[i:i+block])
         app.edit_message_text(chat_id, msg_.id, f"✅ Завершено: {label}")
     except OpenAIPermissionError:
-        logging.exception("Неверный VSEGPT_API_KEY?")
-        app.edit_message_text(chat_id, msg_.id, "🚫 Ошибка: VSEGPT недоступен (ключ/регион).")
+        logging.exception("Неверный Claude API Key?")
+        app.edit_message_text(chat_id, msg_.id, "🚫 Ошибка: Claude API недоступен (ключ/регион).")
     except Exception as e:
         logging.exception("Ошибка анализа")
         app.edit_message_text(chat_id, msg_.id, f"❌ Ошибка: {e}")
