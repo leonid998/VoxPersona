@@ -9,7 +9,11 @@ warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
+# Load environment files with proper precedence
+# First load .env, then .env.test if in testing environment
 load_dotenv(override=True)
+if 'pytest' in sys.modules or os.getenv('IS_TESTING', '').lower() == 'true' or os.getenv('RUN_MODE', '').upper() == 'TEST':
+    load_dotenv('.env.test', override=True)
 
 # Testing environment detection
 def is_testing_environment() -> bool:
@@ -58,17 +62,18 @@ PASSWORD = os.getenv("PASSWORD")
 
 RUN_MODE = os.getenv("RUN_MODE")
 
-if RUN_MODE == "TEST":
+# Use unified testing detection for configuration
+if IS_TESTING or RUN_MODE == "TEST":
     DB_CONFIG = {
-        "dbname": os.getenv("TEST_DB_NAME"),
-        "user": os.getenv("TEST_DB_USER"),
-        "password": os.getenv("TEST_DB_PASSWORD"),
-        "host": os.getenv("TEST_DB_HOST"),  
-        "port": os.getenv("TEST_DB_PORT"),       
+        "dbname": os.getenv("TEST_DB_NAME", "voxpersona_test"),
+        "user": os.getenv("TEST_DB_USER", "test_user"),
+        "password": os.getenv("TEST_DB_PASSWORD", "test_password"),
+        "host": os.getenv("TEST_DB_HOST", "localhost"),  
+        "port": os.getenv("TEST_DB_PORT", "5432"),       
     }
-    MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_TEST_NAME")
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN_TEST")
-    SESSION_NAME = os.getenv("SESSION_BOT_NAME_TEST")
+    MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_TEST_NAME", os.getenv("MINIO_BUCKET_NAME", "test-bucket"))
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN_TEST", os.getenv("TELEGRAM_BOT_TOKEN", "test_token"))
+    SESSION_NAME = os.getenv("SESSION_BOT_NAME_TEST", os.getenv("SESSION_BOT_NAME", "test_session"))
 else:
     DB_CONFIG = {
         "dbname": os.getenv("DB_NAME"),
@@ -81,10 +86,11 @@ else:
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     SESSION_NAME = os.getenv("SESSION_BOT_NAME")
 
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
-MINIO_AUDIO_BUCKET_NAME = os.getenv("MINIO_AUDIO_BUCKET_NAME", "voxpersona-audio")
+# MinIO Configuration with test defaults
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000" if IS_TESTING else None)
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "test_access" if IS_TESTING else None)
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "test_secret" if IS_TESTING else None)
+MINIO_AUDIO_BUCKET_NAME = os.getenv("MINIO_AUDIO_BUCKET_NAME", "test-audio-bucket" if IS_TESTING else "voxpersona-audio")
 
 # MinIO Health Check Configuration
 MINIO_HEALTH_CHECK_INTERVAL = int(os.getenv("MINIO_HEALTH_CHECK_INTERVAL", "60"))
@@ -96,18 +102,32 @@ MINIO_MAX_FILE_SIZE = int(os.getenv("MINIO_MAX_FILE_SIZE", "2147483648"))  # 2GB
 MINIO_CLEANUP_DAYS = int(os.getenv("MINIO_CLEANUP_DAYS", "30"))
 MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
 
-# Conditional API key validation - skip during testing, enforce in production
+# Enhanced API key validation with testing awareness
 if not IS_TESTING:
-    if not all([OPENAI_API_KEY, ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH]):
-        missing_keys = []
-        if not OPENAI_API_KEY: missing_keys.append("OPENAI_API_KEY")
-        if not ANTHROPIC_API_KEY: missing_keys.append("ANTHROPIC_API_KEY")
-        if not TELEGRAM_BOT_TOKEN: missing_keys.append("TELEGRAM_BOT_TOKEN")
-        if not API_ID: missing_keys.append("API_ID")
-        if not API_HASH: missing_keys.append("API_HASH")
+    # Production environment requires all API keys
+    missing_keys = []
+    if not OPENAI_API_KEY: missing_keys.append("OPENAI_API_KEY")
+    if not ANTHROPIC_API_KEY: missing_keys.append("ANTHROPIC_API_KEY")
+    if not TELEGRAM_BOT_TOKEN: missing_keys.append("TELEGRAM_BOT_TOKEN")
+    if not API_ID: missing_keys.append("API_ID")
+    if not API_HASH: missing_keys.append("API_HASH")
+    
+    if missing_keys:
         raise ValueError(f"Missing required API keys in production: {', '.join(missing_keys)}")
 else:
-    logging.info("Running in testing environment - skipping API key validation")
+    # Testing environment - use defaults if keys are missing
+    if not OPENAI_API_KEY:
+        OPENAI_API_KEY = "test_openai_key_12345"
+    if not ANTHROPIC_API_KEY:
+        ANTHROPIC_API_KEY = "test_anthropic_key_12345"
+    if not TELEGRAM_BOT_TOKEN:
+        TELEGRAM_BOT_TOKEN = "123456789:test_telegram_bot_token"
+    if not API_ID:
+        API_ID = "test_api_id"
+    if not API_HASH:
+        API_HASH = "test_api_hash"
+    
+    logging.info("Running in testing environment - using test API key defaults")
 
 # Глобальные словари/сеты
 processed_texts: dict[int, str] = {}
