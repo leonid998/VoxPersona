@@ -1,20 +1,24 @@
 import logging
-import psycopg2
+import psycopg2  # pyright: ignore[reportMissingModuleSource]
 from datetime import datetime
 from functools import wraps
+from typing import Any, Callable, TypeVar, Optional
 
 from config import DB_CONFIG
 
-def db_transaction(commit=True):
+# Type variable for generic function decoration
+F = TypeVar('F', bound=Callable[..., Any])
+
+def db_transaction(commit: bool = True):
     """
     Декоратор для выполнения функции внутри контекста подключения к базе данных.
     
     :param commit: Флаг, указывающий, нужно ли выполнять conn.commit().
                    По умолчанию True (фиксирует изменения).
     """
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             with get_db_connection() as conn:
                 with conn.cursor() as cursor:
                     result = func(cursor, *args, **kwargs)
@@ -25,7 +29,20 @@ def db_transaction(commit=True):
     return decorator
 
 def get_db_connection():
-    return psycopg2.connect(**DB_CONFIG)
+    # Filter out None values and map to correct psycopg2 parameter names
+    config = {}
+    if DB_CONFIG.get("dbname"):
+        config["dbname"] = DB_CONFIG["dbname"]
+    if DB_CONFIG.get("user"):
+        config["user"] = DB_CONFIG["user"]
+    if DB_CONFIG.get("password"):
+        config["password"] = DB_CONFIG["password"]
+    if DB_CONFIG.get("host"):
+        config["host"] = DB_CONFIG["host"]
+    if DB_CONFIG.get("port"):
+        config["port"] = DB_CONFIG["port"]
+    
+    return psycopg2.connect(**config)
 
 @db_transaction(commit=True)
 def get_or_create_client(cursor, client_name: str) -> int:
@@ -275,7 +292,7 @@ def get_report_type(cursor, report_type_name: str, scenario_id: int) -> int:
     return result[0]
 
 @db_transaction(commit=True)
-def save_audit(cursor, transcription_id: int, audit_text: str, employee_id: int, place_id: int, audit_date: str, city_id: int = None, client_id: int = None) -> int:
+def save_audit(cursor, transcription_id: int, audit_text: str, employee_id: int, place_id: int, audit_date: str, city_id: Optional[int] = None, client_id: Optional[int] = None) -> int:
     """
     Создаём новую запись аудита.
     """

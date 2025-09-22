@@ -93,7 +93,7 @@ class TestMinimalFunctionality(unittest.TestCase):
     def test_utilities_basic(self):
         """Test basic utility functions"""
         try:
-            from src.utils import openai_audio_filter, count_tokens, HAS_SENTENCE_TRANSFORMERS
+            from src.utils import openai_audio_filter, count_tokens, has_sentence_transformers
             
             # Test count_tokens function
             test_text = "Hello world"
@@ -104,10 +104,10 @@ class TestMinimalFunctionality(unittest.TestCase):
             # Test sentence transformers availability detection
             if is_ci_environment():
                 # In CI, sentence_transformers should not be available
-                self.assertFalse(HAS_SENTENCE_TRANSFORMERS, "sentence_transformers should not be available in CI")
+                self.assertFalse(has_sentence_transformers(), "sentence_transformers should not be available in CI")
                 print("✅ sentence_transformers correctly unavailable in CI")
             else:
-                print(f"📦 sentence_transformers available: {HAS_SENTENCE_TRANSFORMERS}")
+                print(f"📦 sentence_transformers available: {has_sentence_transformers()}")
             
             print(f"✅ Utilities work: '{test_text}' -> {token_count} tokens")
             
@@ -119,9 +119,9 @@ class TestMinimalFunctionality(unittest.TestCase):
     def test_embedding_model_fallback(self):
         """Test that embedding model gracefully handles missing dependencies"""
         try:
-            from src.utils import get_embedding_model, HAS_SENTENCE_TRANSFORMERS
+            from src.utils import get_embedding_model, has_sentence_transformers
             
-            if not HAS_SENTENCE_TRANSFORMERS:
+            if not has_sentence_transformers():
                 # In CI environment, should return None gracefully
                 model = get_embedding_model()
                 self.assertIsNone(model, "Embedding model should return None when dependencies missing")

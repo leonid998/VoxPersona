@@ -5,8 +5,8 @@ import logging
 import threading
 import warnings
 import io
+import os
 
-import openai
 from pyrogram import Client, filters
 from pyrogram.types import (
     InlineKeyboardMarkup,
@@ -19,14 +19,14 @@ from dotenv import load_dotenv
 # Import Claude API function for analysis
 from analysis import send_msg_to_model
 from openai import PermissionDeniedError as OpenAIPermissionError
+from constants import BUTTON_BACK, CLAUDE_ERROR_MESSAGE
 
 warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
 # ================== Загрузка .env (ключи) ==================
-load_dotenv()
+_ = load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")    # Whisper
-# VSEGPT_API_KEY = os.getenv("VSEGPT_API_KEY")    # VSEGPT-анализ (removed - migrated to Claude)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
@@ -36,7 +36,7 @@ if not all([OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH]):
 
 # ================== Глобальные ==================
 processed_texts: dict[int, str] = {}
-user_states: dict[int, dict] = {}
+user_states: dict[int, dict[str, str]] = {}
 authorized_users = set()  
 active_menus: dict[int, list[int]] = {}
 
@@ -81,8 +81,8 @@ def safe_filename(name: str) -> str:
 # ========== Pyrogram-клиент =========
 app = Client(
     "voxpersona_bot",
-    api_id=int(API_ID),
-    api_hash=API_HASH,
+    api_id=int(API_ID) if API_ID else 0,
+    api_hash=API_HASH or "",
     bot_token=TELEGRAM_BOT_TOKEN
 )
 
@@ -94,7 +94,7 @@ def run_loading_animation(chat_id: int, msg_id: int, stop_event: threading.Event
         sp=spinner_chars[idx % len(spinner_chars)]
         try:
             app.edit_message_text(chat_id, msg_id, f"⏳ Обработка... {sp}")
-        except:
+        except Exception:
             pass
         idx+=1
         time.sleep(0.5)
@@ -104,7 +104,7 @@ def clear_active_menus(chat_id: int):
         for mid in active_menus[chat_id]:
             try:
                 app.delete_messages(chat_id, mid)
-            except:
+            except Exception:
                 pass
         active_menus[chat_id]=[]
 
@@ -122,7 +122,7 @@ def load_prompt(file_name: str)->str:
     try:
         with open(p_,"r",encoding="utf-8") as f:
             return f.read()
-    except Exception as e:
+    except Exception:
         logging.exception(f"Ошибка чтения промпта {file_name}")
         return ""
 
@@ -146,7 +146,7 @@ def storage_menu_markup():
         [InlineKeyboardButton("Аудио файлы", callback_data="view||audio")],
         [InlineKeyboardButton("Текст без ролей", callback_data="view||text_without_roles")],
         [InlineKeyboardButton("Текст с ролями", callback_data="view||text_with_roles")],
-        [InlineKeyboardButton("Назад", callback_data="menu_main")]
+        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
     ])
 
 def help_menu_markup():
@@ -163,7 +163,7 @@ def help_menu_markup():
         "3) Структурированный отчёт аудита\n\n"
         "Макс 2 ГБ, без ffmpeg."
     )
-    kb=InlineKeyboardMarkup([[InlineKeyboardButton("Назад", callback_data="menu_main")]])
+    kb=InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]])
     return kb, text_
 
 def interview_or_design_menu():
@@ -182,7 +182,7 @@ def interview_menu_markup():
         [InlineKeyboardButton("3) Общие факторы", callback_data="report_int_general")],
         [InlineKeyboardButton("4) Факторы в этом заведении", callback_data="report_int_specific")],
         [InlineKeyboardButton("5) Анализ работы сотрудника", callback_data="report_int_employee")],
-        [InlineKeyboardButton("Назад", callback_data="menu_main")]
+        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
     ])
 
 def design_menu_markup():
@@ -190,7 +190,7 @@ def design_menu_markup():
         [InlineKeyboardButton("1) Оценка методологии аудита", callback_data="report_design_audit_methodology")],
         [InlineKeyboardButton("2) Соответствие программе аудита", callback_data="report_design_compliance")],
         [InlineKeyboardButton("3) Структурированный отчет аудита", callback_data="report_design_structured")],
-        [InlineKeyboardButton("Назад", callback_data="menu_main")]
+        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
     ])
 
 def files_menu_markup(category: str):
@@ -198,7 +198,7 @@ def files_menu_markup(category: str):
     rows=[]
     try:
         fs=os.listdir(fold)
-    except:
+    except OSError:
         fs=[]
     for f in fs:
         sf=safe_filename(f)
@@ -206,7 +206,7 @@ def files_menu_markup(category: str):
         b_del=InlineKeyboardButton("❌", callback_data=f"delete||{category}||{sf}")
         rows.append([b_open,b_del])
     rows.append([InlineKeyboardButton("Загрузить файл", callback_data=f"upload||{category}")])
-    rows.append([InlineKeyboardButton("Назад", callback_data="menu_main")])
+    rows.append([InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")])
     return InlineKeyboardMarkup(rows)
 
 # ========== Транскрибация (байты) ==========
@@ -250,7 +250,7 @@ def transcribe_audio(path_: str)->str:
     return transcribe_audio_raw(path_)
 
 # ========== Claude wrapper (migrated from VSEGPT) ==========
-def claude_complete(prompt: str, err="Ошибка Claude") -> str:
+def claude_complete(prompt: str, err: str = CLAUDE_ERROR_MESSAGE) -> str:
     """
     Wrapper function to maintain compatibility with existing code while using Claude API.
     """
@@ -385,16 +385,16 @@ def process_stored_file(category: str, filename: str, chat_id: int)->str|None:
         return None
 
 # ========== /start и авторизация ==========
-@app.on_message(filters.command("start"))
-def cmd_start(client, message: Message):
+@app.on_message(filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
+def cmd_start(client: Client, message: Message) -> None:
     c_id=message.chat.id
     if c_id not in authorized_users:
         app.send_message(c_id,"Вы не авторизованы. Введите пароль:")
     else:
         send_main_menu(c_id)
 
-@app.on_message(filters.text & ~filters.command("start"))
-def handle_auth_text(client, message: Message):
+@app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
+def handle_auth_text(client: Client, message: Message) -> None:
     c_id=message.chat.id
     if c_id in authorized_users:
         return
@@ -406,8 +406,8 @@ def handle_auth_text(client, message: Message):
         app.send_message(c_id,"❌ Неверный пароль. Попробуйте снова:")
 
 # ========== Приём аудио ==========
-@app.on_message(filters.voice | filters.audio)
-def handle_audio_msg(client, message: Message):
+@app.on_message(filters.voice | filters.audio)  # type: ignore[misc,reportUntypedFunctionDecorator]
+def handle_audio_msg(client: Client, message: Message) -> None:
     c_id=message.chat.id
     if c_id not in authorized_users:
         return
@@ -434,6 +434,7 @@ def handle_audio_msg(client, message: Message):
     sp_th=threading.Thread(target=run_loading_animation, args=(c_id,msg_.id,st_ev))
     sp_th.start()
 
+    downloaded = None
     try:
         downloaded=app.download_media(message, file_name=path_)
         raw_=transcribe_audio(downloaded)
@@ -443,19 +444,22 @@ def handle_audio_msg(client, message: Message):
     except OpenAIPermissionError:
         logging.exception("Неверный OPENAI_API_KEY?")
         app.edit_message_text(c_id,msg_.id,"🚫 Ошибка: Whisper недоступен (ключ/регион).")
+        downloaded = None
     except Exception as e:
         logging.exception("Ошибка обработки аудио")
         app.edit_message_text(c_id,msg_.id,f"❌ Ошибка: {e}")
+        downloaded = None
     finally:
         st_ev.set()
         sp_th.join()
         try:
             app.delete_messages(c_id,msg_.id)
-        except:
+        except Exception:
             pass
         try:
-            os.remove(downloaded)
-        except:
+            if downloaded:
+                os.remove(downloaded)
+        except OSError:
             pass
 
     # Подменю: ИНТЕРВЬЮ / ДИЗАЙН
@@ -463,8 +467,8 @@ def handle_audio_msg(client, message: Message):
     send_main_menu(c_id)
 
 # ========== Приём документов (для хранилища) ==========
-@app.on_message(filters.document)
-def handle_document_msg(client, message: Message):
+@app.on_message(filters.document)  # type: ignore[misc,reportUntypedFunctionDecorator]
+def handle_document_msg(client: Client, message: Message) -> None:
     c_id=message.chat.id
     if c_id not in authorized_users:
         return
@@ -492,13 +496,13 @@ def handle_document_msg(client, message: Message):
     send_main_menu(c_id)
 
 # ========== CALLBACK QUERY (меню) ==========
-@app.on_callback_query()
-def callback_query_handler(client, callback: CallbackQuery):
+@app.on_callback_query()  # type: ignore[misc,reportUntypedFunctionDecorator]
+def callback_query_handler(client: Client, callback: CallbackQuery) -> None:
     c_id=callback.message.chat.id
     data=callback.data
     try:
         callback.answer()
-    except:
+    except Exception:
         pass
 
     try:
@@ -646,7 +650,7 @@ def run_analysis_with_spinner(chat_id: int, func, label: str):
         sp_th.join()
         try:
             app.delete_messages(chat_id, msg_.id)
-        except:
+        except Exception:
             pass
 
     send_main_menu(chat_id)

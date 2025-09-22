@@ -14,26 +14,33 @@ from config import EMBEDDING_MODEL, ENC
 # Условный импорт для sentence_transformers
 try:
     from sentence_transformers import SentenceTransformer
-    HAS_SENTENCE_TRANSFORMERS = True
+    _sentence_transformers_available = True
 except ImportError:
-    HAS_SENTENCE_TRANSFORMERS = False
+    _sentence_transformers_available = False
     SentenceTransformer = None
     if not os.getenv('CI'):
         logging.warning("sentence_transformers не установлен. Некоторые функции могут быть недоступны.")
+
+def has_sentence_transformers() -> bool:
+    """Проверяет доступность библиотеки sentence_transformers."""
+    return _sentence_transformers_available
 
 
 def get_embedding_model():
     global EMBEDDING_MODEL
     if EMBEDDING_MODEL is None:
-        if not HAS_SENTENCE_TRANSFORMERS:
+        if not has_sentence_transformers():
             logging.error("sentence_transformers не установлен, модель эмбеддингов недоступна")
             return None
         logging.info("Загружаем локальную модель эмбеддингов BAAI/bge-m3...")
-        EMBEDDING_MODEL = SentenceTransformer('all-MiniLM-L6-v2', device='cpu') #SentenceTransformer('BAAI/bge-m3', device='cpu') #SentenceTransformer('all-MiniLM-L6-v2', device='cpu')  
+        # Проверяем, что SentenceTransformer доступен перед использованием
+        if SentenceTransformer is not None:
+            EMBEDDING_MODEL = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')  # pyright: ignore[reportConstantRedefinition]  
     return EMBEDDING_MODEL
 
 class CustomSentenceTransformerEmbeddings(Embeddings):
     def __init__(self, model):
+        super().__init__()
         self.model = model
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
@@ -85,11 +92,16 @@ def split_markdown_text(markdown_text, chunk_size=800, chunk_overlap=100):
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        separators=["\n\n", "\n", " ", ""]
+        separators=[
+            "\n\n", 
+            "\n", 
+            " ", 
+            ""
+        ]
     )
     return text_splitter.split_text(markdown_text)
 
-def split_and_send_long_text(text: str, chat_id: int, app: Client, chunk_size: int = 4096, parse_mode: str = None):
+def split_and_send_long_text(text: str, chat_id: int, app: Client, chunk_size: int = 4096, parse_mode: str | None = None):
     """
     Для отправки длинных результатов, разбитых на части по 4096 символов.
     """

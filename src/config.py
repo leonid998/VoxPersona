@@ -2,7 +2,13 @@ import os
 import sys
 import logging
 import warnings
+from typing import Dict, List, Set
 from dotenv import load_dotenv
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Callable
+    load_dotenv: Callable[..., bool]
 import tiktoken
 
 warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
@@ -11,9 +17,9 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(m
 
 # Load environment files with proper precedence
 # First load .env, then .env.test if in testing environment
-load_dotenv(override=True)
+_ = load_dotenv(override=True)
 if 'pytest' in sys.modules or os.getenv('IS_TESTING', '').lower() == 'true' or os.getenv('RUN_MODE', '').upper() == 'TEST':
-    load_dotenv('.env.test', override=True)
+    _ = load_dotenv('.env.test', override=True)
 
 # Testing environment detection
 def is_testing_environment() -> bool:
@@ -43,11 +49,41 @@ IS_TESTING = is_testing_environment()
 
 EMBEDDING_MODEL = None
 
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") 
-TRANSCRIBATION_MODEL_NAME = os.getenv("TRANSCRIBATION_MODEL_NAME")     # Whisper
+# API key initialization functions
+def get_openai_api_key() -> str | None:
+    """Get OpenAI API key with testing fallback."""
+    key = os.getenv("OPENAI_API_KEY")
+    if not key and IS_TESTING:
+        return "test_openai_key_12345"
+    return key
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")      # Claude
+def get_anthropic_api_key() -> str | None:
+    """Get Anthropic API key with testing fallback."""
+    key = os.getenv("ANTHROPIC_API_KEY")
+    if not key and IS_TESTING:
+        return "test_anthropic_key_12345"
+    return key
+
+def get_api_id() -> str | None:
+    """Get API ID with testing fallback."""
+    api_id = os.getenv("API_ID")
+    if not api_id and IS_TESTING:
+        return "test_api_id"
+    return api_id
+
+def get_api_hash() -> str | None:
+    """Get API hash with testing fallback."""
+    api_hash = os.getenv("API_HASH")
+    if not api_hash and IS_TESTING:
+        return "test_api_hash"
+    return api_hash
+
+# Initialize API configuration
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+OPENAI_API_KEY = get_openai_api_key()
+TRANSCRIPTION_MODEL_NAME = os.getenv("TRANSCRIBATION_MODEL_NAME")     # Whisper
+
+ANTHROPIC_API_KEY = get_anthropic_api_key()
 ANTHROPIC_API_KEY_2 = os.getenv("ANTHROPIC_API_KEY_2")
 ANTHROPIC_API_KEY_3 = os.getenv("ANTHROPIC_API_KEY_3")
 ANTHROPIC_API_KEY_4 = os.getenv("ANTHROPIC_API_KEY_4")
@@ -56,35 +92,61 @@ ANTHROPIC_API_KEY_6 = os.getenv("ANTHROPIC_API_KEY_6")
 ANTHROPIC_API_KEY_7 = os.getenv("ANTHROPIC_API_KEY_7")
 REPORT_MODEL_NAME = os.getenv("REPORT_MODEL_NAME")
 
-API_ID = os.getenv("API_ID")
-API_HASH = os.getenv("API_HASH")
+API_ID = get_api_id()
+API_HASH = get_api_hash()
 PASSWORD = os.getenv("PASSWORD")
 
 RUN_MODE = os.getenv("RUN_MODE")
 
-# Use unified testing detection for configuration
-if IS_TESTING or RUN_MODE == "TEST":
-    DB_CONFIG = {
-        "dbname": os.getenv("TEST_DB_NAME", "voxpersona_test"),
-        "user": os.getenv("TEST_DB_USER", "test_user"),
-        "password": os.getenv("TEST_DB_PASSWORD", "test_password"),
-        "host": os.getenv("TEST_DB_HOST", "localhost"),  
-        "port": os.getenv("TEST_DB_PORT", "5432"),       
-    }
-    MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_TEST_NAME", os.getenv("MINIO_BUCKET_NAME", "test-bucket"))
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN_TEST", os.getenv("TELEGRAM_BOT_TOKEN", "test_token"))
-    SESSION_NAME = os.getenv("SESSION_BOT_NAME_TEST", os.getenv("SESSION_BOT_NAME", "test_session"))
-else:
-    DB_CONFIG = {
-        "dbname": os.getenv("DB_NAME"),
-        "user": os.getenv("DB_USER"),
-        "password": os.getenv("DB_PASSWORD"),
-        "host": os.getenv("DB_HOST"),  
-        "port": os.getenv("DB_PORT"),     
-    }
-    MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME")
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    SESSION_NAME = os.getenv("SESSION_BOT_NAME")
+# Database configuration function to avoid constant redefinition
+def get_db_config() -> dict[str, str | None]:
+    """Get database configuration based on environment."""
+    if IS_TESTING or RUN_MODE == "TEST":
+        return {
+            "dbname": os.getenv("TEST_DB_NAME", "voxpersona_test"),
+            "user": os.getenv("TEST_DB_USER", "test_user"),
+            "password": os.getenv("TEST_DB_PASSWORD", "test_password"),
+            "host": os.getenv("TEST_DB_HOST", "localhost"),  
+            "port": os.getenv("TEST_DB_PORT", "5432"),       
+        }
+    else:
+        return {
+            "dbname": os.getenv("DB_NAME"),
+            "user": os.getenv("DB_USER"),
+            "password": os.getenv("DB_PASSWORD"),
+            "host": os.getenv("DB_HOST"),  
+            "port": os.getenv("DB_PORT"),     
+        }
+
+# Initialize DB_CONFIG as a constant
+DB_CONFIG = get_db_config()
+
+# Configuration variables initialization with proper handling
+def get_minio_bucket_name() -> str | None:
+    """Get MinIO bucket name based on environment."""
+    if IS_TESTING or RUN_MODE == "TEST":
+        return os.getenv("MINIO_BUCKET_TEST_NAME", os.getenv("MINIO_BUCKET_NAME", "test-bucket"))
+    else:
+        return os.getenv("MINIO_BUCKET_NAME")
+
+def get_telegram_bot_token() -> str | None:
+    """Get Telegram bot token based on environment."""
+    if IS_TESTING or RUN_MODE == "TEST":
+        return os.getenv("TELEGRAM_BOT_TOKEN_TEST", os.getenv("TELEGRAM_BOT_TOKEN", "test_token"))
+    else:
+        return os.getenv("TELEGRAM_BOT_TOKEN")
+
+def get_session_name() -> str | None:
+    """Get session name based on environment."""
+    if IS_TESTING or RUN_MODE == "TEST":
+        return os.getenv("SESSION_BOT_NAME_TEST", os.getenv("SESSION_BOT_NAME", "test_session"))
+    else:
+        return os.getenv("SESSION_BOT_NAME")
+
+# Initialize configuration constants
+MINIO_BUCKET_NAME = get_minio_bucket_name()
+TELEGRAM_BOT_TOKEN = get_telegram_bot_token()
+SESSION_NAME = get_session_name()
 
 # MinIO Configuration with test defaults
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000" if IS_TESTING else None)
@@ -102,7 +164,7 @@ MINIO_MAX_FILE_SIZE = int(os.getenv("MINIO_MAX_FILE_SIZE", "2147483648"))  # 2GB
 MINIO_CLEANUP_DAYS = int(os.getenv("MINIO_CLEANUP_DAYS", "30"))
 MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
 
-# Enhanced API key validation with testing awareness
+
 if not IS_TESTING:
     # Production environment requires all API keys
     missing_keys = []
@@ -115,25 +177,15 @@ if not IS_TESTING:
     if missing_keys:
         raise ValueError(f"Missing required API keys in production: {', '.join(missing_keys)}")
 else:
-    # Testing environment - use defaults if keys are missing
-    if not OPENAI_API_KEY:
-        OPENAI_API_KEY = "test_openai_key_12345"
-    if not ANTHROPIC_API_KEY:
-        ANTHROPIC_API_KEY = "test_anthropic_key_12345"
-    if not TELEGRAM_BOT_TOKEN:
-        TELEGRAM_BOT_TOKEN = "123456789:test_telegram_bot_token"
-    if not API_ID:
-        API_ID = "test_api_id"
-    if not API_HASH:
-        API_HASH = "test_api_hash"
-    
     logging.info("Running in testing environment - using test API key defaults")
 
+
+
 # Глобальные словари/сеты
-processed_texts: dict[int, str] = {}
-user_states: dict[int, dict] = {}
-authorized_users = set()  
-active_menus: dict[int, list[int]] = {}
+processed_texts: Dict[int, str] = {}
+user_states: Dict[int, Dict[str, object]] = {}
+authorized_users: Set[int] = set()  
+active_menus: Dict[int, List[int]] = {}
 
 # Директории хранения (deferred creation pattern)
 STORAGE_DIRS = {
@@ -174,11 +226,16 @@ def ensure_rag_directory():
         logging.error(f"Failed to create RAG directory {RAG_INDEX_DIR}: {e}")
         return False
 
-try:
-    # Only initialize encoder if model name is available
-    if REPORT_MODEL_NAME:
-        ENC = tiktoken.encoding_for_model(REPORT_MODEL_NAME)
-    else:
-        ENC = tiktoken.get_encoding("cl100k_base")
-except (KeyError, AttributeError):
-    ENC = tiktoken.get_encoding("cl100k_base")
+# Initialize encoding with fallback
+def get_tiktoken_encoding():
+    """Get tiktoken encoding with fallback."""
+    try:
+        # Only initialize encoder if model name is available
+        if REPORT_MODEL_NAME:
+            return tiktoken.encoding_for_model(REPORT_MODEL_NAME)
+        else:
+            return tiktoken.get_encoding("cl100k_base")
+    except (KeyError, AttributeError):
+        return tiktoken.get_encoding("cl100k_base")
+
+ENC = get_tiktoken_encoding()

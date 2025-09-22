@@ -1,10 +1,12 @@
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram import Client
 import os
+from typing import Dict, Union, Any
 from storage import safe_filename
 
 from config import STORAGE_DIRS, active_menus
 from markups import main_menu_markup, confirm_menu_markup, edit_menu_markup
+from constants import BUTTON_BACK
 
 def files_menu_markup(category: str):
     """
@@ -16,7 +18,7 @@ def files_menu_markup(category: str):
     rows = []
     try:
         fs = os.listdir(fold)
-    except:
+    except OSError:
         fs = []
 
     for f in fs:
@@ -27,10 +29,10 @@ def files_menu_markup(category: str):
 
     # Кнопка для загрузки нового файла
     rows.append([InlineKeyboardButton("Загрузить файл", callback_data=f"upload||{category}")])
-    rows.append([InlineKeyboardButton("Назад", callback_data="menu_main")])
+    rows.append([InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")])
     return InlineKeyboardMarkup(rows)
 
-def send_main_menu(chat_id: int, app):
+def send_main_menu(chat_id: int, app: Client):
     clear_active_menus(chat_id, app)
     mm = app.send_message(chat_id, "🏠 Главное меню:", reply_markup=main_menu_markup())
     if mm:
@@ -41,7 +43,7 @@ def clear_active_menus(chat_id: int, app: Client):
         for mid in active_menus[chat_id]:
             try:
                 app.delete_messages(chat_id, mid)
-            except:
+            except Exception:
                 pass
         active_menus[chat_id] = []
 
@@ -50,7 +52,7 @@ def register_menu_message(chat_id: int, msg_id: int):
         active_menus[chat_id] = []
     active_menus[chat_id].append(msg_id)
 
-def show_confirmation_menu(chat_id: int, state: dict, app: Client):
+def show_confirmation_menu(chat_id: int, state: Dict[str, Any], app: Client):
     """
     Показываем пользователю сводку всех полей и просим подтвердить или редактировать.
     """
@@ -81,12 +83,12 @@ def show_confirmation_menu(chat_id: int, state: dict, app: Client):
     mm = app.send_message(chat_id, text_summary, reply_markup=kb)
     register_menu_message(chat_id, mm.id)
 
-def show_edit_menu(chat_id: int, state: dict, app: Client):
+def show_edit_menu(chat_id: int, state: Dict[str, Any], app: Client):
     """
     Клавиатура с вариантами, какое поле редактировать.
     """
 
-    mode = state.get("mode")
+    mode = state.get("mode", "")
 
     kb = edit_menu_markup(mode)
     clear_active_menus(chat_id, app)

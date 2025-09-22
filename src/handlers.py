@@ -1,3 +1,4 @@
+from typing import Dict, Any
 from datetime import datetime
 from datetime import datetime
 import os
@@ -66,29 +67,29 @@ rags = {}
 rags_lock = asyncio.Lock()
 
 
-async def set_rags(new_rags: dict) -> None:
+async def set_rags(new_rags: Dict[str, Any]) -> None:
     """Allow external modules to update loaded RAGs."""
     global rags
     async with rags_lock:
         rags = new_rags
 
-def ask_client(data: dict, text: str, state: dict, chat_id: int, app: Client):
+def ask_client(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
     data["client"] = parse_name(text)
     # Переходим к шагу подтверждения
     state["step"] = "confirm_data"
     show_confirmation_menu(chat_id, state, app)
 
-def ask_employee(data: dict, text: str, state: dict, chat_id: int, app: Client):
+def ask_employee(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
     data["employee"] = parse_name(text)
     state["step"] = "ask_place_name"
     app.send_message(chat_id, "Введите название заведения:")
 
-def ask_building_type(data: dict, text: str, state: dict, chat_id: int, app: Client):
+def ask_building_type(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
     data["building_type"] = parse_building_type(text)
     state["step"] = "ask_zone"
     app.send_message(chat_id, "Введите зону (если она есть) или поставьте -:")
 
-def ask_zone(data: dict, text: str, mode: str, state: dict, chat_id: int, app: Client):
+def ask_zone(data: Dict[str, Any], text: str, mode: str, state: Dict[str, Any], chat_id: int, app: Client):
     data['zone_name'] = parse_zone(text)
     if mode == "interview":
         # Для интервью сейчас не запрашиваем город — сразу завершаем сбор
@@ -99,12 +100,12 @@ def ask_zone(data: dict, text: str, mode: str, state: dict, chat_id: int, app: C
         state["step"] = "ask_city"
         app.send_message(chat_id, "Введите город:")
 
-def ask_place_name(data: dict, text: str, state: dict, chat_id: int, app: Client):
+def ask_place_name(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
     data["place_name"] = parse_place_name(text)
     state["step"] = "ask_building_type"
     app.send_message(chat_id, "Введите тип заведения:")
 
-def ask_date(data: dict, text: str, state: dict, chat_id: int, app: Client):
+def ask_date(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
     if not validate_date_format(text):
         app.send_message(chat_id, "❌ Неверный формат даты. Используйте формат ГГГГ-ММ-ДД (например, 2025-01-01).")
         return
@@ -112,13 +113,13 @@ def ask_date(data: dict, text: str, state: dict, chat_id: int, app: Client):
     state["step"] = "ask_employee"
     app.send_message(chat_id, "Введите ФИО сотрудника:")
 
-def ask_city(data: dict, text: str, state: dict, chat_id: int, app: Client):
+def ask_city(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
     data["city"] = parse_city(text)
     # Переходим к шагу подтверждения
     state["step"] = "confirm_data"
     show_confirmation_menu(chat_id, state, app)
 
-def ask_audio_number(data: dict, text: str, state: dict, chat_id: int, app: Client):
+def ask_audio_number(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
     """
     Спрашиваем пользователя номер аудио файла.
     """
@@ -163,7 +164,7 @@ def handle_edit_field(chat_id: int, field: str, app: Client):
 
     app.send_message(chat_id, prompt_text)
 
-def handle_authorized_text(app: Client, user_states: dict[int, dict], message: Message):
+def handle_authorized_text(app: Client, user_states: Dict[int, Dict[str, Any]], message: Message):
     """
     Этот хендлер обрабатывает все текстовые сообщения от авторизованного пользователя,
     в т.ч. логику по шагам (сбор данных для интервью/дизайна).
@@ -178,6 +179,9 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict], message: M
         logging.info("Нет состояния. Пользователь что-то пишет без контекста")
         send_main_menu(c_id, app)
         return
+    
+    # После проверки check_state мы знаем, что st не None
+    assert st is not None
     
     if st.get("step") == "dialog_mode":
         deep = st.get("deep_search", False)
@@ -561,7 +565,7 @@ def register_handlers(app: Client):
     Регистрируем все хендлеры Pyrogram.
     """
 
-    @app.on_message(filters.command("start"))
+    @app.on_message(filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
     def cmd_start(app: Client, message: Message):
         c_id = message.chat.id
         if c_id not in authorized_users:
@@ -569,7 +573,7 @@ def register_handlers(app: Client):
         else:
             send_main_menu(c_id, app)
 
-    @app.on_message(filters.text & ~filters.command("start"))
+    @app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
     def handle_auth_text(client: Client, message: Message):
         """
         Обрабатываем ввод пользователя при авторизации.
@@ -587,7 +591,7 @@ def register_handlers(app: Client):
         handle_unauthorized_user(authorized_users, message, app)  
 
 
-    @app.on_message(filters.voice | filters.audio | filter_wav_document)
+    @app.on_message(filters.voice | filters.audio | filter_wav_document)  # type: ignore[misc,reportUntypedFunctionDecorator]
     def handle_audio_msg(app: Client, message: Message, tmpdir: str="/root/Vox/VoxPersona/temp_audio", max_size: int=2 * 1024 * 1024 * 1024):
         """
         Приём голосового или аудио-сообщения, до 2 ГБ.
@@ -697,7 +701,7 @@ def register_handlers(app: Client):
 
             delete_tmp_params(msg=msg_, tmp_file=downloaded, tmp_dir=tmpdir, client_id=c_id, app=app)
 
-    @app.on_message(filters.document)
+    @app.on_message(filters.document)  # type: ignore[misc,reportUntypedFunctionDecorator]
     def handle_document_msg(app: Client, message: Message):
         """
         Приём документа. Сохранение в хранилище, если пользователь выбрал "upload||category".
@@ -735,7 +739,7 @@ def register_handlers(app: Client):
 
         send_main_menu(c_id, app)
     
-    @app.on_callback_query()
+    @app.on_callback_query()  # type: ignore[misc,reportUntypedFunctionDecorator]
     def callback_query_handler(client: Client, callback: CallbackQuery):
         c_id = callback.message.chat.id
         data = callback.data

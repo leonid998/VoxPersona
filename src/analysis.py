@@ -10,16 +10,17 @@ from openai import OpenAI
 import anthropic
 from pydub import AudioSegment
 import json
-import time
 import re
 from anthropic import RateLimitError 
 from typing import Any
+from langchain_community.vectorstores import FAISS
 
-from config import OPENAI_API_KEY, OPENAI_BASE_URL, ANTHROPIC_API_KEY, TRANSCRIBATION_MODEL_NAME, REPORT_MODEL_NAME
+from config import OPENAI_API_KEY, OPENAI_BASE_URL, ANTHROPIC_API_KEY, TRANSCRIPTION_MODEL_NAME, REPORT_MODEL_NAME
+from constants import CLAUDE_ERROR_MESSAGE
 from db_handler.db import fetch_prompt_by_name
 from utils import count_tokens
 
-def analyze_methodology(text: str, prompt_list: list[tuple[str, int]]) -> str:
+def analyze_methodology(text: str, prompt_list: list[tuple[str, int]]) -> str | None:
     """
     Последовательно отправляет промпты из списка в модель.
     Если в списке несколько элементов, то ответ от предыдущего промпта
@@ -28,12 +29,11 @@ def analyze_methodology(text: str, prompt_list: list[tuple[str, int]]) -> str:
     :param prompt_list: Список кортежей вида (prompt, order)
     :return: Финальный ответ модели после обработки всех промптов
     """
-    # sorted_prompts = sort_tuples_by_second_item(prompt_list)
     current_response = None
     
     for prompt, _ in prompt_list:
-        if current_response == "Ошибка Claude":
-            raise ValueError(f"Ошибка Claude")
+        if current_response == CLAUDE_ERROR_MESSAGE:
+            raise ValueError(f"{CLAUDE_ERROR_MESSAGE}")
         if current_response is None:
             messages = [
                 {
@@ -61,13 +61,13 @@ def analyze_methodology(text: str, prompt_list: list[tuple[str, int]]) -> str:
                 }
             ]
             current_response = send_msg_to_model(messages=messages)
-    return current_response
+    return current_response if current_response != CLAUDE_ERROR_MESSAGE else None
 
 def transcribe_audio_raw(
     file_path: str,
-    model_name: str = TRANSCRIBATION_MODEL_NAME,
-    api_key: str = OPENAI_API_KEY,
-    base_url: str = OPENAI_BASE_URL,
+    model_name: str | None = TRANSCRIPTION_MODEL_NAME,
+    api_key: str | None = OPENAI_API_KEY,
+    base_url: str | None = OPENAI_BASE_URL,
     chunk_length_ms: int =3 * 60_000,  # 3 минуты
 ) -> str:
     """
@@ -81,7 +81,7 @@ def transcribe_audio_raw(
         duration_ms = len(sound)
         out_texts = []
 
-        client = OpenAI(api_key=api_key, base_url=base_url)
+        client = OpenAI(api_key=api_key or "", base_url=base_url)
 
         start_ms = 0
         end_ms = chunk_length_ms
@@ -141,10 +141,10 @@ def extract_from_chunk(text: str, chunk: str, extract_prompt: str) -> str:
         return "##not_found##"
     
 def generate_db_answer(query: str,    
-                       db_index, # векторная база знаний
+                       db_index: FAISS, # векторная база знаний
                        k: int=15,      # используемое к-во чанков
                        verbose: bool=True, # выводить ли на экран выбранные чанки
-                       model: str=REPORT_MODEL_NAME
+                       model: str | None=REPORT_MODEL_NAME
                        ):
     system_prompt = """Перед тобой отчеты из бд, касающиеся анализа проведенных интервью с клиентами, а также анализа аудитов дизайна различных
     объектов (зоны отеля, рестораны, центры здоровья (СПА)) от нескольких разных дизайнеров . Это малая часть отчетов, которые 
@@ -182,16 +182,16 @@ def generate_db_answer(query: str,
 
     messages = [{"role": "user", "content": f'Вопрос пользователя: {query}'}]
     
-    response = send_msg_to_model(messages=messages, model=model, system=f'{system_prompt} Вот наиболее релевантные отчеты из бд: \n{message_content}')
+    response = send_msg_to_model(messages=messages, model=model or REPORT_MODEL_NAME or "claude-3-5-sonnet-20241022", system=f'{system_prompt} Вот наиболее релевантные отчеты из бд: \n{message_content}')
     return response
 
 async def send_msg_to_model_async(
-    session,
+    session: aiohttp.ClientSession,
     messages: list[dict[str, Any]],
     system: str,
     model: str,
     api_key: str,
-    err: str = "Ошибка Claude",
+    err: str = CLAUDE_ERROR_MESSAGE,
     max_tokens: int = 20000,
     max_retries: int = 5
 ):
@@ -210,7 +210,7 @@ async def send_msg_to_model_async(
     }
 
     backoff = 1
-    for attempt in range(1, max_retries + 1):
+    for _ in range(1, max_retries + 1):
         try:
             async with session.post(url, headers=headers, json=data) as response:
                 if response.status == 200:
@@ -237,8 +237,8 @@ async def extract_from_chunk_parallel_async(
     chunks: list[str],
     extract_prompt: str,
     api_keys: list[str],
-    session: aiohttp.ClientSession  
-) -> list[str]:
+    session: aiohttp.ClientSession
+) -> list[str | None]:
     """
     Асинхронная обработка чанков с контролем RPM и TPM.
     Чанки равномерно распределяются между моделями через очередь.
@@ -255,7 +255,7 @@ async def extract_from_chunk_parallel_async(
     for idx, chunk in enumerate(chunks):
         await q.put((idx, chunk))
 
-    results = [None] * len(chunks)
+    results: list[str | None] = [None] * len(chunks)
 
     model_semaphores = [BoundedSemaphore(1) for _ in range(len(api_keys))]
 
@@ -288,7 +288,7 @@ async def extract_from_chunk_parallel_async(
                 session=session,
                 messages=messages,
                 system=extract_prompt,
-                model=REPORT_MODEL_NAME,
+                model=REPORT_MODEL_NAME or "claude-3-5-sonnet-20241022",
                 api_key=api_key,
                 err=f"Ошибка при извлечении чанка #{idx}"
             )
@@ -301,7 +301,7 @@ async def extract_from_chunk_parallel_async(
         for model_idx, api_key in enumerate(api_keys)
     ]
 
-    await q.join()
+    await q.join()  # Ожидаем завершения обработки всех задач
 
     for task in workers:
         task.cancel()
@@ -313,7 +313,7 @@ def extract_from_chunk_parallel(
     chunks: list[str],
     extract_prompt: str,
     api_keys: list[str]
-) -> list[str]:
+) -> list[str | None]:
     """
     Параллельно обрабатываем чанки тремя моделями, учитывая:
       - модель 0: 80k токенов/мин (≈1333 ток/сек), 2k запросов/мин (≈33,3 req/сек)
@@ -322,11 +322,11 @@ def extract_from_chunk_parallel(
 
     Для каждого чанка вычисляем токен-задержку и запрос-задержку, берём max.
     """
-    q: queue.Queue = queue.Queue()
+    q: queue.Queue[tuple[int, str]] = queue.Queue()
     for idx, chunk in enumerate(chunks):
         q.put((idx, chunk))
 
-    results: list[str] = [None] * len(chunks)
+    results: list[str | None] = [None] * len(chunks)
 
     # лимиты
     token_limits_per_min = [80000, 20000, 20000, 20000, 20000, 20000, 20000]
@@ -365,7 +365,7 @@ def extract_from_chunk_parallel(
                 messages=[{"role": "user", "content": user_content}],
                 system=extract_prompt,
                 err=f"Ошибка при извлечении чанка #{idx}",
-                model=REPORT_MODEL_NAME,
+                model=REPORT_MODEL_NAME or "claude-3-5-sonnet-20241022",
                 api_key=api_key
             )
             results[idx] = resp
@@ -391,7 +391,7 @@ def extract_from_chunk_parallel(
 
     return results
 
-def classify_report_type(text: str, prompt_name: str) -> int:
+def classify_report_type(text: str, prompt_name: str) -> int | None:
     classification_prompt = fetch_prompt_by_name(prompt_name=prompt_name)
     classification_result = send_msg_to_model(system=classification_prompt, messages=[{"role": "user", "content": text}], max_tokens=1000)
     classification_result = classification_result.strip()
@@ -421,15 +421,19 @@ def classify_query(text: str) -> str:
         return "Не определено"
 
 def send_msg_to_model(
-        messages: list,
-        system: str = None,
-        err: str="Ошибка Claude", 
+        messages: list[dict[str, Any]],
+        system: str | None = None,
+        err: str=CLAUDE_ERROR_MESSAGE, 
         max_tokens: int=20000,
-        model: str=REPORT_MODEL_NAME,
-        api_key: str=ANTHROPIC_API_KEY
+        model: str | None=REPORT_MODEL_NAME,
+        api_key: str | None=ANTHROPIC_API_KEY
         ) -> str:
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key or "")
+
+    # Установим значение по умолчанию для модели если None
+    if model is None:
+        model = "claude-3-5-sonnet-20241022"
 
         
     model_args = {

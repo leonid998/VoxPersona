@@ -1,5 +1,6 @@
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datamodels import mapping_scenario_names
+from constants import BUTTON_BACK, BUTTON_BACK_WITH_ARROW
 
 def main_menu_markup():
     return InlineKeyboardMarkup([
@@ -13,7 +14,7 @@ def main_menu_markup():
 def storage_menu_markup():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Аудио файлы", callback_data="view||audio")],
-        [InlineKeyboardButton("Назад", callback_data="menu_main")]
+        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
     ])
 
 def confirm_menu_markup(mode: str, file_number: int,  employee: str, building_type: str, place: str, date: str, city: str, zone_name: str, client: str):
@@ -62,7 +63,7 @@ def edit_menu_markup(mode: str):
     else:
         markups.append([InlineKeyboardButton("ФИО Клиента", callback_data="edit_client")],)
     
-    markups.append([InlineKeyboardButton("« Назад", callback_data="back_to_confirm")])
+    markups.append([InlineKeyboardButton(BUTTON_BACK_WITH_ARROW, callback_data="back_to_confirm")])
 
     kb = InlineKeyboardMarkup(markups)
     return kb
@@ -92,7 +93,7 @@ def help_menu_markup():
         "3) Структурированный отчёт (авто)\n\n"
         "Макс 2 ГБ, без ffmpeg."
     )
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("Назад", callback_data="menu_main")]])
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]])
     return kb, text_
 
 def interview_or_design_menu():
@@ -101,7 +102,7 @@ def interview_or_design_menu():
         [
             InlineKeyboardButton("ИНТЕРВЬЮ", callback_data="mode_interview"),
             InlineKeyboardButton("ДИЗАЙН", callback_data="mode_design"),
-            InlineKeyboardButton("Назад", callback_data="menu_main")
+            InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")
         ]
     ])
 
@@ -121,7 +122,7 @@ def interview_menu_markup():
         [InlineKeyboardButton("2) Отчет о связках", callback_data="report_int_links")],
         [InlineKeyboardButton("3) Общие факторы", callback_data="report_int_general")],
         [InlineKeyboardButton("4) Факторы в этом заведении", callback_data="report_int_specific")],
-        [InlineKeyboardButton("Назад", callback_data="menu_main")]
+        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
     ])
 
 def design_menu_markup():
@@ -129,5 +130,5 @@ def design_menu_markup():
         [InlineKeyboardButton("1) Оценка методологии аудита", callback_data="report_design_audit_methodology")],
         [InlineKeyboardButton("2) Соответствие программе аудита", callback_data="report_design_compliance")],
         [InlineKeyboardButton("3) Структурированный отчет аудита", callback_data="report_design_structured")],
-        [InlineKeyboardButton("Назад", callback_data="menu_main")]
+        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
     ])
