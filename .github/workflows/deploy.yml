@@ -33,6 +33,18 @@ jobs:
       with:
         fetch-depth: 0
     
+    - name: Set up Python 3.10.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10.11"
+    
+    - name: Verify Python version compatibility
+      run: |
+        echo "🐍 Checking Python version..."
+        python --version
+        python -c "import sys; assert sys.version_info[:2] == (3, 10), f'Expected Python 3.10, got {sys.version_info[:2]}'"
+        echo "✅ Python version verified: $(python --version)"
+    
     - name: Setup SSH Key
       uses: webfactory/ssh-agent@v0.7.0
       with:
