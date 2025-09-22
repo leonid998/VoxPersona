@@ -115,20 +115,24 @@ jobs:
             echo "📥 Updating existing repository..."
             cd ${{ env.PROJECT_PATH }}
             git fetch origin
-            git reset --hard origin/${{ github.ref_name }}
+            git reset --hard origin/main
           fi
         '
     
     - name: Analyze changes and determine deployment type
       id: deployment_analysis
+      env:
+        VALIDATED_RESTART_TYPE: ${{ steps.validate_inputs.outputs.validated_restart_type }}
+        OLD_COMMIT: ${{ steps.deployment_state.outputs.old_commit }}
+        NEW_COMMIT: ${{ steps.deployment_state.outputs.new_commit }}
       run: |
         echo "🔍 Analyzing changes to determine deployment type..."
         
         # Get changed files between commits
         CHANGED_FILES=$(ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
           cd ${{ env.PROJECT_PATH }}
-          if [ '${{ steps.deployment_state.outputs.old_commit }}' != 'none' ]; then
-            git diff --name-only ${{ steps.deployment_state.outputs.old_commit }} ${{ steps.deployment_state.outputs.new_commit }}
+          if [ '$OLD_COMMIT' != 'none' ]; then
+            git diff --name-only $OLD_COMMIT $NEW_COMMIT
           else
             echo 'Initial deployment - treating as FULL_RESTART'
             echo 'docker-compose.yml'
@@ -139,7 +143,6 @@ jobs:
         echo "$CHANGED_FILES"
         
         # Determine deployment type based on manual input or file analysis
-        VALIDATED_RESTART_TYPE="${{ steps.validate_inputs.outputs.validated_restart_type }}"
         if [ "$VALIDATED_RESTART_TYPE" != "" ] && [ "$VALIDATED_RESTART_TYPE" != "auto" ]; then
           case "$VALIDATED_RESTART_TYPE" in
             "full") DEPLOY_TYPE="FULL_RESTART" ;;
@@ -149,7 +152,7 @@ jobs:
           echo "🎯 Manual deployment type: $DEPLOY_TYPE"
         else
           # Automatic detection logic
-          if echo "$CHANGED_FILES" | grep -E "(docker-compose\.yml|Dockerfile|requirements\.txt|\.sql$|sql_scripts/)" > /dev/null || [ '${{ steps.deployment_state.outputs.old_commit }}' = 'none' ]; then
+          if echo "$CHANGED_FILES" | grep -E "(docker-compose\.yml|Dockerfile|requirements\.txt|\.sql$|sql_scripts/)" > /dev/null || [ "$OLD_COMMIT" = "none" ]; then
             DEPLOY_TYPE="FULL_RESTART"
             echo "🔄 Detected FULL_RESTART: Infrastructure files changed"
           elif echo "$CHANGED_FILES" | grep -E "(\.py$|src/|prompts/|prompts-by-scenario/)" > /dev/null; then
@@ -184,29 +187,30 @@ jobs:
     
     - name: Execute deployment
       id: execute_deployment
+      env:
+        DEPLOY_TYPE: ${{ steps.deployment_analysis.outputs.deployment_type }}
       run: |
-        DEPLOY_TYPE="${{ steps.deployment_analysis.outputs.deployment_type }}"
         echo "🚀 Executing $DEPLOY_TYPE deployment..."
         
         ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
           cd ${{ env.APP_PATH }}
           
-          case "$DEPLOY_TYPE" in
-            "FULL_RESTART")
+          case '$DEPLOY_TYPE' in
+            'FULL_RESTART')
               echo '🔄 Executing FULL_RESTART: Rebuilding all containers...'
               docker-compose down || true
               docker-compose build --no-cache
               docker-compose up -d
               echo '✅ FULL_RESTART completed'
               ;;
-            "APP_ONLY")
+            'APP_ONLY')
               echo '🚀 Executing APP_ONLY: Rebuilding app container...'
               docker-compose stop voxpersona || true
               docker-compose build voxpersona
               docker-compose up -d voxpersona
               echo '✅ APP_ONLY completed'
               ;;
-            "NO_RESTART")
+            'NO_RESTART')
               echo '📝 Executing NO_RESTART: Files synced, no container restart needed'
               echo '✅ NO_RESTART completed'
               ;;
@@ -215,9 +219,9 @@ jobs:
     
     - name: Health checks and verification
       id: health_check
+      env:
+        DEPLOY_TYPE: ${{ steps.deployment_analysis.outputs.deployment_type }}
       run: |
-        DEPLOY_TYPE="${{ steps.deployment_analysis.outputs.deployment_type }}"
-        
         if [ "$DEPLOY_TYPE" != "NO_RESTART" ]; then
           echo "🏥 Running health checks..."
           
@@ -242,7 +246,7 @@ jobs:
             fi
             
             # Additional health checks for full restart
-            if [ "$DEPLOY_TYPE" = "FULL_RESTART" ]; then
+            if [ '$DEPLOY_TYPE' = 'FULL_RESTART' ]; then
               POSTGRES_STATUS=\$(docker ps --filter 'name=voxpersona_postgres' --format '{{.Status}}')
               if [[ \$POSTGRES_STATUS == *'Up'* ]]; then
                 echo '✅ PostgreSQL container is running'
@@ -268,41 +272,56 @@ jobs:
     
     - name: Calculate deployment metrics
       id: metrics
+      env:
+        DEPLOY_START: ${{ steps.deployment_state.outputs.deploy_start }}
+        DEPLOY_TYPE: ${{ steps.deployment_analysis.outputs.deployment_type }}
+        FILES_CHANGED: ${{ steps.deployment_analysis.outputs.changed_files_count }}
+        OLD_COMMIT: ${{ steps.deployment_state.outputs.old_commit }}
+        NEW_COMMIT: ${{ steps.deployment_state.outputs.new_commit }}
       run: |
         DEPLOY_END=$(date +%s)
-        DURATION=$((DEPLOY_END - ${{ steps.deployment_state.outputs.deploy_start }}))
+        DURATION=$((DEPLOY_END - DEPLOY_START))
         echo "duration=$DURATION" >> $GITHUB_OUTPUT
         
         echo "📊 Deployment Metrics:"
-        echo "  - Type: ${{ steps.deployment_analysis.outputs.deployment_type }}"
+        echo "  - Type: $DEPLOY_TYPE"
         echo "  - Duration: ${DURATION}s"
-        echo "  - Files changed: ${{ steps.deployment_analysis.outputs.changed_files_count }}"
-        echo "  - Commit: ${{ steps.deployment_state.outputs.old_commit }} → ${{ steps.deployment_state.outputs.new_commit }}"
+        echo "  - Files changed: $FILES_CHANGED"
+        echo "  - Commit: $OLD_COMMIT → $NEW_COMMIT"
     
     - name: Log deployment success
+      env:
+        DEPLOY_TYPE: ${{ steps.deployment_analysis.outputs.deployment_type }}
+        OLD_COMMIT: ${{ steps.deployment_state.outputs.old_commit }}
+        NEW_COMMIT: ${{ steps.deployment_state.outputs.new_commit }}
+        DURATION: ${{ steps.metrics.outputs.duration }}
+        COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
       run: |
         echo "✅ Deployment completed successfully!"
         
         # Log to server
         ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-          echo '$(date -Iseconds) [DEPLOY] ${{ steps.deployment_analysis.outputs.deployment_type }}: ${{ steps.deployment_state.outputs.old_commit }} → ${{ steps.deployment_state.outputs.new_commit }} (${{ steps.metrics.outputs.duration }}s)' >> ${{ env.APP_PATH }}/deployment.log
+          echo '$(date -Iseconds) [DEPLOY] $DEPLOY_TYPE: $OLD_COMMIT → $NEW_COMMIT (${DURATION}s)' >> ${{ env.APP_PATH }}/deployment.log
         "
         
         echo "🎉 VoxPersona deployment completed:"
-        echo "  ✨ Type: ${{ steps.deployment_analysis.outputs.deployment_type }}"
-        echo "  ⏱️  Duration: ${{ steps.metrics.outputs.duration }} seconds"
-        echo "  📝 Commit: ${{ github.event.head_commit.message }}"
+        echo "  ✨ Type: $DEPLOY_TYPE"
+        echo "  ⏱️  Duration: $DURATION seconds"
+        echo "  📝 Commit: $COMMIT_MESSAGE"
     
     - name: Rollback on failure
       if: failure()
+      env:
+        OLD_COMMIT: ${{ steps.deployment_state.outputs.old_commit }}
+        NEW_COMMIT: ${{ steps.deployment_state.outputs.new_commit }}
       run: |
         echo "🚨 Deployment failed, initiating rollback..."
         
-        if [ "${{ steps.deployment_state.outputs.old_commit }}" != "none" ]; then
+        if [ "$OLD_COMMIT" != "none" ]; then
           ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
             cd ${{ env.PROJECT_PATH }}
-            echo '🔄 Rolling back to previous commit: ${{ steps.deployment_state.outputs.old_commit }}'
-            git reset --hard ${{ steps.deployment_state.outputs.old_commit }}
+            echo '🔄 Rolling back to previous commit: $OLD_COMMIT'
+            git reset --hard $OLD_COMMIT
             
             # Re-sync files
             rsync -av --delete --exclude='.git' ${{ env.PROJECT_PATH }}/ ${{ env.APP_PATH }}/
@@ -320,14 +339,18 @@ jobs:
         
         # Log failure
         ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-          echo '$(date -Iseconds) [DEPLOY-FAILED] Rollback executed: ${{ steps.deployment_state.outputs.new_commit }} → ${{ steps.deployment_state.outputs.old_commit }}' >> ${{ env.APP_PATH }}/deployment.log
+          echo '$(date -Iseconds) [DEPLOY-FAILED] Rollback executed: $NEW_COMMIT → $OLD_COMMIT' >> ${{ env.APP_PATH }}/deployment.log
         " || true
     
     - name: Notify on failure
       if: failure()
+      env:
+        TARGET_COMMIT: ${{ github.sha }}
+        COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        DEPLOY_TYPE: ${{ steps.deployment_analysis.outputs.deployment_type }}
       run: |
         echo "💥 Deployment Failed Summary:"
-        echo "  🎯 Target commit: ${{ github.sha }}"
-        echo "  📝 Commit message: ${{ github.event.head_commit.message }}"
-        echo "  🔄 Deployment type: ${{ steps.deployment_analysis.outputs.deployment_type }}"
+        echo "  🎯 Target commit: $TARGET_COMMIT"
+        echo "  📝 Commit message: $COMMIT_MESSAGE"
+        echo "  🔄 Deployment type: $DEPLOY_TYPE"
         echo "  ⚠️  Check deployment logs on server: ${{ env.APP_PATH }}/deployment.log"
