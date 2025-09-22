@@ -93,7 +93,7 @@ class TestMinimalFunctionality(unittest.TestCase):
     def test_utilities_basic(self):
         """Test basic utility functions"""
         try:
-            from src.utils import openai_audio_filter, count_tokens
+            from src.utils import openai_audio_filter, count_tokens, HAS_SENTENCE_TRANSFORMERS
             
             # Test count_tokens function
             test_text = "Hello world"
@@ -101,12 +101,36 @@ class TestMinimalFunctionality(unittest.TestCase):
             self.assertIsInstance(token_count, int)
             self.assertGreater(token_count, 0)
             
+            # Test sentence transformers availability detection
+            if is_ci_environment():
+                # In CI, sentence_transformers should not be available
+                self.assertFalse(HAS_SENTENCE_TRANSFORMERS, "sentence_transformers should not be available in CI")
+                print("✅ sentence_transformers correctly unavailable in CI")
+            else:
+                print(f"📦 sentence_transformers available: {HAS_SENTENCE_TRANSFORMERS}")
+            
             print(f"✅ Utilities work: '{test_text}' -> {token_count} tokens")
             
         except ImportError as e:
             self.skipTest(f"Utils not available: {e}")
         except AttributeError as e:
             self.skipTest(f"Utility functions not available: {e}")
+    
+    def test_embedding_model_fallback(self):
+        """Test that embedding model gracefully handles missing dependencies"""
+        try:
+            from src.utils import get_embedding_model, HAS_SENTENCE_TRANSFORMERS
+            
+            if not HAS_SENTENCE_TRANSFORMERS:
+                # In CI environment, should return None gracefully
+                model = get_embedding_model()
+                self.assertIsNone(model, "Embedding model should return None when dependencies missing")
+                print("✅ Embedding model gracefully handles missing dependencies")
+            else:
+                print("📦 Embedding model dependencies available")
+                
+        except ImportError as e:
+            self.skipTest(f"Utils not available: {e}")
 
 if __name__ == '__main__':
     print("Running CI-Compatible Tests for VoxPersona")

@@ -1,19 +1,33 @@
 import time
 import threading
+import time
+import os
 from pyrogram import Client
 from pyrogram.types import Message
 from io import StringIO
 from langchain.embeddings.base import Embeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
 import logging
 from datamodels import spinner_chars, OPENAI_AUDIO_EXTS
 from config import EMBEDDING_MODEL, ENC
+
+# Условный импорт для sentence_transformers
+try:
+    from sentence_transformers import SentenceTransformer
+    HAS_SENTENCE_TRANSFORMERS = True
+except ImportError:
+    HAS_SENTENCE_TRANSFORMERS = False
+    SentenceTransformer = None
+    if not os.getenv('CI'):
+        logging.warning("sentence_transformers не установлен. Некоторые функции могут быть недоступны.")
 
 
 def get_embedding_model():
     global EMBEDDING_MODEL
     if EMBEDDING_MODEL is None:
+        if not HAS_SENTENCE_TRANSFORMERS:
+            logging.error("sentence_transformers не установлен, модель эмбеддингов недоступна")
+            return None
         logging.info("Загружаем локальную модель эмбеддингов BAAI/bge-m3...")
         EMBEDDING_MODEL = SentenceTransformer('all-MiniLM-L6-v2', device='cpu') #SentenceTransformer('BAAI/bge-m3', device='cpu') #SentenceTransformer('all-MiniLM-L6-v2', device='cpu')  
     return EMBEDDING_MODEL
