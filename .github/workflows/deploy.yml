@@ -28,6 +28,26 @@ jobs:
     timeout-minutes: 15
     
     steps:
+    - name: Validate and sanitize user inputs
+      id: validate_inputs
+      env:
+        USER_RESTART_TYPE: ${{ github.event.inputs.force_restart_type || 'auto' }}
+      run: |
+        echo "🔒 Validating user inputs for security..."
+        
+        # Validate force_restart_type input using environment variable only
+        case "$USER_RESTART_TYPE" in
+          "auto"|"full"|"app-only"|"no-restart")
+            echo "✅ Valid restart type: $USER_RESTART_TYPE"
+            echo "validated_restart_type=$USER_RESTART_TYPE" >> $GITHUB_OUTPUT
+            ;;
+          *)
+            echo "❌ Invalid restart type: $USER_RESTART_TYPE"
+            echo "🔒 Only allowed values: auto, full, app-only, no-restart"
+            exit 1
+            ;;
+        esac
+    
     - name: Checkout code
       uses: actions/checkout@v4
       with:
@@ -119,8 +139,9 @@ jobs:
         echo "$CHANGED_FILES"
         
         # Determine deployment type based on manual input or file analysis
-        if [ "${{ github.event.inputs.force_restart_type }}" != "" ] && [ "${{ github.event.inputs.force_restart_type }}" != "auto" ]; then
-          case "${{ github.event.inputs.force_restart_type }}" in
+        VALIDATED_RESTART_TYPE="${{ steps.validate_inputs.outputs.validated_restart_type }}"
+        if [ "$VALIDATED_RESTART_TYPE" != "" ] && [ "$VALIDATED_RESTART_TYPE" != "auto" ]; then
+          case "$VALIDATED_RESTART_TYPE" in
             "full") DEPLOY_TYPE="FULL_RESTART" ;;
             "app-only") DEPLOY_TYPE="APP_ONLY" ;;
             "no-restart") DEPLOY_TYPE="NO_RESTART" ;;
@@ -170,22 +191,22 @@ jobs:
         ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
           cd ${{ env.APP_PATH }}
           
-          case '$DEPLOY_TYPE' in
-            'FULL_RESTART')
+          case "$DEPLOY_TYPE" in
+            "FULL_RESTART")
               echo '🔄 Executing FULL_RESTART: Rebuilding all containers...'
               docker-compose down || true
               docker-compose build --no-cache
               docker-compose up -d
               echo '✅ FULL_RESTART completed'
               ;;
-            'APP_ONLY')
+            "APP_ONLY")
               echo '🚀 Executing APP_ONLY: Rebuilding app container...'
               docker-compose stop voxpersona || true
               docker-compose build voxpersona
               docker-compose up -d voxpersona
               echo '✅ APP_ONLY completed'
               ;;
-            'NO_RESTART')
+            "NO_RESTART")
               echo '📝 Executing NO_RESTART: Files synced, no container restart needed'
               echo '✅ NO_RESTART completed'
               ;;
@@ -221,7 +242,7 @@ jobs:
             fi
             
             # Additional health checks for full restart
-            if [ '$DEPLOY_TYPE' = 'FULL_RESTART' ]; then
+            if [ "$DEPLOY_TYPE" = "FULL_RESTART" ]; then
               POSTGRES_STATUS=\$(docker ps --filter 'name=voxpersona_postgres' --format '{{.Status}}')
               if [[ \$POSTGRES_STATUS == *'Up'* ]]; then
                 echo '✅ PostgreSQL container is running'
