@@ -2,11 +2,11 @@ FROM python:3.10.11-slim
 
 # Устанавливаем системные зависимости
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    libpq-dev \
-    gcc \
-    g++ \
     build-essential \
+    ffmpeg \
+    g++ \
+    gcc \
+    libpq-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
@@ -19,21 +19,18 @@ COPY requirements.txt ./
 # чтобы контейнер строился на CPU‑версии библиотек. Это исключает
 # faiss-gpu и triton, которые требуют CUDA, в то время как код VoxPersona
 # использует faiss-cpu и CPU‑вариант sentence‑transformers.
+# Также устанавливаем PyTorch (CPU‑версия) и sentence-transformers,
+# и заранее скачиваем модели для кэширования в образе.
 RUN pip install --no-cache-dir --upgrade pip && \
     # удалить строки с GPU пакетами (faiss-gpu и triton)
     sed -i '/^faiss-gpu/d;/^triton/d' requirements.txt && \
     # установить оставшиеся зависимости
-    pip install --no-cache-dir -r requirements.txt
-
-# ---------------------------------------------------------------------------------
-# Additional dependencies and model downloads
-#
-# После установки зависимостей из requirements.txt нам необходимо установить PyTorch
-# (CPU‑версия) и библиотеку sentence-transformers, а также заранее скачать модели
-# BAAI/bge-m3 и sentence-transformers/all-MiniLM-L6-v2. Мы делаем это в отдельной
-# инструкции RUN, чтобы эти операции выполнялись во время сборки образа и не
-# требовали интернет‑доступа при запуске контейнера.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu sentence-transformers && \
+    pip install --no-cache-dir -r requirements.txt && \
+    # установить PyTorch CPU версию и sentence-transformers
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu sentence-transformers && \
+    # создать директорию для логов
+    mkdir -p /app/logs && \
+    # предварительно скачать модели для кэширования
     python - <<'PY'
 from sentence_transformers import SentenceTransformer
 
@@ -57,8 +54,7 @@ COPY prompts/ ./prompts/
 COPY prompts-by-scenario/ ./prompts-by-scenario/
 COPY sql_scripts/ ./sql_scripts/
 
-# Создаем директорию для логов внутри контейнера
-RUN mkdir -p /app/logs
+
 
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
