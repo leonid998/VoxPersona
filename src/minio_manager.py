@@ -14,11 +14,10 @@ import time
 import logging
 import io
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any, Callable
+from typing import Any, Callable
 from dataclasses import dataclass
 from minio import Minio
 from minio.error import S3Error
-from minio.commonconfig import CopySource
 import urllib3
 
 from .config import (
@@ -38,7 +37,7 @@ class ObjectInfo:
     etag: str
     last_modified: datetime
     content_type: str
-    metadata: Dict[str, str]
+    metadata: dict[str, str]
     is_dir: bool = False
 
 
@@ -84,7 +83,7 @@ class RetryableMinIOOperation:
         self.backoff_factor = backoff_factor
         self.max_delay = max_delay
     
-    def execute_with_retry(self, operation: Callable, *args, **kwargs) -> Any:
+    def execute_with_retry(self, operation: Callable[..., Any], *args, **kwargs) -> Any:
         """Execute MinIO operation with exponential backoff retry"""
         last_exception = None
         
@@ -99,7 +98,7 @@ class RetryableMinIOOperation:
                 delay = min(self.backoff_factor ** attempt, self.max_delay)
                 logging.warning(f"MinIO operation failed (attempt {attempt + 1}/{self.max_retries + 1}): {e}")
                 logging.info(f"Retrying in {delay:.2f} seconds...")
-                time.sleep(delay)
+                _ = time.sleep(delay)
         
         raise MinIOError(f"Operation failed after {self.max_retries + 1} attempts: {last_exception}")
 
@@ -170,7 +169,7 @@ class MinIOHealthMonitor:
             total_ops = self.metrics['operations_total']
             self.metrics['average_response_time'] = (current_avg * (total_ops - 1) + duration) / total_ops
     
-    def get_health_report(self) -> Dict[str, Any]:
+    def get_health_report(self) -> dict[str, Any]:
         """Generate comprehensive health report"""
         success_rate = 0.0
         if self.metrics['operations_total'] > 0:
@@ -187,13 +186,13 @@ class MinIOHealthMonitor:
 class MinIOManager:
     """Enhanced MinIO Manager with comprehensive functionality"""
     
-    def __init__(self, endpoint: str = None, access_key: str = None, secret_key: str = None):
+    def __init__(self, endpoint: str | None = None, access_key: str | None = None, secret_key: str | None = None):
         self.endpoint = endpoint or MINIO_ENDPOINT
         self.access_key = access_key or MINIO_ACCESS_KEY
         self.secret_key = secret_key or MINIO_SECRET_KEY
         
-        self.client: Optional[Minio] = None
-        self.health_monitor: Optional[MinIOHealthMonitor] = None
+        self.client: Minio | None = None
+        self.health_monitor: MinIOHealthMonitor | None = None
         self.retry_handler = RetryableMinIOOperation()
         
         self._validate_config()
@@ -239,6 +238,9 @@ class MinIOManager:
     
     def _ensure_buckets_exist(self):
         """Create required buckets if they don't exist"""
+        if not self.client:
+            raise MinIOConnectionError("MinIO client not initialized")
+            
         required_buckets = [MINIO_BUCKET_NAME, MINIO_AUDIO_BUCKET_NAME]
         
         for bucket_name in required_buckets:
@@ -261,14 +263,17 @@ class MinIOManager:
     
     def get_client(self) -> Minio:
         """Get validated MinIO client instance"""
-        if not self.client or not self.health_monitor.health_check():
+        if not self.client or not self.health_monitor or not self.health_monitor.health_check():
             self._initialize_client()
+        
+        if not self.client:
+            raise MinIOConnectionError("Failed to initialize MinIO client")
         
         return self.client
     
-    def upload_audio_file(self, file_path: str, object_name: str = None, 
-                         metadata: Dict[str, str] = None, 
-                         progress_callback: Callable[[UploadProgress], None] = None) -> bool:
+    def upload_audio_file(self, file_path: str, object_name: str | None = None, 
+                         metadata: dict[str, str] | None = None, 
+                         progress_callback: Callable[[UploadProgress], None] | None = None) -> bool:
         """Upload audio file to MinIO with metadata and progress tracking"""
         if not os.path.exists(file_path):
             raise MinIOUploadError(f"File not found: {file_path}")
@@ -289,6 +294,9 @@ class MinIOManager:
         })
         
         def upload_operation():
+            if not self.client or not self.health_monitor:
+                raise MinIOUploadError("MinIO client not initialized")
+                
             start_time = time.time()
             file_size = os.path.getsize(file_path)
             
@@ -319,8 +327,11 @@ class MinIOManager:
         return self.retry_handler.execute_with_retry(upload_operation)
     
     def _upload_with_progress(self, file_path: str, bucket_name: str, object_name: str,
-                            metadata: Dict[str, str], progress_callback: Callable, total_size: int):
+                            metadata: dict[str, str], progress_callback: Callable[[UploadProgress], None], total_size: int):
         """Upload file with progress tracking"""
+        if not self.client:
+            raise MinIOUploadError("MinIO client not initialized")
+            
         # For progress tracking, we'll need to use put_object with a custom stream
         # This is a simplified implementation
         with open(file_path, 'rb') as file_data:
@@ -332,7 +343,7 @@ class MinIOManager:
                 metadata=metadata
             )
     
-    def download_audio_file(self, object_name: str, local_path: str = None) -> str:
+    def download_audio_file(self, object_name: str, local_path: str | None = None) -> str:
         """Download audio file from MinIO"""
         bucket_name = MINIO_AUDIO_BUCKET_NAME
         if not bucket_name:
@@ -342,6 +353,9 @@ class MinIOManager:
             local_path = os.path.join(os.getcwd(), object_name)
         
         def download_operation():
+            if not self.client or not self.health_monitor:
+                raise MinIODownloadError("MinIO client not initialized")
+                
             start_time = time.time()
             
             try:
@@ -368,6 +382,9 @@ class MinIOManager:
             raise MinIODownloadError("MINIO_AUDIO_BUCKET_NAME not configured")
         
         def stream_operation():
+            if not self.client or not self.health_monitor:
+                raise MinIODownloadError("MinIO client not initialized")
+                
             start_time = time.time()
             
             try:
@@ -393,6 +410,9 @@ class MinIOManager:
             raise MinIODeleteError("MINIO_AUDIO_BUCKET_NAME not configured")
         
         def delete_operation():
+            if not self.client or not self.health_monitor:
+                raise MinIODeleteError("MinIO client not initialized")
+                
             start_time = time.time()
             
             try:
@@ -411,8 +431,8 @@ class MinIOManager:
         
         return self.retry_handler.execute_with_retry(delete_operation)
     
-    def list_user_audio_files(self, user_id: int = None, prefix: str = None, 
-                             max_results: int = 1000) -> List[ObjectInfo]:
+    def list_user_audio_files(self, user_id: int | None = None, prefix: str | None = None, 
+                             max_results: int = 1000) -> list[ObjectInfo]:
         """List audio files for specific user or with prefix"""
         bucket_name = MINIO_AUDIO_BUCKET_NAME
         if not bucket_name:
@@ -423,6 +443,9 @@ class MinIOManager:
             search_prefix = f"user_{user_id}/" + search_prefix
         
         def list_operation():
+            if not self.client or not self.health_monitor:
+                raise MinIOError("MinIO client not initialized")
+                
             start_time = time.time()
             
             try:
@@ -463,6 +486,9 @@ class MinIOManager:
     
     def cleanup_old_files(self, days_old: int = 30) -> int:
         """Clean up files older than specified days"""
+        if not self.client:
+            raise MinIOError("MinIO client not initialized")
+            
         bucket_name = MINIO_AUDIO_BUCKET_NAME
         if not bucket_name:
             raise MinIOError("MINIO_AUDIO_BUCKET_NAME not configured")
@@ -490,7 +516,7 @@ class MinIOManager:
             logging.error(f"Cleanup operation failed: {e}")
             raise MinIOError(f"Cleanup failed: {e}")
     
-    def search_files_by_metadata(self, filters: Dict[str, str]) -> List[ObjectInfo]:
+    def search_files_by_metadata(self, filters: dict[str, str]) -> list[ObjectInfo]:
         """Search files by metadata criteria"""
         all_files = self.list_user_audio_files()
         matching_files = []
@@ -507,8 +533,11 @@ class MinIOManager:
         
         return matching_files
     
-    def get_storage_usage(self) -> Dict[str, Any]:
+    def get_storage_usage(self) -> dict[str, Any]:
         """Get storage usage statistics"""
+        if not self.client:
+            return {}
+            
         try:
             total_size = 0
             file_count = 0
@@ -532,7 +561,7 @@ class MinIOManager:
             logging.error(f"Failed to get storage usage: {e}")
             return {}
     
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get comprehensive health status"""
         health_report = self.health_monitor.get_health_report() if self.health_monitor else {}
         storage_usage = self.get_storage_usage()
@@ -549,7 +578,7 @@ class MinIOManager:
 
 
 # Global MinIO manager instance
-_minio_manager: Optional[MinIOManager] = None
+_minio_manager: MinIOManager | None = None
 
 
 def get_minio_manager() -> MinIOManager:
