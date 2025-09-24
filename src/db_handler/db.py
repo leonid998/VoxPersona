@@ -1,15 +1,19 @@
 import logging
-import psycopg2  # pyright: ignore[reportMissingModuleSource]
+import psycopg2  # pyright: ignore[reportMissingModuleSource]  
+import psycopg2.extensions  # pyright: ignore[reportMissingModuleSource]
 from datetime import datetime
 from functools import wraps
-from typing import Any, Callable, TypeVar, Optional
+from typing import Any, Callable, TypeVar, Optional, cast
 
 from config import DB_CONFIG
+
+# Type alias for database cursor to improve type safety
+DBCursor = psycopg2.extensions.cursor
 
 # Type variable for generic function decoration
 F = TypeVar('F', bound=Callable[..., Any])
 
-def db_transaction(commit: bool = True):
+def db_transaction(commit: bool = True) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Декоратор для выполнения функции внутри контекста подключения к базе данных.
     
@@ -28,7 +32,7 @@ def db_transaction(commit: bool = True):
         return wrapper
     return decorator
 
-def get_db_connection():
+def get_db_connection() -> psycopg2.extensions.connection:
     # Filter out None values and map to correct psycopg2 parameter names
     config = {}
     if DB_CONFIG.get("dbname"):
@@ -45,7 +49,7 @@ def get_db_connection():
     return psycopg2.connect(**config)
 
 @db_transaction(commit=True)
-def get_or_create_client(cursor, client_name: str) -> int:
+def get_or_create_client(cursor: DBCursor, client_name: str) -> int:
     cursor.execute('SELECT "client_id" FROM "client" WHERE "client_name" = %s', (client_name,))
     result = cursor.fetchone()
     if result:
@@ -57,10 +61,13 @@ def get_or_create_client(cursor, client_name: str) -> int:
             (client_name,)
         )
         logging.info(f"Данные в таблицу employee успешно сохранены: client_name = {client_name}")
-        return cursor.fetchone()[0]
+        result = cursor.fetchone()
+        if result is None:
+            raise ValueError(f"Failed to insert client record for client_name = {client_name}")
+        return result[0]
 
 @db_transaction(commit=True)
-def get_or_create_employee(cursor, employee_name: str) -> int:
+def get_or_create_employee(cursor: DBCursor, employee_name: str) -> int:
     cursor.execute('SELECT "employee_id" FROM "employee" WHERE "employee_name" = %s', (employee_name,))
     result = cursor.fetchone()
     if result:
@@ -72,9 +79,13 @@ def get_or_create_employee(cursor, employee_name: str) -> int:
             (employee_name,)
         )
         logging.info(f"Данные в таблицу employee успешно сохранены: employee_name = {employee_name}")
-        return cursor.fetchone()[0]
+        result = cursor.fetchone()
+        if result is None:
+            raise ValueError(f"Failed to insert employee record for employee_name = {employee_name}")
+        return result[0]
     
-def get_or_create_zone(cursor, zone_name: str) -> int:
+@db_transaction(commit=True)
+def get_or_create_zone(cursor: DBCursor, zone_name: str) -> int:
     """
     Ищет зону по названию (zone_name) в таблице zone.
     Если зоны нет — создаёт новую запись.
@@ -100,9 +111,13 @@ def get_or_create_zone(cursor, zone_name: str) -> int:
             (zone_name,)
         )
         logging.info(f"Зона {zone_name} успешно сохранена в таблицу zone")
-        return cursor.fetchone()[0]
+        result = cursor.fetchone()
+        if result is None:
+            raise ValueError(f"Failed to insert zone record for zone_name = {zone_name}")
+        return result[0]
 
-def add_zone_to_place(cursor, place_id: int, zone_id: int):
+@db_transaction(commit=True)
+def add_zone_to_place(cursor: DBCursor, place_id: int, zone_id: int) -> None:
     """
     Добавляет связь между place и zone в таблицу place_zone.
     Гарантирует, что запись в place_zone будет уникальной.
@@ -125,7 +140,7 @@ def add_zone_to_place(cursor, place_id: int, zone_id: int):
         logging.info(f"Связь между place_id = {place_id} и zone_id = {zone_id} уже существует.")
 
 @db_transaction(commit=True)
-def get_or_create_place_with_zone(cursor, place_name: str, building_type: str, zone_name: str) -> int:
+def get_or_create_place_with_zone(cursor: DBCursor, place_name: str, building_type: str, zone_name: str) -> int:
     """
     Ищет место по названию (place_name) в таблице place.
     Если места нет — создаёт новую запись с указанием building_type.
@@ -143,7 +158,10 @@ def get_or_create_place_with_zone(cursor, place_name: str, building_type: str, z
             'INSERT INTO "place" ("place_name", "building_type") VALUES (%s, %s) RETURNING "place_id";',
             (place_name, building_type)
         )
-        place_id = cursor.fetchone()[0]
+        place_id = cursor.fetchone()
+        if place_id is None:
+            raise ValueError(f"Failed to insert place record for place_name = {place_name}, building_type = {building_type}")
+        place_id = place_id[0]
         logging.info(f"Данные в таблицу place успешно сохранены: place_name = {place_name}, building_type = {building_type}")
     
     zone_id = get_or_create_zone(cursor, zone_name)
@@ -153,7 +171,7 @@ def get_or_create_place_with_zone(cursor, place_name: str, building_type: str, z
     return place_id
 
 @db_transaction(commit=True)
-def get_or_create_city(cursor, city_name: str) -> int:
+def get_or_create_city(cursor: DBCursor, city_name: str) -> int:
     """
     Если для каждого заведения хотите создавать entry в city:
     В вашем примере это может быть "Gourmet Inc" для ресторана, "Spa World" и т.д.
@@ -170,10 +188,13 @@ def get_or_create_city(cursor, city_name: str) -> int:
             (city_name,)
         )
         logging.info(f"Данные в таблицу city успешно сохранены: city_name = {city_name}")
-        return cursor.fetchone()[0]
+        result = cursor.fetchone()
+        if result is None:
+            raise ValueError(f"Failed to insert city record for city_name = {city_name}")
+        return result[0]
     
 @db_transaction(commit=True)
-def get_building(cursor, building_type: str) -> int:
+def get_building(cursor: DBCursor, building_type: str) -> int:
     """
     Ищет здание по названию (building_type) в таблице buildings.
     Если такого нет — создаёт новую запись.
@@ -186,8 +207,13 @@ def get_building(cursor, building_type: str) -> int:
         ''',
         (building_type,)
     )
-    result = cursor.fetchone()[0]
+    result_row = cursor.fetchone()
     params = f"building_type = {building_type}"
+    if result_row is None:
+        msg = f"Не удалось получить название здания для {params}"
+        logging.error(msg)
+        raise ValueError(msg)
+    result = result_row[0]
     if result is None:
         msg = f"Не удалось получить название здания для {params}"
         logging.error(msg)
@@ -196,7 +222,7 @@ def get_building(cursor, building_type: str) -> int:
     return result
 
     
-def validate_ids(cursor, building_id: int, report_type_id: int):
+def validate_ids(cursor: DBCursor, building_id: int, report_type_id: int) -> None:
     """
     Validates that the given building_id and report_type_id exist in their respective tables.
     Raises an exception if either ID is invalid.
@@ -214,7 +240,7 @@ def validate_ids(cursor, building_id: int, report_type_id: int):
         raise ValueError(f"Invalid report_type_id: {report_type_id}")
 
 
-def ensure_buildings_report_type_exists(cursor, building_id: int, report_type_id: int):
+def ensure_buildings_report_type_exists(cursor: DBCursor, building_id: int, report_type_id: int) -> None:
     """
     Ensures that the combination of building_id and report_type_id exists in the buildings_report_type table.
     If it does not exist, inserts the combination.
@@ -234,11 +260,11 @@ def ensure_buildings_report_type_exists(cursor, building_id: int, report_type_id
         raise ValueError(msg)
 
 @db_transaction(commit=True)
-def save_user_road(cursor,
+def save_user_road(cursor: DBCursor,
                    audit_id: int,
                    scenario_id: int,
                    report_type_id: int,
-                   building_id: int):
+                   building_id: int) -> int:
     """
     Записываем «прохождение» пользователя в таблицу user_road,
     чтобы зафиксировать связку (audit, scenario, report_type, building).
@@ -260,13 +286,21 @@ def save_user_road(cursor,
         (audit_id, scenario_id, report_type_id, building_id)
     )
     logging.info(f"Данные в таблицу user_road успешно сохранены: audit_id = {audit_id}, scenario_id = {scenario_id}, report_type_id = {report_type_id}, building_id = {building_id}")
-    return cursor.fetchone()[0]
+    result = cursor.fetchone()
+    if result is None:
+        raise ValueError(f"Failed to insert user_road record")
+    return result[0]
 
 @db_transaction(commit=True)
-def get_scenario(cursor, scenario_name: str) -> int:
+def get_scenario(cursor: DBCursor, scenario_name: str) -> int:
     cursor.execute('SELECT "scenario_id" FROM "scenario" WHERE "scenario_name" = %s', (scenario_name,))
-    result = cursor.fetchone()[0]
+    result_row = cursor.fetchone()
     params = f"scenario_name = {scenario_name}"
+    if result_row is None:
+        msg = f"Не удалось получить сценарий для {params}"
+        logging.error(msg)
+        raise ValueError(msg)
+    result = result_row[0]
     if result is None:
         msg = f"Не удалось получить сценарий для {params}"
         logging.error(msg)
@@ -275,7 +309,7 @@ def get_scenario(cursor, scenario_name: str) -> int:
     return result
 
 @db_transaction(commit=True)
-def get_report_type(cursor, report_type_name: str, scenario_id: int) -> int:
+def get_report_type(cursor: DBCursor, report_type_name: str, scenario_id: int) -> int:
     cursor.execute(
         '''SELECT "report_type_id"
            FROM "report_type"
@@ -292,7 +326,7 @@ def get_report_type(cursor, report_type_name: str, scenario_id: int) -> int:
     return result[0]
 
 @db_transaction(commit=True)
-def save_audit(cursor, transcription_id: int, audit_text: str, employee_id: int, place_id: int, audit_date: str, city_id: Optional[int] = None, client_id: Optional[int] = None) -> int:
+def save_audit(cursor: DBCursor, transcription_id: int, audit_text: str, employee_id: int, place_id: int, audit_date: str, city_id: int | None = None, client_id: int | None = None) -> int:
     """
     Создаём новую запись аудита.
     """
@@ -312,7 +346,7 @@ def save_audit(cursor, transcription_id: int, audit_text: str, employee_id: int,
     return result[0]
 
 @db_transaction(commit=True)
-def get_or_save_transcription(cursor, transcription_text: str, audio_file_name: str, number_audio: int) -> int:
+def get_or_save_transcription(cursor: DBCursor, transcription_text: str, audio_file_name: str, number_audio: int) -> int:
     """
     Сохраняем транскрибацию аудио в таблицу transcription.
     """
@@ -330,7 +364,13 @@ def get_or_save_transcription(cursor, transcription_text: str, audio_file_name: 
            RETURNING "transcription_id";''',
         (transcription_text, audio_file_name, transcription_date, number_audio)
     )
-    result = cursor.fetchone()[0]
+    result_row = cursor.fetchone()
+    if result_row is None:
+        params = f"audio_file_name = {audio_file_name}, number_audio = {number_audio}, transcription_date = {transcription_date}"
+        msg = f"Failed to insert transcription record. No transcription_id returned with parameters: {params}"
+        logging.error(msg)
+        raise ValueError(msg)
+    result = result_row[0]
     params = f"audio_file_name = {audio_file_name}, number_audio = {number_audio}, transcription_date = {transcription_date}"
     if result is None:
         msg = f"Failed to insert transcription record. No audit_id returned with parameters: {params}"
@@ -341,14 +381,20 @@ def get_or_save_transcription(cursor, transcription_text: str, audio_file_name: 
 
 
 @db_transaction(commit=False)
-def fetch_prompt_by_name(cursor, prompt_name: str):
+def _fetch_prompt_by_name_impl(cursor: DBCursor, prompt_name: str) -> str:
     query = """
     SELECT p.prompt
     FROM "prompts" p
     WHERE p.prompt_name = %s
     """
     cursor.execute(query, (prompt_name,))
-    result = cursor.fetchone()[0]
+    result_row = cursor.fetchone()
+    if result_row is None:
+        params = f"prompt_name = {prompt_name}"
+        msg = f"Данные из таблицы prompt не найдены: Отсутствует {params}"
+        logging.error(msg)
+        raise ValueError(msg)
+    result = result_row[0]
     params = f"prompt_name = {prompt_name}"
     if result is None:
         msg = f"Данные из таблицы prompt не найдены: Отсутствует {params}"
@@ -357,9 +403,19 @@ def fetch_prompt_by_name(cursor, prompt_name: str):
     logging.info(f"Найдены данные по {params} из таблицы prompts")
     return result
 
+def fetch_prompt_by_name(prompt_name: str) -> str:
+    """
+    Получает промпт по его имени из базы данных.
+    
+    :param prompt_name: Название промпта
+    :return: Текст промпта
+    :raises ValueError: При отсутствии промпта в базе
+    """
+    return _fetch_prompt_by_name_impl(prompt_name)
+
 # Функция для выборки промптов по цепочке scenario->report_type->building->prompts
 @db_transaction(commit=False)
-def fetch_prompts_for_scenario_reporttype_building(cursor, scenario_name: str, report_type_desc: str, building_type: str):
+def fetch_prompts_for_scenario_reporttype_building(cursor: DBCursor, scenario_name: str, report_type_desc: str, building_type: str) -> list[tuple[str, int, bool]]:
     """
     Возвращает список текстов промптов (p.prompt, p.run_part),
     соответствующих указанному сценарию, типу отчёта и зданию.
@@ -401,7 +457,7 @@ def fetch_prompts_for_scenario_reporttype_building(cursor, scenario_name: str, r
     return result
 
 @db_transaction(commit=True)
-def send_generated_query(cursor, query: str):
+def send_generated_query(cursor: DBCursor, query: str) -> list[tuple[Any, ...]]:
     """
     Принимает на вход произвольный запрос к базе данных, сгенерированный моделью
     """

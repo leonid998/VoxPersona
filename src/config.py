@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 import warnings
-from typing import Dict, List, Set
+from typing import List, Set
 from dotenv import load_dotenv
 from typing import TYPE_CHECKING
 
@@ -182,10 +182,10 @@ else:
 
 
 # Глобальные словари/сеты
-processed_texts: Dict[int, str] = {}
-user_states: Dict[int, Dict[str, object]] = {}
+processed_texts: dict[int, str] = {}
+user_states: dict[int, dict[str, object]] = {}
 authorized_users: Set[int] = set()  
-active_menus: Dict[int, List[int]] = {}
+active_menus: dict[int, list[int]] = {}
 
 # Директории хранения (deferred creation pattern)
 STORAGE_DIRS = {

@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Any
 from datetime import datetime
 from datetime import datetime
 import os
@@ -67,29 +67,41 @@ rags = {}
 rags_lock = asyncio.Lock()
 
 
-async def set_rags(new_rags: Dict[str, Any]) -> None:
+async def set_rags(new_rags: dict[str, Any]) -> None:
     """Allow external modules to update loaded RAGs."""
     global rags
     async with rags_lock:
         rags = new_rags
 
-def ask_client(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
+def ask_client(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
+    if not isinstance(data, dict):
+        logging.error("data не является словарем")
+        return
     data["client"] = parse_name(text)
     # Переходим к шагу подтверждения
     state["step"] = "confirm_data"
     show_confirmation_menu(chat_id, state, app)
 
-def ask_employee(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
+def ask_employee(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
+    if not isinstance(data, dict):
+        logging.error("data не является словарем")
+        return
     data["employee"] = parse_name(text)
     state["step"] = "ask_place_name"
     app.send_message(chat_id, "Введите название заведения:")
 
-def ask_building_type(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
+def ask_building_type(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
+    if not isinstance(data, dict):
+        logging.error("data не является словарем")
+        return
     data["building_type"] = parse_building_type(text)
     state["step"] = "ask_zone"
     app.send_message(chat_id, "Введите зону (если она есть) или поставьте -:")
 
-def ask_zone(data: Dict[str, Any], text: str, mode: str, state: Dict[str, Any], chat_id: int, app: Client):
+def ask_zone(data: dict[str, Any], text: str, mode: str, state: dict[str, Any], chat_id: int, app: Client):
+    if not isinstance(data, dict):
+        logging.error("data не является словарем")
+        return
     data['zone_name'] = parse_zone(text)
     if mode == "interview":
         # Для интервью сейчас не запрашиваем город — сразу завершаем сбор
@@ -100,29 +112,41 @@ def ask_zone(data: Dict[str, Any], text: str, mode: str, state: Dict[str, Any], 
         state["step"] = "ask_city"
         app.send_message(chat_id, "Введите город:")
 
-def ask_place_name(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
+def ask_place_name(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
+    if not isinstance(data, dict):
+        logging.error("data не является словарем")
+        return
     data["place_name"] = parse_place_name(text)
     state["step"] = "ask_building_type"
     app.send_message(chat_id, "Введите тип заведения:")
 
-def ask_date(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
+def ask_date(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
     if not validate_date_format(text):
         app.send_message(chat_id, "❌ Неверный формат даты. Используйте формат ГГГГ-ММ-ДД (например, 2025-01-01).")
+        return
+    if not isinstance(data, dict):
+        logging.error("data не является словарем")
         return
     data["date"] = text
     state["step"] = "ask_employee"
     app.send_message(chat_id, "Введите ФИО сотрудника:")
 
-def ask_city(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
+def ask_city(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
+    if not isinstance(data, dict):
+        logging.error("data не является словарем")
+        return
     data["city"] = parse_city(text)
     # Переходим к шагу подтверждения
     state["step"] = "confirm_data"
     show_confirmation_menu(chat_id, state, app)
 
-def ask_audio_number(data: Dict[str, Any], text: str, state: Dict[str, Any], chat_id: int, app: Client):
+def ask_audio_number(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
     """
     Спрашиваем пользователя номер аудио файла.
     """
+    if not isinstance(data, dict):
+        logging.error("data не является словарем")
+        return
     try:
         audio_number = parse_file_number(text)
         data["audio_number"] = audio_number
@@ -164,7 +188,7 @@ def handle_edit_field(chat_id: int, field: str, app: Client):
 
     app.send_message(chat_id, prompt_text)
 
-def handle_authorized_text(app: Client, user_states: Dict[int, Dict[str, Any]], message: Message):
+def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], message: Message):
     """
     Этот хендлер обрабатывает все текстовые сообщения от авторизованного пользователя,
     в т.ч. логику по шагам (сбор данных для интервью/дизайна).
@@ -213,6 +237,9 @@ def handle_authorized_text(app: Client, user_states: Dict[int, Dict[str, Any]], 
         
         # Сохраняем новое значение
         data_ = st.setdefault("data", {})
+        if not isinstance(data_, dict):
+            logging.error("data_ не является словарем")
+            return
         data_[field] = text_
         
         previous_step = st.pop("previous_step", "confirm_data")
@@ -458,6 +485,7 @@ def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, bu
     
     # Проверяем, что data_ - это словарь
     if not isinstance(data_, dict):
+        logging.error("data_ не является словарем")
         data_ = {}
     
     data_["audio_file_name"] = audio_file_name_to_save
@@ -508,6 +536,7 @@ def handle_report(chat_id: int, callback_data : str, app: Client):
         data = state.get("data", {})
         # Проверяем, что data - это словарь
         if not isinstance(data, dict):
+            logging.error("data не является словарем")
             data = {}
         building_type = data.get('building_type', "")
         valid_building_type = validate_building_type(building_type)
@@ -548,24 +577,38 @@ def handle_assign_roles(chat_id: int, app: Client, mode: str, processed_texts: d
 def handle_choose_building(chat_id: int, data: str, app: Client):
     validate_datas = []
     parts = preprocess_parts(data, 2) # 'hotel' / 'restaurant' / 'spa'
+    if parts is None:
+        app.send_message(chat_id, "Ошибка обработки данных")
+        return
     short_name = parts[1]
     st = user_states.get(chat_id, {})
     pending_report = st.get("pending_report", None)
     mode = st.get("mode")
     data_ = st.get("data", {})
+    
+    # Проверяем типы данных
+    if not isinstance(data_, dict):
+        logging.error("data_ не является словарем")
+        data_ = {}
+    if not isinstance(pending_report, str):
+        logging.error("pending_report не является строкой")
+        return
+    if not isinstance(mode, str):
+        logging.error("mode не является строкой")
+        return
+    
     data_["audio_file_name"] = audio_file_name_to_save
-
-    validate_datas.append(mode)
-    validate_datas.append(pending_report)
-    validate_datas.append(data_)
-
-    check_valid_data(validate_datas, chat_id, app, "Неизвестно, какой отчёт вы хотели. Начните заново.")
 
     # Преобразуем short_name из callback в нормальное название
     building_name = mapping_building_names.get(short_name, short_name)
 
     data_["type_of_location"] = building_name
 
+    validate_datas.append(mode)
+    validate_datas.append(pending_report)
+    validate_datas.append(data_)
+
+    check_valid_data(validate_datas, chat_id, app, "Неизвестно, какой отчёт вы хотели. Начните заново.")
 
     #Запускаем анализ
     run_analysis_with_spinner(
@@ -638,7 +681,12 @@ def register_handlers(app: Client):
         global audio_file_name_to_save
         global transcription_text
         st = user_states.get(c_id, {})
-        mode =  st.get("mode")
+        mode = st.get("mode")
+        
+        # Проверяем тип mode
+        if mode is not None and not isinstance(mode, str):
+            logging.error("mode не является строкой")
+            mode = None
 
         try:
             check_authorized(c_id, authorized_users)
@@ -668,6 +716,8 @@ def register_handlers(app: Client):
         try:
             # Скачиваем аудиофайл во временную директорию
             downloaded = app.download_media(message, file_name=path)
+            if downloaded is None:
+                raise ValueError("Не удалось скачать файл")
             audio_file_name_to_save = os.path.basename(downloaded)
 
             # Используем новый MinIOManager для загрузки
@@ -693,14 +743,18 @@ def register_handlers(app: Client):
 
             app.edit_message_text(c_id, msg_.id, "✅ Аудио обработано!")
             # Если пользователь выбрал «Интервью» — расставляем роли
-            handle_assign_roles(c_id, app, mode, processed_texts)
+            if isinstance(mode, str):
+                handle_assign_roles(c_id, app, mode, processed_texts)
             st["step"] = "inputing_fields"
             if message.caption:
                 text = message.caption.strip()
                 try:
-                    parsed_data = parse_message_text(text, mode)
-                    st["data"] = parsed_data
-                    show_confirmation_menu(c_id, st, app)
+                    if isinstance(mode, str):
+                        parsed_data = parse_message_text(text, mode)
+                        st["data"] = parsed_data
+                        show_confirmation_menu(c_id, st, app)
+                    else:
+                        app.send_message(c_id, "Не удалось автоматически спарсить данные, необходимо заполнить вручную поля.\n Пожалуйста, введите номер файла:")
                 except Exception as e:
                     app.send_message(c_id, "Не удалось автоматически спарсить данные, необходимо заполнить вручную поля.\n Пожалуйста, введите номер файла:")
                     logging.error(f"Ошибка парсинга данных: {e}")
@@ -735,7 +789,10 @@ def register_handlers(app: Client):
             st_ev.set()
             sp_th.join()
 
-            delete_tmp_params(msg=msg_, tmp_file=downloaded, tmp_dir=tmpdir, client_id=c_id, app=app)
+            # Проверяем, что downloaded был создан в try блоке
+            downloaded_file = locals().get('downloaded')
+            if downloaded_file:
+                delete_tmp_params(msg=msg_, tmp_file=downloaded_file, tmp_dir=tmpdir, client_id=c_id, app=app)
 
     @app.on_message(filters.document)  # type: ignore[misc,reportUntypedFunctionDecorator]
     def handle_document_msg(app: Client, message: Message):
@@ -750,7 +807,11 @@ def register_handlers(app: Client):
         st = user_states.get(c_id, {})
         if "upload_category" in st:
             cat = st["upload_category"]
-            fold = STORAGE_DIRS.get(cat, "")
+            if isinstance(cat, str):
+                fold = STORAGE_DIRS.get(cat, "")
+            else:
+                logging.error("upload_category не является строкой")
+                return
             if not fold:
                 # app.send_message(c_id, "Ошибка: неизвестная категория.")
                 logging.error("Ошибка: неизвестная категория.")

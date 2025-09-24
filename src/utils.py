@@ -1,6 +1,5 @@
 import time
 import threading
-import time
 import os
 from pyrogram import Client
 from pyrogram.types import Message
@@ -79,7 +78,7 @@ def run_loading_animation(chat_id: int, msg_id: int, stop_event: threading.Event
         except:
             pass
         idx += 1
-        time.sleep(0.5)
+        _ = time.sleep(0.5)
 
 def sort_tuples_by_second_item(tuple_list):
     # Используем метод sorted() с параметром key

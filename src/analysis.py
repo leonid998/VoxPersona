@@ -100,7 +100,7 @@ def transcribe_audio_raw(
             try:
                 # Отправляем MP3 на транскрипцию
                 response = client.audio.transcriptions.create(
-                    model=model_name,
+                    model=model_name or "whisper-1",
                     file=chunk_io
                 )
                 text_part = response.text
@@ -132,11 +132,11 @@ def aggregate_citations(text: str, citations: str, aggregation_prompt: str):
 def extract_from_chunk(text: str, chunk: str, extract_prompt: str) -> str:
     try:
         extract_result = send_msg_to_model(system=extract_prompt, messages=[{"role": "user", "content": f"Документ:\n{chunk}\n\n{text}"}])
-        print(extract_result)
+        logging.info(f"Результат извлечения: {extract_result}")
         extract_result = extract_result.strip()
         return extract_result
     except Exception as e:
-        print(e)
+        logging.error(f"Ошибка при извлечении из чанка: {str(e)}")
         logging.error(f"Ошибка при извлечении из чанка: {str(e)}")
         return "##not_found##"
     
@@ -232,6 +232,66 @@ async def send_msg_to_model_async(
     return f"[ERROR] Превышено число попыток ({max_retries})"
 
 
+def _calculate_rate_limits():
+    """Вычисляет лимиты скорости для токенов и запросов."""
+    token_limits_per_min = [80000, 20000, 20000, 20000, 20000, 20000, 20000]  
+    req_limits_per_min =   [2000,    50,    50,    50,    50,    50,    50]   
+    
+    token_rates = [tl / 60.0 for tl in token_limits_per_min]
+    req_rates = [rl / 60.0 for rl in req_limits_per_min]
+    
+    return token_rates, req_rates
+
+def _calculate_delay(tokens: int, token_rate: float, req_rate: float) -> float:
+    """Вычисляет задержку на основе токенов и лимитов скорости."""
+    req_delay = 1.0 / req_rate if req_rate > 0 else float("inf")
+    token_delay = tokens / token_rate if token_rate > 0 else float("inf")
+    return max(token_delay, req_delay)
+
+async def _process_single_chunk_async(
+    q: asyncio.Queue[tuple[int, str]],
+    text: str,
+    extract_prompt: str,
+    model_idx: int,
+    api_key: str,
+    token_rate: float,
+    req_rate: float,
+    model_semaphore: BoundedSemaphore,
+    session: aiohttp.ClientSession,
+    results: list[str | None]
+):
+    """Обрабатывает один чанк асинхронно."""
+    while True:
+        try:
+            idx, chunk = q.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+
+        user_content = f"Документ:\n{chunk}\n\n{text}"
+        tokens = count_tokens(user_content)
+        delay = _calculate_delay(tokens, token_rate, req_rate)
+
+        logging.info(
+            f"[Model#{model_idx}] Чанк #{idx}: {tokens} токенов → "
+            f"delay={delay:.1f}s"
+        )
+
+        async with model_semaphore:  
+            await asyncio.sleep(delay)  
+
+        messages = [{"role": "user", "content": user_content}]
+        response = await send_msg_to_model_async(
+            session=session,
+            messages=messages,
+            system=extract_prompt,
+            model=REPORT_MODEL_NAME or "claude-3-5-sonnet-20241022",
+            api_key=api_key,
+            err=f"Ошибка при извлечении чанка #{idx}"
+        )
+
+        results[idx] = response
+        q.task_done()
+
 async def extract_from_chunk_parallel_async(
     text: str,
     chunks: list[str],
@@ -243,70 +303,75 @@ async def extract_from_chunk_parallel_async(
     Асинхронная обработка чанков с контролем RPM и TPM.
     Чанки равномерно распределяются между моделями через очередь.
     """
-
-    token_limits_per_min = [80000, 20000, 20000, 20000, 20000, 20000, 20000]  
-    req_limits_per_min =   [2000,    50,    50,    50,    50,    50,    50]   
-
-    token_rates = [tl / 60.0 for tl in token_limits_per_min]
-    req_rates = [rl / 60.0 for rl in req_limits_per_min]
-
+    token_rates, req_rates = _calculate_rate_limits()
+    
     q = asyncio.Queue()
-
     for idx, chunk in enumerate(chunks):
         await q.put((idx, chunk))
 
     results: list[str | None] = [None] * len(chunks)
-
     model_semaphores = [BoundedSemaphore(1) for _ in range(len(api_keys))]
 
-    async def worker(model_idx: int, api_key: str):
-        token_rate = token_rates[model_idx]
-        req_rate = req_rates[model_idx]
-        req_delay = 1.0 / req_rate if req_rate > 0 else float("inf")
-
-        while True:
-            try:
-                idx, chunk = q.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-
-            user_content = f"Документ:\n{chunk}\n\n{text}"
-            tokens = count_tokens(user_content)
-            token_delay = tokens / token_rate if token_rate > 0 else float("inf")
-            delay = max(token_delay, req_delay)
-
-            logging.info(
-                f"[Model#{model_idx}] Чанк #{idx}: {tokens} токенов → "
-                f"delay_tok={token_delay:.1f}s, delay_req={req_delay:.1f}s → sleep={delay:.1f}s"
-            )
-
-            async with model_semaphores[model_idx]:  
-                await asyncio.sleep(delay)  
-
-            messages = [{"role": "user", "content": user_content}]
-            response = await send_msg_to_model_async(
-                session=session,
-                messages=messages,
-                system=extract_prompt,
-                model=REPORT_MODEL_NAME or "claude-3-5-sonnet-20241022",
-                api_key=api_key,
-                err=f"Ошибка при извлечении чанка #{idx}"
-            )
-
-            results[idx] = response
-            q.task_done()
-
     workers = [
-        asyncio.create_task(worker(model_idx, api_key))
+        asyncio.create_task(_process_single_chunk_async(
+            q, text, extract_prompt, model_idx, api_key,
+            token_rates[model_idx], req_rates[model_idx],
+            model_semaphores[model_idx], session, results
+        ))
         for model_idx, api_key in enumerate(api_keys)
     ]
 
-    await q.join()  # Ожидаем завершения обработки всех задач
-
+    await q.join()
+    
     for task in workers:
-        task.cancel()
+        _ = task.cancel()
 
     return results
+
+def _process_single_chunk_sync(
+    q: queue.Queue[tuple[int, str]],
+    text: str,
+    extract_prompt: str,
+    model_idx: int,
+    api_key: str,
+    token_rate: float,
+    req_rate: float,
+    results: list[str | None]
+):
+    """Обрабатывает один чанк синхронно."""
+    req_delay = 1.0 / req_rate if req_rate > 0 else 0.0
+
+    while True:
+        try:
+            idx, chunk = q.get_nowait()
+        except queue.Empty:
+            break
+
+        user_content = f"Документ:\n{chunk}\n\n{text}"
+        tokens = count_tokens(user_content)
+        token_delay = tokens / token_rate if token_rate > 0 else 0.0
+        delay = max(token_delay, req_delay)
+
+        logging.info(
+            f"[Model#{model_idx}] Чанк #{idx}: {tokens} токенов, "
+            f"token_rate={token_rate:.1f} tok/s → delay_tok={token_delay:.1f}s, "
+            f"req_rate={req_rate:.2f} req/s → delay_req={req_delay:.1f}s, "
+            f"sleep={delay:.1f}s"
+        )
+
+        resp = send_msg_to_model(
+            messages=[{"role": "user", "content": user_content}],
+            system=extract_prompt,
+            err=f"Ошибка при извлечении чанка #{idx}",
+            model=REPORT_MODEL_NAME or "claude-3-5-sonnet-20241022",
+            api_key=api_key
+        )
+        results[idx] = resp
+
+        if delay:
+            time.sleep(delay)
+
+        q.task_done()
 
 def extract_from_chunk_parallel(
     text: str,
@@ -322,69 +387,26 @@ def extract_from_chunk_parallel(
 
     Для каждого чанка вычисляем токен-задержку и запрос-задержку, берём max.
     """
+    token_rates, req_rates = _calculate_rate_limits()
+    
     q: queue.Queue[tuple[int, str]] = queue.Queue()
     for idx, chunk in enumerate(chunks):
         q.put((idx, chunk))
 
     results: list[str | None] = [None] * len(chunks)
 
-    # лимиты
-    token_limits_per_min = [80000, 20000, 20000, 20000, 20000, 20000, 20000]
-    req_limits_per_min =   [2000,   50,    50,    50,    50,   50,   50]
-
-    # конвертация в ток/сек и req/сек
-    token_rates = [tl/60.0 for tl in token_limits_per_min]
-    req_rates   = [rl/60.0 for rl in req_limits_per_min]
-
-    def worker(model_idx: int):
-        api_key = api_keys[model_idx]
-        token_rate = token_rates[model_idx]
-        req_rate   = req_rates[model_idx]
-        req_delay  = 1.0/req_rate if req_rate>0 else 0.0
-
-        while True:
-            try:
-                idx, chunk = q.get_nowait()
-            except queue.Empty:
-                break
-
-            user_content = f"Документ:\n{chunk}\n\n{text}"
-            # подсчитываем токены именно этого чанка
-            tokens = count_tokens(user_content)
-            token_delay = tokens / token_rate if token_rate>0 else 0.0
-            delay = max(token_delay, req_delay)
-
-            logging.info(
-                f"[Model#{model_idx}] Чанк #{idx}: {tokens} токенов, "
-                f"token_rate={token_rate:.1f} tok/s → delay_tok={token_delay:.1f}s, "
-                f"req_rate={req_rate:.2f} req/s → delay_req={req_delay:.1f}s, "
-                f"sleep={delay:.1f}s"
-            )
-
-            resp = send_msg_to_model(
-                messages=[{"role": "user", "content": user_content}],
-                system=extract_prompt,
-                err=f"Ошибка при извлечении чанка #{idx}",
-                model=REPORT_MODEL_NAME or "claude-3-5-sonnet-20241022",
-                api_key=api_key
-            )
-            results[idx] = resp
-
-            # ждем, чтобы не превысить ни токены, ни запросы
-            if delay:
-                time.sleep(delay)
-
-            q.task_done()
-
-    # Запускаем по одному потоку на каждую модель (если есть задачи)
     threads = []
     for m in range(len(api_keys)):
         if not q.empty():
-            t = threading.Thread(target=worker, args=(m,), daemon=True)
+            t = threading.Thread(
+                target=_process_single_chunk_sync,
+                args=(q, text, extract_prompt, m, api_keys[m], 
+                      token_rates[m], req_rates[m], results),
+                daemon=True
+            )
             threads.append(t)
             t.start()
 
-    # Ждём обработки всех задач
     q.join()
     for t in threads:
         t.join()
@@ -392,7 +414,7 @@ def extract_from_chunk_parallel(
     return results
 
 def classify_report_type(text: str, prompt_name: str) -> int | None:
-    classification_prompt = fetch_prompt_by_name(prompt_name=prompt_name)
+    classification_prompt: str = fetch_prompt_by_name(prompt_name=prompt_name)
     classification_result = send_msg_to_model(system=classification_prompt, messages=[{"role": "user", "content": text}], max_tokens=1000)
     classification_result = classification_result.strip()
     try:
@@ -407,7 +429,7 @@ def classify_report_type(text: str, prompt_name: str) -> int | None:
         return None
 
 def classify_query(text: str) -> str:
-    classification_prompt = fetch_prompt_by_name(prompt_name="prompt_classify")
+    classification_prompt: str = fetch_prompt_by_name(prompt_name="prompt_classify")
     classification_result = send_msg_to_model(system=classification_prompt, messages=[{"role": "user", "content": text}])
     classification_result = classification_result.strip()
     try:
@@ -477,7 +499,7 @@ def auto_detect_category(text: str) -> str:
 
 def assign_roles(text: str) -> str:
     logging.info(f"[assign_roles] Длина исходного текста: {len(text)} символов.")
-    prompt_roles = fetch_prompt_by_name(prompt_name="assign_roles")
+    prompt_roles: str = fetch_prompt_by_name(prompt_name="assign_roles")
     messages = [
                 {
                     "role": "user",

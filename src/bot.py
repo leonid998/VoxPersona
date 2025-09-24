@@ -5,7 +5,7 @@ import logging
 import threading
 import warnings
 import io
-import os
+from typing import Callable
 
 from pyrogram import Client, filters
 from pyrogram.types import (
@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
 # ================== Загрузка .env (ключи) ==================
-_ = load_dotenv()
+load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")    # Whisper
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_ID = os.getenv("API_ID")
@@ -385,16 +385,22 @@ def process_stored_file(category: str, filename: str, chat_id: int)->str|None:
         return None
 
 # ========== /start и авторизация ==========
-@app.on_message(filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
-def cmd_start(client: Client, message: Message) -> None:
+def cmd_start(_: Client, message: Message) -> None:
+    """Обработчик команды /start с явной типизацией"""
     c_id=message.chat.id
     if c_id not in authorized_users:
         app.send_message(c_id,"Вы не авторизованы. Введите пароль:")
     else:
         send_main_menu(c_id)
 
-@app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
-def handle_auth_text(client: Client, message: Message) -> None:
+# Регистрируем декорированный обработчик
+@app.on_message(filters.command("start"))  # type: ignore[misc]
+def _cmd_start_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
+    """Декорированная реализация для cmd_start"""
+    return cmd_start(client, message)
+
+def handle_auth_text(_: Client, message: Message) -> None:
+    """Обработчик авторизации по тексту с явной типизацией"""
     c_id=message.chat.id
     if c_id in authorized_users:
         return
@@ -405,9 +411,15 @@ def handle_auth_text(client: Client, message: Message) -> None:
     else:
         app.send_message(c_id,"❌ Неверный пароль. Попробуйте снова:")
 
+# Регистрируем декорированный обработчик
+@app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc]
+def _handle_auth_text_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
+    """Декорированная реализация для handle_auth_text"""
+    return handle_auth_text(client, message)
+
 # ========== Приём аудио ==========
-@app.on_message(filters.voice | filters.audio)  # type: ignore[misc,reportUntypedFunctionDecorator]
-def handle_audio_msg(client: Client, message: Message) -> None:
+def handle_audio_msg(_: Client, message: Message) -> None:
+    """Обработчик аудио сообщений с явной типизацией"""
     c_id=message.chat.id
     if c_id not in authorized_users:
         return
@@ -466,9 +478,15 @@ def handle_audio_msg(client: Client, message: Message) -> None:
     app.send_message(c_id,"Что анализируем дальше?", reply_markup=interview_or_design_menu())
     send_main_menu(c_id)
 
+# Регистрируем декорированный обработчик
+@app.on_message(filters.voice | filters.audio)  # type: ignore[misc]
+def _handle_audio_msg_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
+    """Декорированная реализация для handle_audio_msg"""
+    return handle_audio_msg(client, message)
+
 # ========== Приём документов (для хранилища) ==========
-@app.on_message(filters.document)  # type: ignore[misc,reportUntypedFunctionDecorator]
-def handle_document_msg(client: Client, message: Message) -> None:
+def handle_document_msg(_: Client, message: Message) -> None:
+    """Обработчик документов с явной типизацией"""
     c_id=message.chat.id
     if c_id not in authorized_users:
         return
@@ -489,140 +507,219 @@ def handle_document_msg(client: Client, message: Message) -> None:
         except Exception as e:
             logging.exception("Ошибка сохранения документа")
             app.send_message(c_id,f"❌ Ошибка сохранения: {e}")
-        user_states.pop(c_id,None)
+        user_states.pop(c_id,None)  # pyright: ignore[reportUnusedCallResult]
     else:
         app.send_message(c_id,"Сначала выберите действие (Загрузить файл) в меню.")
 
     send_main_menu(c_id)
 
+# Регистрируем декорированный обработчик
+@app.on_message(filters.document)  # type: ignore[misc]
+def _handle_document_msg_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
+    """Декорированная реализация для handle_document_msg"""
+    return handle_document_msg(client, message)
+
 # ========== CALLBACK QUERY (меню) ==========
-@app.on_callback_query()  # type: ignore[misc,reportUntypedFunctionDecorator]
-def callback_query_handler(client: Client, callback: CallbackQuery) -> None:
-    c_id=callback.message.chat.id
-    data=callback.data
+
+def handle_menu_navigation(c_id: int, data: str) -> bool:
+    """Обработка навигации по меню"""
+    if data == "menu_main":
+        send_main_menu(c_id)
+        return True
+    
+    if data == "menu_help":
+        clear_active_menus(c_id)
+        mk, txt = help_menu_markup()
+        mm = app.send_message(c_id, txt, reply_markup=mk)
+        register_menu_message(c_id, mm.id)
+        return True
+    
+    if data == "menu_storage":
+        clear_active_menus(c_id)
+        mm = app.send_message(c_id, "📦 Меню хранилища:", reply_markup=storage_menu_markup())
+        register_menu_message(c_id, mm.id)
+        return True
+    
+    return False
+
+def handle_file_operations(c_id: int, data: str) -> bool:
+    """Обработка операций с файлами"""
+    if data.startswith("view||"):
+        parts = data.split("||")
+        if len(parts) < 2:
+            return True
+        cat = parts[1]
+        clear_active_menus(c_id)
+        mm = app.send_message(c_id, f"Файлы в '{cat}':", reply_markup=files_menu_markup(cat))
+        register_menu_message(c_id, mm.id)
+        return True
+    
+    if data.startswith("select||"):
+        _handle_file_selection(c_id, data)
+        return True
+    
+    if data.startswith("delete||"):
+        _handle_file_deletion(c_id, data)
+        return True
+    
+    if data.startswith("upload||"):
+        parts = data.split("||")
+        if len(parts) < 2:
+            return True
+        cat = parts[1]
+        user_states[c_id] = {"upload_category": cat}
+        app.send_message(c_id, f"Отправьте документ, который хотите сохранить в '{cat}'.")
+        return True
+    
+    return False
+
+def _handle_file_selection(c_id: int, data: str) -> None:
+    """Обработка выбора файла"""
+    parts = data.split("||")
+    if len(parts) < 3:
+        return
+    
+    cat, sfn = parts[1], parts[2]
+    fold = STORAGE_DIRS.get(cat, "")
+    real_name = _find_real_filename(fold, sfn)
+    
+    if not real_name:
+        app.send_message(c_id, "Файл не найден.")
+        return
+    
+    msg_ = app.send_message(c_id, "⏳ Обрабатываю файл...")
+    st_ev = threading.Event()
+    sp_th = threading.Thread(target=run_loading_animation, args=(c_id, msg_.id, st_ev))
+    sp_th.start()
+    
+    try:
+        res = process_stored_file(cat, real_name, c_id)
+        if res is not None:
+            processed_texts[c_id] = res
+            app.edit_message_text(c_id, msg_.id, "✅ Файл обработан.")
+    finally:
+        st_ev.set()
+        sp_th.join()
+        app.delete_messages(c_id, msg_.id)
+    
+    app.send_message(c_id, "Что анализируем дальше?", reply_markup=interview_or_design_menu())
+    send_main_menu(c_id)
+
+def _handle_file_deletion(c_id: int, data: str) -> None:
+    """Обработка удаления файла"""
+    parts = data.split("||")
+    if len(parts) < 3:
+        return
+    
+    cat, sfn = parts[1], parts[2]
+    fold = STORAGE_DIRS.get(cat, "")
+    real_name = _find_real_filename(fold, sfn)
+    
+    if not real_name:
+        app.send_message(c_id, "Файл не найден.")
+        return
+    
+    try:
+        os.remove(os.path.join(fold, real_name))
+        app.send_message(c_id, "Файл удалён.")
+    except Exception as e:
+        app.send_message(c_id, f"Ошибка удаления: {e}")
+    
+    mm = app.send_message(c_id, f"Список файлов в '{cat}':", reply_markup=files_menu_markup(cat))
+    register_menu_message(c_id, mm.id)
+
+def _find_real_filename(fold: str, sfn: str) -> str | None:
+    """Поиск реального имени файла по безопасному имени"""
+    try:
+        for f in os.listdir(fold):
+            if safe_filename(f) == sfn:
+                return f
+    except OSError:
+        pass
+    return None
+
+def handle_mode_selection(c_id: int, data: str) -> bool:
+    """Обработка выбора режима анализа"""
+    if data == "mode_interview":
+        clear_active_menus(c_id)
+        mm = app.send_message(c_id, "ИНТЕРВЬЮ:", reply_markup=interview_menu_markup())
+        register_menu_message(c_id, mm.id)
+        return True
+    
+    if data == "mode_design":
+        clear_active_menus(c_id)
+        mm = app.send_message(c_id, "ДИЗАЙН:", reply_markup=design_menu_markup())
+        register_menu_message(c_id, mm.id)
+        return True
+    
+    return False
+
+def handle_interview_reports(c_id: int, data: str) -> bool:
+    """Обработка отчетов интервью"""
+    interview_reports = {
+        "report_int_methodology": (analyze_interview_methodology, "Оценка методологии интервью"),
+        "report_int_links": (analyze_quality_decision_links, "Отчет о связках (качество-принятие)"),
+        "report_int_general": (analyze_interview_general, "Общие факторы (Интервью)"),
+        "report_int_specific": (analyze_interview_specific, "Факторы в этом заведении (Интервью)"),
+        "report_int_employee": (analyze_employee_performance, "Анализ работы сотрудника")
+    }
+    
+    if data in interview_reports:
+        func, label = interview_reports[data]
+        run_analysis_with_spinner(c_id, func, label)
+        return True
+    
+    return False
+
+def handle_design_reports(c_id: int, data: str) -> bool:
+    """Обработка отчетов дизайна"""
+    design_reports = {
+        "report_design_audit_methodology": (analyze_design_audit, "Оценка методологии аудита"),
+        "report_design_compliance": (analyze_audit_compliance, "Информация о соответствии программе аудита"),
+        "report_design_structured": (analyze_structured_audit, "Структурированный отчет аудита")
+    }
+    
+    if data in design_reports:
+        func, label = design_reports[data]
+        run_analysis_with_spinner(c_id, func, label)
+        return True
+    
+    return False
+
+def callback_query_handler(_: Client, callback: CallbackQuery) -> None:
+    """Обработчик callback запросов с явной типизацией"""
+    c_id = callback.message.chat.id
+    data = callback.data
+    
     try:
         callback.answer()
     except Exception:
         pass
-
+    
     try:
-        if data=="menu_main":
-            send_main_menu(c_id)
-
-        elif data=="menu_help":
-            clear_active_menus(c_id)
-            mk, txt=help_menu_markup()
-            mm=app.send_message(c_id, txt, reply_markup=mk)
-            register_menu_message(c_id, mm.id)
-
-        elif data=="menu_storage":
-            clear_active_menus(c_id)
-            mm=app.send_message(c_id,"📦 Меню хранилища:", reply_markup=storage_menu_markup())
-            register_menu_message(c_id, mm.id)
-
-        elif data.startswith("view||"):
-            parts=data.split("||")
-            if len(parts)<2:return
-            cat=parts[1]
-            clear_active_menus(c_id)
-            mm=app.send_message(c_id,f"Файлы в '{cat}':",reply_markup=files_menu_markup(cat))
-            register_menu_message(c_id, mm.id)
-
-        elif data.startswith("select||"):
-            parts=data.split("||")
-            if len(parts)<3:return
-            cat, sfn=parts[1], parts[2]
-            fold=STORAGE_DIRS.get(cat,"")
-            real_name=None
-            for f in os.listdir(fold):
-                if safe_filename(f)==sfn:
-                    real_name=f
-                    break
-            if not real_name:
-                app.send_message(c_id,"Файл не найден.")
+        # Делегируем обработку специализированным функциям
+        handlers = [
+            handle_menu_navigation,
+            handle_file_operations,
+            handle_mode_selection,
+            handle_interview_reports,
+            handle_design_reports
+        ]
+        
+        for handler in handlers:
+            if handler(c_id, data):
                 return
-
-            msg_=app.send_message(c_id,"⏳ Обрабатываю файл...")
-            st_ev=threading.Event()
-            sp_th=threading.Thread(target=run_loading_animation, args=(c_id,msg_.id,st_ev))
-            sp_th.start()
-
-            try:
-                res=process_stored_file(cat, real_name, c_id)
-                if res is not None:
-                    processed_texts[c_id]=res
-                    app.edit_message_text(c_id,msg_.id,"✅ Файл обработан.")
-            finally:
-                st_ev.set()
-                sp_th.join()
-                app.delete_messages(c_id,msg_.id)
-
-            app.send_message(c_id,"Что анализируем дальше?", reply_markup=interview_or_design_menu())
-            send_main_menu(c_id)
-
-        elif data.startswith("delete||"):
-            parts=data.split("||")
-            if len(parts)<3:return
-            cat, sfn=parts[1], parts[2]
-            fold=STORAGE_DIRS.get(cat,"")
-            real_name=None
-            for f in os.listdir(fold):
-                if safe_filename(f)==sfn:
-                    real_name=f
-                    break
-            if not real_name:
-                app.send_message(c_id,"Файл не найден.")
-                return
-            try:
-                os.remove(os.path.join(fold,real_name))
-                app.send_message(c_id,"Файл удалён.")
-            except Exception as e:
-                app.send_message(c_id,f"Ошибка удаления: {e}")
-            mm=app.send_message(c_id,f"Список файлов в '{cat}':",reply_markup=files_menu_markup(cat))
-            register_menu_message(c_id, mm.id)
-
-        elif data.startswith("upload||"):
-            parts=data.split("||")
-            if len(parts)<2:return
-            cat=parts[1]
-            user_states[c_id]={"upload_category":cat}
-            app.send_message(c_id,f"Отправьте документ, который хотите сохранить в '{cat}'.")
-            # не вызываем send_main_menu
-
-        elif data=="mode_interview":
-            clear_active_menus(c_id)
-            mm=app.send_message(c_id,"ИНТЕРВЬЮ:",reply_markup=interview_menu_markup())
-            register_menu_message(c_id, mm.id)
-
-        elif data=="mode_design":
-            clear_active_menus(c_id)
-            mm=app.send_message(c_id,"ДИЗАЙН:",reply_markup=design_menu_markup())
-            register_menu_message(c_id, mm.id)
-
-        # --- Интервью ---
-        elif data=="report_int_methodology":
-            run_analysis_with_spinner(c_id, analyze_interview_methodology, "Оценка методологии интервью")
-        elif data=="report_int_links":
-            run_analysis_with_spinner(c_id, analyze_quality_decision_links, "Отчет о связках (качество-принятие)")
-        elif data=="report_int_general":
-            run_analysis_with_spinner(c_id, analyze_interview_general, "Общие факторы (Интервью)")
-        elif data=="report_int_specific":
-            run_analysis_with_spinner(c_id, analyze_interview_specific, "Факторы в этом заведении (Интервью)")
-        elif data=="report_int_employee":
-            run_analysis_with_spinner(c_id, analyze_employee_performance, "Анализ работы сотрудника")
-
-        # --- Дизайн ---
-        elif data=="report_design_audit_methodology":
-            run_analysis_with_spinner(c_id, analyze_design_audit, "Оценка методологии аудита")
-        elif data=="report_design_compliance":
-            run_analysis_with_spinner(c_id, analyze_audit_compliance, "Информация о соответствии программе аудита")
-        elif data=="report_design_structured":
-            run_analysis_with_spinner(c_id, analyze_structured_audit, "Структурированный отчет аудита")
-
+                
     except Exception:
         logging.exception("Ошибка обработки callback_data")
 
-def run_analysis_with_spinner(chat_id: int, func, label: str):
+# Регистрируем декорированный обработчик
+@app.on_callback_query()  # type: ignore[misc]
+def _callback_query_handler_impl(client: Client, callback: CallbackQuery) -> None:  # pyright: ignore[reportUnusedFunction]
+    """Декорированная реализация для callback_query_handler"""
+    return callback_query_handler(client, callback)
+
+def run_analysis_with_spinner(chat_id: int, func: Callable[[str], str], label: str):
     txt_=processed_texts.get(chat_id,"")
     if not txt_:
         app.send_message(chat_id,"Нет текста для анализа. Сначала загрузите/обработайте аудио/текст.")

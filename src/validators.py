@@ -1,9 +1,9 @@
-from typing import Dict, Any, Optional, List, Set
+from typing import Any
 import re
 import logging
 from pyrogram import Client
 
-def check_authorized(chat_id: int, authorized_users: Set[int]) -> None:
+def check_authorized(chat_id: int, authorized_users: set[int]) -> None:
     if chat_id not in authorized_users:
         raise ValueError("Ошибка: пользователь не авторизован")
     
@@ -15,7 +15,7 @@ def validate_building_type(building_type: str) -> str:
         return 'Ресторан'
     elif 'центр здоров' in building_type or 'центре здоров' in building_type:
         return "Центр Здоровья"
-    logging.warning(f"Не удалось спарсить тип заведения")
+    logging.warning("Не удалось спарсить тип заведения")
     return ""  # Возвращаем пустую строку по умолчанию 
     
 def validate_date_format(date_str: str) -> bool:
@@ -25,7 +25,7 @@ def validate_date_format(date_str: str) -> bool:
     pattern = r"^\d{4}-\d{2}-\d{2}$"
     return bool(re.match(pattern, date_str))
 
-def check_state(state: Optional[Dict[str, Any]], chat_id: int, app: Client) -> bool:
+def check_state(state: dict[str, Any] | None, chat_id: int, app: Client) -> bool:
     if not state:
         # Нет состояния — значит пользователь что-то пишет без контекста
         app.send_message(chat_id, "Я вас слушаю. Откройте меню, если нужно запустить отчёт.")
@@ -38,7 +38,7 @@ def check_file_detection(filename: str, chat_id: int, app: Client) -> bool:
         return False
     return True
 
-def check_valid_data(validate_datas: List[str], chat_id: int, app: Client, msg: str) -> Optional[None]:
+def check_valid_data(validate_datas: list[str], chat_id: int, app: Client, msg: str) -> None:
     for data in validate_datas:
         if not data:
             app.send_message(chat_id, msg)

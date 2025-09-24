@@ -78,6 +78,10 @@ class MinIODeleteError(MinIOError):
 class RetryableMinIOOperation:
     """Handles retrying MinIO operations with exponential backoff"""
     
+    max_retries: int
+    backoff_factor: float
+    max_delay: float
+    
     def __init__(self, max_retries: int = 3, backoff_factor: float = 2.0, max_delay: float = 60.0):
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
@@ -105,6 +109,12 @@ class RetryableMinIOOperation:
 
 class MinIOHealthMonitor:
     """Monitors MinIO service health and performance"""
+    
+    client: Minio
+    last_health_check: float
+    health_check_interval: int
+    is_healthy: bool
+    metrics: dict[str, Any]
     
     def __init__(self, client: Minio):
         self.client = client
@@ -185,6 +195,13 @@ class MinIOHealthMonitor:
 
 class MinIOManager:
     """Enhanced MinIO Manager with comprehensive functionality"""
+    
+    endpoint: str | None
+    access_key: str | None
+    secret_key: str | None
+    client: Minio | None
+    health_monitor: MinIOHealthMonitor | None
+    retry_handler: RetryableMinIOOperation
     
     def __init__(self, endpoint: str | None = None, access_key: str | None = None, secret_key: str | None = None):
         self.endpoint = endpoint or MINIO_ENDPOINT

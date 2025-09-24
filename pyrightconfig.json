@@ -14,6 +14,7 @@
     "stubPath": "src/typestubs",
     "reportMissingImports": "none",
     "reportMissingTypeStubs": "none",
+    "reportUntypedFunctionDecorator": "none",
     "reportUnknownVariableType": "none",
     "reportUnknownMemberType": "none",
     "reportUnknownArgumentType": "none",

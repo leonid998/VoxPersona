@@ -1,7 +1,7 @@
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram import Client
 import os
-from typing import Dict, Union, Any
+from typing import Union, Any
 from storage import safe_filename
 
 from config import STORAGE_DIRS, active_menus
@@ -52,7 +52,7 @@ def register_menu_message(chat_id: int, msg_id: int):
         active_menus[chat_id] = []
     active_menus[chat_id].append(msg_id)
 
-def show_confirmation_menu(chat_id: int, state: Dict[str, Any], app: Client):
+def show_confirmation_menu(chat_id: int, state: dict[str, Any], app: Client):
     """
     Показываем пользователю сводку всех полей и просим подтвердить или редактировать.
     """
@@ -83,7 +83,7 @@ def show_confirmation_menu(chat_id: int, state: Dict[str, Any], app: Client):
     mm = app.send_message(chat_id, text_summary, reply_markup=kb)
     register_menu_message(chat_id, mm.id)
 
-def show_edit_menu(chat_id: int, state: Dict[str, Any], app: Client):
+def show_edit_menu(chat_id: int, state: dict[str, Any], app: Client):
     """
     Клавиатура с вариантами, какое поле редактировать.
     """
