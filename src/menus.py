@@ -1,7 +1,7 @@
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram import Client
 import os
-from typing import Union, Any
+from typing import Any
 from storage import safe_filename
 
 from config import STORAGE_DIRS, active_menus

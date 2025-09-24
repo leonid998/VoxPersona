@@ -1,5 +1,4 @@
-from typing import Any
-from datetime import datetime
+from typing import Any, cast
 from datetime import datetime
 import os
 import threading
@@ -74,34 +73,22 @@ async def set_rags(new_rags: dict[str, Any]) -> None:
         rags = new_rags
 
 def ask_client(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
-    if not isinstance(data, dict):
-        logging.error("data не является словарем")
-        return
     data["client"] = parse_name(text)
     # Переходим к шагу подтверждения
     state["step"] = "confirm_data"
     show_confirmation_menu(chat_id, state, app)
 
 def ask_employee(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
-    if not isinstance(data, dict):
-        logging.error("data не является словарем")
-        return
     data["employee"] = parse_name(text)
     state["step"] = "ask_place_name"
     app.send_message(chat_id, "Введите название заведения:")
 
 def ask_building_type(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
-    if not isinstance(data, dict):
-        logging.error("data не является словарем")
-        return
     data["building_type"] = parse_building_type(text)
     state["step"] = "ask_zone"
     app.send_message(chat_id, "Введите зону (если она есть) или поставьте -:")
 
 def ask_zone(data: dict[str, Any], text: str, mode: str, state: dict[str, Any], chat_id: int, app: Client):
-    if not isinstance(data, dict):
-        logging.error("data не является словарем")
-        return
     data['zone_name'] = parse_zone(text)
     if mode == "interview":
         # Для интервью сейчас не запрашиваем город — сразу завершаем сбор
@@ -113,9 +100,6 @@ def ask_zone(data: dict[str, Any], text: str, mode: str, state: dict[str, Any], 
         app.send_message(chat_id, "Введите город:")
 
 def ask_place_name(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
-    if not isinstance(data, dict):
-        logging.error("data не является словарем")
-        return
     data["place_name"] = parse_place_name(text)
     state["step"] = "ask_building_type"
     app.send_message(chat_id, "Введите тип заведения:")
@@ -124,17 +108,11 @@ def ask_date(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: in
     if not validate_date_format(text):
         app.send_message(chat_id, "❌ Неверный формат даты. Используйте формат ГГГГ-ММ-ДД (например, 2025-01-01).")
         return
-    if not isinstance(data, dict):
-        logging.error("data не является словарем")
-        return
     data["date"] = text
     state["step"] = "ask_employee"
     app.send_message(chat_id, "Введите ФИО сотрудника:")
 
 def ask_city(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
-    if not isinstance(data, dict):
-        logging.error("data не является словарем")
-        return
     data["city"] = parse_city(text)
     # Переходим к шагу подтверждения
     state["step"] = "confirm_data"
@@ -144,9 +122,6 @@ def ask_audio_number(data: dict[str, Any], text: str, state: dict[str, Any], cha
     """
     Спрашиваем пользователя номер аудио файла.
     """
-    if not isinstance(data, dict):
-        logging.error("data не является словарем")
-        return
     try:
         audio_number = parse_file_number(text)
         data["audio_number"] = audio_number
@@ -237,9 +212,6 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
         
         # Сохраняем новое значение
         data_ = st.setdefault("data", {})
-        if not isinstance(data_, dict):
-            logging.error("data_ не является словарем")
-            return
         data_[field] = text_
         
         previous_step = st.pop("previous_step", "confirm_data")
@@ -416,10 +388,7 @@ def handle_confirm_data(chat_id: int, app: Client):
     st["step"] = None
 
     mode = st.get("mode", "—")
-    d = st.get("data", {})
-    # Проверяем, что d - это словарь
-    if not isinstance(d, dict):
-        d = {}
+    d = cast(dict[str, Any], st.get("data", {}))
     employee = d.get("employee", "—")
     place = d.get("place_name", "—")
     date_ = d.get("date", "—")
@@ -481,12 +450,7 @@ def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, bu
     validate_datas = []
     st = user_states.get(chat_id, {})
     mode = st.get("mode")
-    data_ = st.get("data", {})
-    
-    # Проверяем, что data_ - это словарь
-    if not isinstance(data_, dict):
-        logging.error("data_ не является словарем")
-        data_ = {}
+    data_ = cast(dict[str, Any], st.get("data", {}))
     
     data_["audio_file_name"] = audio_file_name_to_save
 
@@ -533,11 +497,7 @@ def handle_report(chat_id: int, callback_data : str, app: Client):
     ]:
 
         state = user_states.get(chat_id, {})
-        data = state.get("data", {})
-        # Проверяем, что data - это словарь
-        if not isinstance(data, dict):
-            logging.error("data не является словарем")
-            data = {}
+        data = cast(dict[str, Any], state.get("data", {}))
         building_type = data.get('building_type', "")
         valid_building_type = validate_building_type(building_type)
         if valid_building_type is None:
@@ -584,12 +544,8 @@ def handle_choose_building(chat_id: int, data: str, app: Client):
     st = user_states.get(chat_id, {})
     pending_report = st.get("pending_report", None)
     mode = st.get("mode")
-    data_ = st.get("data", {})
+    data_ = cast(dict[str, Any], st.get("data", {}))
     
-    # Проверяем типы данных
-    if not isinstance(data_, dict):
-        logging.error("data_ не является словарем")
-        data_ = {}
     if not isinstance(pending_report, str):
         logging.error("pending_report не является строкой")
         return
