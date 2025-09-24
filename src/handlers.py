@@ -222,6 +222,19 @@ def handle_authorized_text(app: Client, user_states: Dict[int, Dict[str, Any]], 
         return
 
     mode = st.get("mode")        # 'interview' или 'design'
+    if mode is None:
+        # Если mode не установлен, возвращаемся к главному меню
+        user_states.pop(c_id, None)
+        app.send_message(c_id, "Режим не выбран. Начните заново /start.")
+        send_main_menu(c_id, app)
+        return
+    # Проверяем, что mode является строкой
+    if not isinstance(mode, str):
+        user_states.pop(c_id, None)
+        app.send_message(c_id, "Некорректный режим. Начните заново /start.")
+        send_main_menu(c_id, app)
+        return
+    
     step = st.get("step")        # например, 'ask_employee'
     data_ = st.setdefault("data", {})
 
@@ -311,15 +324,18 @@ def process_selected_file(chat_id: int, category: str, filename: str, app: Clien
     # send_main_menu(chat_id, app)
 
 
-def preprocess_parts(data: str, treshold: int=3) -> list[str]:
+def preprocess_parts(data: str, treshold: int=3) -> list[str] | None:
     parts = data.split("||")
     if len(parts) < treshold:
         logging.error("Неверный формат данных для choose_building")
-        return
+        return None
     return parts
 
 def handle_file_selection(chat_id: int, data: str, app: Client):
     parts = preprocess_parts(data)
+    if parts is None:
+        app.send_message(chat_id, "Ошибка обработки данных")
+        return
     category, file_name = parts[1], parts[2]
     folder = STORAGE_DIRS.get(category, "")
     real_name = find_real_filename(folder, file_name)
@@ -330,6 +346,9 @@ def handle_file_selection(chat_id: int, data: str, app: Client):
 
 def handle_file_deletion(chat_id: int, data: str, app: Client):
     parts = preprocess_parts(data)
+    if parts is None:
+        app.send_message(chat_id, "Ошибка обработки данных")
+        return
     category, file_name = parts[1], parts[2]
     folder = STORAGE_DIRS.get(category, "")
     real_name = find_real_filename(folder, file_name)
@@ -350,6 +369,9 @@ def handle_file_deletion(chat_id: int, data: str, app: Client):
 
 def file_upload_handler(chat_id: int, data: str, app: Client):
     parts = preprocess_parts(data, 2)
+    if parts is None:
+        app.send_message(chat_id, "Ошибка обработки данных")
+        return
     category = parts[1]
     # user_states[chat_id] = {"upload_category": category}
     user_states.setdefault(chat_id, {})["upload_category"] = category
@@ -368,6 +390,9 @@ def handle_confirm_data(chat_id: int, app: Client):
 
     mode = st.get("mode", "—")
     d = st.get("data", {})
+    # Проверяем, что d - это словарь
+    if not isinstance(d, dict):
+        d = {}
     employee = d.get("employee", "—")
     place = d.get("place_name", "—")
     date_ = d.get("date", "—")
@@ -377,9 +402,12 @@ def handle_confirm_data(chat_id: int, app: Client):
     building_type = d.get("building_type", "—")
     client = d.get("client", "")
 
+    # Проверяем, что mode является строкой для безопасного доступа к словарю
+    scenario_name = mapping_scenario_names.get(mode, "—") if isinstance(mode, str) else "—"
+    
     msg = (
         f"**Данные сохранены**:\n\n"
-        f"**Сценарий**: {mapping_scenario_names[mode]}\n"
+        f"**Сценарий**: {scenario_name}\n"
         f"**Номер файла**: {number_audio}\n"
         f"**Дата**: {date_}\n"
         f"**ФИО Сотрудника**: {employee}\n"
@@ -427,6 +455,11 @@ def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, bu
     st = user_states.get(chat_id, {})
     mode = st.get("mode")
     data_ = st.get("data", {})
+    
+    # Проверяем, что data_ - это словарь
+    if not isinstance(data_, dict):
+        data_ = {}
+    
     data_["audio_file_name"] = audio_file_name_to_save
 
     validate_datas.append(mode)
@@ -447,7 +480,7 @@ def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, bu
         )
     except Exception as e:
         logging.error(f"Ошибка при обработке отчёта {data}: {e}")
-        # app.send_message(chat_id, f"❌ Произошла ошибка при обработке запроса: {str(e)}")
+        # app.send_message(chat_id, f"❌ Произошла ошибка при обработке запроса: {str(e)}"))
 
 def preprocess_report_with_buildings(chat_id: int, data: str, app: Client):
     st = user_states.setdefault(chat_id, {})
@@ -473,6 +506,9 @@ def handle_report(chat_id: int, callback_data : str, app: Client):
 
         state = user_states.get(chat_id, {})
         data = state.get("data", {})
+        # Проверяем, что data - это словарь
+        if not isinstance(data, dict):
+            data = {}
         building_type = data.get('building_type', "")
         valid_building_type = validate_building_type(building_type)
         if valid_building_type is None:
@@ -783,7 +819,8 @@ def register_handlers(app: Client):
             elif data == "confirm_data":
                 handle_confirm_data(c_id, app)
             elif data == "edit_data":
-                show_edit_menu(c_id, user_states.get(c_id, {}), app)
+                current_state = user_states.get(c_id, {})
+                show_edit_menu(c_id, current_state, app)
 
             elif data == "back_to_confirm":
                 handle_back_to_confirm(c_id, app)
