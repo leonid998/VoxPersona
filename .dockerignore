@@ -1,3 +1,101 @@
-# Exclude runtime data from Docker build context
+# Logs and temporary files
 logs/
-rag_indices/
+*.log
+*.tmp
+*.temp
+
+# Git repository
+.git/
+.gitignore
+.gitattributes
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE and editor files
+.vscode/
+.idea/
+.qoder/
+*.swp
+*.swo
+*~
+
+# Test files (exclude from production build)
+test_*.py
+*_test.py
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation (keep only essential README)
+*.md
+!README.md
+!DEPLOYMENT_GUIDE.md
+
+# Environment and configuration
+.env
+.env.local
+.env.*.local
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Package manager artifacts
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nox/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller artifacts
+*.manifest
+*.spec
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Large files that shouldn't be in context
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Backup files
+*.bak
+*.backup
+*.old

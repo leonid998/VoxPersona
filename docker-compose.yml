@@ -1,13 +1,27 @@
+# VoxPersona Docker Compose Configuration
+# Optimized for build performance with BuildKit caching
 
 services:
   voxpersona:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Enable BuildKit for improved caching and build performance
+      # Use cache mount for pip cache and model downloads
+      cache_from:
+        - voxpersona:latest
+      target: final
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: voxpersona:latest
     container_name: voxpersona_app
-    restart: unless-stopped
+    restart: on-failure:3
     deploy:
       resources:
         limits:
           memory: 10G
+        reservations:
+          memory: 2G
     environment:
       # Telegram API & Bot
       - API_ID=${API_ID}
@@ -50,13 +64,24 @@ services:
       - MINIO_MAX_FILE_SIZE=${MINIO_MAX_FILE_SIZE:-2147483648}
       - MINIO_CLEANUP_DAYS=${MINIO_CLEANUP_DAYS:-30}
     depends_on:
-      - postgres
-      - minio
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
       - ./logs:/app/logs
       - ./rag_indices:/app/rag_indices
+      # Cache volumes for development
+      - pip_cache:/root/.cache/pip
+      - huggingface_cache:/root/.cache/huggingface
     networks:
       - voxpersona_default
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
   minio:
     image: minio/minio:latest
@@ -84,7 +109,7 @@ services:
   postgres:
     image: postgres:14
     container_name: voxpersona_postgres
-    restart: unless-stopped
+    restart: on-failure:3
     environment:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USER}
@@ -97,6 +122,12 @@ services:
       - "5432:5432"
     networks:
       - voxpersona_default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-voxpersona_user} -d ${DB_NAME:-bot_db}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
 networks:
   voxpersona_default:
@@ -107,10 +138,23 @@ networks:
 
 volumes:
   postgres_data:
+    driver: local
   minio_data:
     driver: local
   minio_certs:
     driver: local
+  # Cache volumes for improved build performance
+  pip_cache:
+    driver: local
+  huggingface_cache:
+    driver: local
   logs:
-# ТЕСТ 2: FULL ДЕПЛОЙ - Tue Aug 26 01:30:01 PM UTC 2025
-# ТЕСТ ИСПРАВЛЕННОЙ ЛОГИКИ 2: FULL restart - Tue Aug 26 01:38:46 PM UTC 2025
+    driver: local
+
+# Build optimization settings for development
+# Enable BuildKit by setting DOCKER_BUILDKIT=1 environment variable
+# or add "features": { "buildkit": true } to Docker Desktop settings
+
+# Performance monitoring comments:
+# ТЕСТ ОПТИМИЗАЦИИ DOCKER - Build performance optimization applied
+# МНОГОЭТАПНАЯ СБОРКА - Multi-stage build with improved layer caching
