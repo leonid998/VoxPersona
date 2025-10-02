@@ -33,7 +33,7 @@ services:
       # Application specifics
       - PASSWORD=${PASSWORD}
       - TRANSCRIBATION_MODEL_NAME=${TRANSCRIBATION_MODEL_NAME:-whisper-1}
-      - REPORT_MODEL_NAME=${REPORT_MODEL_NAME:-claude-3-7-sonnet-20250219}
+      - REPORT_MODEL_NAME=${REPORT_MODEL_NAME:-claude-sonnet-4-20250514}
       - RUN_MODE=${RUN_MODE:-PROD}
       # MinIO
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
