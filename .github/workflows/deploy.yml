@@ -198,16 +198,16 @@ jobs:
           case '$DEPLOY_TYPE' in
             'FULL_RESTART')
               echo '🔄 Executing FULL_RESTART: Rebuilding all containers...'
-              docker-compose down || true
-              docker-compose build --no-cache
-              docker-compose up -d
+              docker compose down || true
+              docker compose build --no-cache
+              docker compose up -d
               echo '✅ FULL_RESTART completed'
               ;;
             'APP_ONLY')
               echo '🚀 Executing APP_ONLY: Rebuilding app container...'
-              docker-compose stop voxpersona || true
-              docker-compose build voxpersona
-              docker-compose up -d voxpersona
+              docker compose stop voxpersona || true
+              docker compose build voxpersona
+              docker compose up -d voxpersona
               echo '✅ APP_ONLY completed'
               ;;
             'NO_RESTART')
@@ -233,18 +233,18 @@ jobs:
             cd ${{ env.APP_PATH }}
             
             echo '📊 Container status:'
-            docker-compose ps
-            
+            docker compose ps
+
             # Check if voxpersona container is running
             CONTAINER_STATUS=\$(docker ps --filter 'name=voxpersona_app' --format '{{.Status}}')
             if [[ \$CONTAINER_STATUS == *'Up'* ]]; then
               echo '✅ VoxPersona container is running'
             else
               echo '❌ VoxPersona container failed to start'
-              docker-compose logs --tail=50 voxpersona
+              docker compose logs --tail=50 voxpersona
               exit 1
             fi
-            
+
             # Additional health checks for full restart
             if [ '$DEPLOY_TYPE' = 'FULL_RESTART' ]; then
               POSTGRES_STATUS=\$(docker ps --filter 'name=voxpersona_postgres' --format '{{.Status}}')
@@ -252,7 +252,7 @@ jobs:
                 echo '✅ PostgreSQL container is running'
               else
                 echo '❌ PostgreSQL container failed to start'
-                docker-compose logs --tail=50 postgres
+                docker compose logs --tail=50 postgres
                 exit 1
               fi
             fi
@@ -260,7 +260,7 @@ jobs:
             # Test application configuration loading
             timeout 30 docker exec voxpersona_app python -c 'import src.config; print(\"Configuration loaded successfully\")' || {
               echo '❌ Application configuration test failed'
-              docker-compose logs --tail=50 voxpersona
+              docker compose logs --tail=50 voxpersona
               exit 1
             }
             
@@ -328,8 +328,8 @@ jobs:
             
             # Restart application
             cd ${{ env.APP_PATH }}
-            docker-compose stop voxpersona || true
-            docker-compose up -d voxpersona
+            docker compose stop voxpersona || true
+            docker compose up -d voxpersona
             
             echo '✅ Rollback completed'
           "
