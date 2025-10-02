@@ -11,7 +11,7 @@ import asyncio
 import logging
 import json
 import time
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any
 from dataclasses import dataclass
 import sys
 import os
@@ -46,27 +46,27 @@ class TestResult:
     passed: bool
     duration: float
     details: str
-    error: Optional[str] = None
+    error: str | None = None
 
 @dataclass
 class TestSuite:
     """Test suite configuration."""
     name: str
     description: str
-    tests: List[str]
-    success_criteria: Dict[str, Any]
+    tests: list[str]
+    success_criteria: dict[str, Any]
 
 class ModelUpgradeTestFramework:
     """Main testing framework class for model upgrade validation."""
     
     def __init__(self):
         """Initialize test framework."""
-        self.test_results: List[TestResult] = []
+        self.test_results: list[TestResult] = []
         self.model_name = REPORT_MODEL_NAME or "claude-sonnet-4-20250514"
         self.api_key = ANTHROPIC_API_KEY
         self.test_suites = self._initialize_test_suites()
         
-    def _initialize_test_suites(self) -> List[TestSuite]:
+    def _initialize_test_suites(self) -> list[TestSuite]:
         """Initialize all test suites."""
         return [
             TestSuite(
@@ -155,7 +155,7 @@ class ModelUpgradeTestFramework:
             duration = time.time() - start_time
             
             # Check if response is reasonable
-            is_valid = (
+            is_valid = bool(
                 response and 
                 "ERROR" not in response and 
                 len(response.strip()) > 0 and
@@ -197,7 +197,7 @@ class ModelUpgradeTestFramework:
             duration = time.time() - start_time
             
             # Check if roles were assigned
-            has_roles = "клиент" in result.lower() or "сотрудник" in result.lower()
+            has_roles = bool("клиент" in result.lower() or "сотрудник" in result.lower())
             
             return TestResult(
                 name="Role Assignment Test",
@@ -227,7 +227,7 @@ class ModelUpgradeTestFramework:
             duration = time.time() - start_time
             
             # Check if classification returned valid result
-            is_valid = result and result != "Не определено"
+            is_valid = bool(result and result != "Не определено")
             
             return TestResult(
                 name="Query Classification Test",
@@ -280,7 +280,7 @@ class ModelUpgradeTestFramework:
                     json_str = response.split("```")[1].split("```")[0].strip()
                 
                 parsed_json = json.loads(json_str)
-                is_valid = isinstance(parsed_json, dict) and "status" in parsed_json
+                is_valid = bool(isinstance(parsed_json, dict) and "status" in parsed_json)
                 
                 return TestResult(
                     name="JSON Parsing Test",
@@ -331,7 +331,7 @@ class ModelUpgradeTestFramework:
             duration = time.time() - start_time
             
             # Check workflow completion
-            workflow_success = (
+            workflow_success = bool(
                 len(with_roles) > len(test_text) and
                 classification and classification != "Не определено"
             )
@@ -366,7 +366,7 @@ class ModelUpgradeTestFramework:
                     messages=messages,
                     system="Отвечай кратко",
                     model=self.model_name,
-                    api_key=self.api_key
+                    api_key=self.api_key or ""
                 )
             
             # Create 3 concurrent requests
@@ -422,7 +422,7 @@ class ModelUpgradeTestFramework:
             
             return TestResult(
                 name="Response Time Test",
-                passed=is_fast_enough and has_response,
+                passed=bool(is_fast_enough and has_response),
                 duration=duration,
                 details=f"Response time: {response_time:.2f}s, Response received: {has_response}"
             )
@@ -483,7 +483,7 @@ class ModelUpgradeTestFramework:
                 error=str(e)
             )
     
-    async def run_test_suite(self, suite: TestSuite) -> Dict[str, Any]:
+    async def run_test_suite(self, suite: TestSuite) -> dict[str, Any]:
         """Run a complete test suite."""
         logger.info(f"Running test suite: {suite.name}")
         logger.info(f"Description: {suite.description}")
@@ -546,7 +546,7 @@ class ModelUpgradeTestFramework:
         
         return suite_summary
     
-    async def run_all_tests(self) -> Dict[str, Any]:
+    async def run_all_tests(self) -> dict[str, Any]:
         """Run all test suites and return comprehensive results."""
         logger.info("Starting VoxPersona Model Upgrade Testing Framework")
         logger.info(f"Testing model: {self.model_name}")
