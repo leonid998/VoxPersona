@@ -1,4 +1,4 @@
-version: '3.8'
+
 services:
   voxpersona:
     build: .
@@ -59,7 +59,7 @@ services:
       - voxpersona_default
 
   minio:
-    image: minio/minio:RELEASE.2025-01-23T22-51-28Z
+    image: minio/minio:latest
     container_name: voxpersona_minio
     restart: unless-stopped
     environment:

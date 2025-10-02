@@ -11,9 +11,9 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from .config import CHAT_HISTORY_DIR
-from .constants import HISTORY_FILE_EXTENSION, INDEX_FILE_NAME
-from .utils import count_tokens
+from config import CHAT_HISTORY_DIR
+from constants import HISTORY_FILE_EXTENSION, INDEX_FILE_NAME
+from utils import count_tokens
 
 
 @dataclass

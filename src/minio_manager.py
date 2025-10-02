@@ -20,7 +20,7 @@ from minio import Minio
 from minio.error import S3Error
 import urllib3
 
-from .config import (
+from config import (
     MINIO_ENDPOINT,
     MINIO_ACCESS_KEY,
     MINIO_SECRET_KEY,

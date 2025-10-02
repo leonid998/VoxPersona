@@ -10,9 +10,9 @@ from typing import Optional
 from langchain.embeddings.base import Embeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import logging
-from .datamodels import spinner_chars, OPENAI_AUDIO_EXTS
-from .config import ENC, TELEGRAM_MESSAGE_THRESHOLD, PREVIEW_TEXT_LENGTH, EMBEDDING_MODEL
-from .constants import ERROR_FILE_SEND_FAILED
+from datamodels import spinner_chars, OPENAI_AUDIO_EXTS
+from config import ENC, TELEGRAM_MESSAGE_THRESHOLD, PREVIEW_TEXT_LENGTH, EMBEDDING_MODEL
+from constants import ERROR_FILE_SEND_FAILED
 
 # Условный импорт для sentence_transformers
 try:
@@ -248,7 +248,7 @@ async def _send_as_file(
             preview_msg = None
         
         # Сохраняем MD файл
-        from .md_storage import md_storage_manager
+        from md_storage import md_storage_manager
         file_path = md_storage_manager.save_md_report(
             content=text,
             user_id=chat_id,
@@ -324,7 +324,7 @@ async def _save_to_history_async(
 ) -> None:
     """Асинхронно сохраняет сообщение в историю."""
     try:
-        from .chat_history import chat_history_manager
+        from chat_history import chat_history_manager
         success = chat_history_manager.save_message_to_history(
             user_id=user_id,
             username=username,
