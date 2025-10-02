@@ -54,25 +54,25 @@ jobs:
         SKIP_TORCH_TESTS: true
         RUN_MODE: TEST
       run: |
-        # Run only CI-compatible tests
-        if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
-          echo "🧪 Running CI-compatible tests..."
-          
-          # First, run our specific CI-compatible tests
-          echo "Running basic CI tests..."
+        echo "🧪 Running CI validation..."
+
+        # Check if tests directory exists and has CI-compatible tests
+        if [ -d "tests" ] && [ -f "tests/test_ci_compatible.py" ]; then
+          echo "Running CI-compatible tests..."
           python -m pytest tests/test_ci_compatible.py -v
-          
-          # Then run config tests if available
+
+          # Run config tests if available
           if [ -f "tests/test_config.py" ]; then
             echo "Running configuration tests..."
             python -m pytest tests/test_config.py -v -k "not (minio or torch or MinIO)" || echo "⚠️  Some config tests skipped"
           fi
-          
-          echo "✅ CI-compatible tests completed"
-          echo "📝 Note: MinIO and torch-dependent tests are skipped in CI environment"
         else
-          echo "No tests found. Validating Python syntax..."
+          echo "⚠️  No tests directory or CI-compatible tests found"
+          echo "📝 Validating Python syntax instead..."
           python -m py_compile src/*.py
-          echo "Python syntax validation completed successfully."
+          echo "✅ Python syntax validation completed successfully"
         fi
+
+        echo "✅ CI validation completed"
+        echo "📝 Note: MinIO and torch-dependent tests are skipped in CI environment"
 
