@@ -164,6 +164,14 @@ MINIO_MAX_FILE_SIZE = int(os.getenv("MINIO_MAX_FILE_SIZE", "2147483648"))  # 2GB
 MINIO_CLEANUP_DAYS = int(os.getenv("MINIO_CLEANUP_DAYS", "30"))
 MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
 
+# Smart Send Configuration
+TELEGRAM_MESSAGE_THRESHOLD = int(os.getenv("TELEGRAM_MESSAGE_THRESHOLD", "1200"))
+CHAT_HISTORY_DIR = os.getenv("CHAT_HISTORY_DIR", "/home/voxpersona_user/VoxPersona/chat_history")
+MD_REPORTS_DIR = os.getenv("MD_REPORTS_DIR", "/home/voxpersona_user/VoxPersona/md_reports")
+
+# Preview text configuration
+PREVIEW_TEXT_LENGTH = int(os.getenv("PREVIEW_TEXT_LENGTH", "300"))
+
 
 if not IS_TESTING:
     # Production environment requires all API keys

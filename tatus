@@ -1,0 +1,10 @@
+[33mbd2fa31[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fix
+[33mc2dd30c[m model change to claude sonnet 4 20250514
+[33mc32719e[m Fix type annotations and eliminate reportAny errors in db.py - Improved type safety with DbId, DbText, DbOptionalId aliases - Fixed db_transaction decorator typing - Replaced explicit Any usage with more specific types - Enhanced type annotations for better code clarity
+[33m484a4f3[m 1
+[33mc3be4d3[m Исправление ошибки типов для параметра mode в функции ask_zone
+[33m1752817[m fix: удалить закомментированный код согласно SonarQube правилу python:S125
+[33m2136145[m Большое исправление ошибок
+[33m6cb6097[m Исправлена ошибка импорта dotenv: добавлена конфигурация Pyright для отключения предупреждений об импортах
+[33m3368457[m Fix: Add conditional import for sentence_transformers in CI environment
+[33mf2838e5[m doc

@@ -1,11 +1,12 @@
 from typing import Any, cast
-from datetime import datetime
+from datetime import datetime, date
 import os
+import re
 import threading
 import logging
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import CallbackQuery, Message, Document
+from pyrogram.types import CallbackQuery, Message, Document, InlineKeyboardMarkup, InlineKeyboardButton
 from minio.error import S3Error
 
 from src.minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, MinIOUploadError
@@ -16,7 +17,10 @@ from config import (
     authorized_users,
     STORAGE_DIRS
 )
-from utils import run_loading_animation, openai_audio_filter
+from utils import run_loading_animation, openai_audio_filter, get_username_from_chat
+from constants import COMMAND_HISTORY, COMMAND_STATS, COMMAND_REPORTS
+from chat_history import chat_history_manager
+from md_storage import md_storage_manager
 from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, check_authorized, validate_building_type
 from parser import parse_message_text, parse_building_type, parse_zone, parse_file_number, parse_place_name, parse_city, parse_name
 
@@ -163,6 +167,149 @@ def handle_edit_field(chat_id: int, field: str, app: Client):
 
     app.send_message(chat_id, prompt_text)
 
+
+def handle_history_command(message: Message, app: Client) -> None:
+    """Обработчик команды /history."""
+    chat_id = message.chat.id
+    username = get_username_from_chat(chat_id, app)
+    
+    try:
+        # Парсим дату из команды (опционально)
+        text = message.text.strip()
+        parts = text.split()
+        target_date = None
+        
+        if len(parts) > 1:
+            date_str = parts[1]
+            # Пытаемся распарсить дату в разных форматах
+            date_formats = ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"]
+            
+            for fmt in date_formats:
+                try:
+                    target_date = datetime.strptime(date_str, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            
+            if target_date is None:
+                app.send_message(
+                    chat_id,
+                    "❌ Неверный формат даты. Используйте: YYYY-MM-DD, DD.MM.YYYY или DD/MM/YYYY\n"
+                    "Пример: `/history 2025-01-15`"
+                )
+                return
+        
+        # Получаем и отправляем историю
+        history_text = chat_history_manager.format_day_history_for_display(chat_id, target_date)
+        app.send_message(chat_id, history_text, parse_mode="Markdown")
+        
+    except Exception as e:
+        logging.error(f"Error handling history command: {e}")
+        app.send_message(chat_id, "❌ Произошла ошибка при получении истории.")
+
+
+def handle_stats_command(message: Message, app: Client) -> None:
+    """Обработчик команды /stats."""
+    chat_id = message.chat.id
+    
+    try:
+        stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
+        app.send_message(chat_id, stats_text, parse_mode="Markdown")
+        
+    except Exception as e:
+        logging.error(f"Error handling stats command: {e}")
+        app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
+
+
+def handle_reports_command(message: Message, app: Client) -> None:
+    """Обработчик команды /reports."""
+    chat_id = message.chat.id
+    
+    try:
+        reports = md_storage_manager.get_user_reports(chat_id, limit=10)
+        
+        if not reports:
+            app.send_message(
+                chat_id,
+                "📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Создаем inline клавиатуру с отчетами
+        keyboard = []
+        
+        for i, report in enumerate(reports[:5], 1):  # Показываем только 5 последних
+            timestamp = datetime.fromisoformat(report.timestamp).strftime("%d.%m %H:%M")
+            question_preview = report.question[:40] + "..." if len(report.question) > 40 else report.question
+            search_icon = "⚡" if report.search_type == "fast" else "🔍"
+            
+            button_text = f"{search_icon} {timestamp}: {question_preview}"
+            callback_data = f"send_report||{report.file_path}"
+            
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+        
+        keyboard.append([InlineKeyboardButton("📊 Показать все отчеты", callback_data="show_all_reports")])
+        
+        reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
+        
+        app.send_message(
+            chat_id,
+            reports_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        logging.error(f"Error handling reports command: {e}")
+        app.send_message(chat_id, "❌ Произошла ошибка при получении отчетов.")
+
+
+def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
+    """Обработчик callback для отправки отчетов."""
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data
+    
+    try:
+        if data.startswith("send_report||"):
+            relative_path = data.split("send_report||", 1)[1]
+            
+            # Получаем путь к файлу
+            file_path = md_storage_manager.get_report_file_path(relative_path)
+            
+            if file_path and file_path.exists():
+                app.send_document(
+                    chat_id,
+                    str(file_path),
+                    caption="📄 Ваш отчет"
+                )
+                app.answer_callback_query(callback_query.id, "✅ Отчет отправлен")
+            else:
+                app.answer_callback_query(
+                    callback_query.id,
+                    "❌ Файл не найден",
+                    show_alert=True
+                )
+        
+        elif data == "show_all_reports":
+            # Показываем полный список отчетов
+            reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
+            app.edit_message_text(
+                chat_id,
+                callback_query.message.id,
+                reports_text,
+                parse_mode="Markdown"
+            )
+            app.answer_callback_query(callback_query.id)
+            
+    except Exception as e:
+        logging.error(f"Error handling report callback: {e}")
+        app.answer_callback_query(
+            callback_query.id,
+            "❌ Произошла ошибка",
+            show_alert=True
+        )
+
 def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], message: Message):
     """
     Этот хендлер обрабатывает все текстовые сообщения от авторизованного пользователя,
@@ -170,6 +317,17 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
     """
     c_id = message.chat.id
     text_ = message.text.strip()
+    
+    # Проверяем команды истории, статистики и отчетов
+    if text_.startswith(COMMAND_HISTORY):
+        handle_history_command(message, app)
+        return
+    elif text_.startswith(COMMAND_STATS):
+        handle_stats_command(message, app)
+        return
+    elif text_.startswith(COMMAND_REPORTS):
+        handle_reports_command(message, app)
+        return
 
     # Проверяем, есть ли у пользователя активное состояние
     st = user_states.get(c_id)
@@ -854,6 +1012,10 @@ def register_handlers(app: Client):
             # # --- Обработка выбора здания:
             elif data.startswith("choose_building||"):
                 handle_choose_building(c_id, data, app)
+            
+            # Обработка отчетов
+            elif data.startswith("send_report||") or data == "show_all_reports":
+                handle_report_callback(callback, app)
         
         except ValueError as ve:
             logging.exception(ve)
