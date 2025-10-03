@@ -1,5 +1,9 @@
 """
 Тесты для функций умной отправки в utils.py
+
+ПРИМЕЧАНИЕ: Тесты для старых async функций (smart_send_text, smart_send_text_sync)
+являются DEPRECATED так как эти функции были заменены на smart_send_text_unified.
+Новые тесты находятся в классе TestSmartSendTextUnified в конце файла.
 """
 
 import pytest
@@ -8,11 +12,13 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from pyrogram.enums import ParseMode
 
 from src.utils import (
-    smart_send_text,
-    smart_send_text_sync,
+    smart_send_text_unified,
     create_preview_text,
     get_username_from_chat
 )
+
+# DEPRECATED: Старые функции удалены, импорты ниже не работают
+# from src.utils import smart_send_text, smart_send_text_sync
 
 
 @pytest.fixture
@@ -394,3 +400,101 @@ class TestIntegration:
         doc_call = mock_app.send_document.call_args
         assert doc_call[0][0] == chat_id
         assert doc_call[0][1] == "/tmp/test_report.md"
+
+
+class TestSmartSendTextUnified:
+    """Тесты для новой unified синхронной функции smart_send_text_unified."""
+
+    def test_send_short_message(self, mock_app, mock_message):
+        """Тест отправки короткого сообщения через unified функцию."""
+        text = "Короткое сообщение"
+        chat_id = 123456
+        username = "test_user"
+
+        mock_app.send_message.return_value = mock_message
+
+        with patch('src.utils.TELEGRAM_MESSAGE_THRESHOLD', 1200), \
+             patch('src.utils._save_to_history_sync') as mock_save:
+
+            result = smart_send_text_unified(
+                text=text,
+                chat_id=chat_id,
+                app=mock_app,
+                username=username,
+                question="Тестовый вопрос",
+                search_type="fast",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+        assert result is True
+        mock_app.send_message.assert_called_once_with(
+            chat_id, text, parse_mode=ParseMode.MARKDOWN
+        )
+        mock_save.assert_called_once()
+
+    def test_send_long_message_as_file(self, mock_app, mock_message):
+        """Тест отправки длинного сообщения как MD файла через unified функцию."""
+        text = "X" * 1500  # Длинный текст
+        chat_id = 123456
+        username = "test_user"
+        question = "Тестовый вопрос"
+
+        mock_app.send_message.return_value = mock_message
+        mock_app.send_document.return_value = mock_message
+
+        with patch('src.utils.TELEGRAM_MESSAGE_THRESHOLD', 1200), \
+             patch('src.utils.md_storage_manager') as mock_storage, \
+             patch('src.utils._save_to_history_sync') as mock_save:
+
+            mock_storage.save_md_report.return_value = "/path/to/report.md"
+
+            result = smart_send_text_unified(
+                text=text,
+                chat_id=chat_id,
+                app=mock_app,
+                username=username,
+                question=question,
+                search_type="deep"
+            )
+
+        assert result is True
+
+        # Проверяем что отправлено превью
+        preview_calls = [call for call in mock_app.send_message.call_args_list
+                        if len(call[0]) > 1 and "📄 **Ваш отчет готов!**" in call[0][1]]
+        assert len(preview_calls) == 1
+
+        # Проверяем что сохранен MD файл
+        mock_storage.save_md_report.assert_called_once_with(
+            content=text,
+            user_id=chat_id,
+            username=username,
+            question=question,
+            search_type="deep"
+        )
+
+        # Проверяем что отправлен документ
+        mock_app.send_document.assert_called_once()
+
+    def test_auto_username_detection(self, mock_app, mock_message):
+        """Тест автоматического определения username в unified функции."""
+        text = "Тест"
+        chat_id = 123456
+
+        mock_app.send_message.return_value = mock_message
+
+        with patch('src.utils.get_username_from_chat') as mock_get_username, \
+             patch('src.utils._save_to_history_sync'):
+
+            mock_get_username.return_value = "auto_user"
+
+            smart_send_text_unified(
+                text=text,
+                chat_id=chat_id,
+                app=mock_app,
+                username=None,  # Не передаем username
+                question="Тест",
+                search_type="fast"
+            )
+
+        mock_get_username.assert_called_once_with(chat_id, mock_app)
