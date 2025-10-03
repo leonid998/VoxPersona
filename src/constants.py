@@ -11,7 +11,7 @@ CLAUDE_ERROR_MESSAGE = "Ошибка Claude"
 
 # Smart Send System Constants
 MD_FILE_PREFIX = "voxpersona"
-MD_FILE_EXTENSION = ".md"
+MD_FILE_EXTENSION = ".txt"
 
 # Chat History Constants
 HISTORY_FILE_EXTENSION = ".json"
