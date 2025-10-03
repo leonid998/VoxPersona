@@ -1053,7 +1053,7 @@ def register_handlers(app: Client):
         send_main_menu(c_id, app)
 
     @app.on_callback_query()  # type: ignore[misc,reportUntypedFunctionDecorator]
-    def callback_query_handler(client: Client, callback: CallbackQuery):
+    async def callback_query_handler(client: Client, callback: CallbackQuery):
         c_id = callback.message.chat.id
         data = callback.data
         try:
@@ -1064,7 +1064,7 @@ def register_handlers(app: Client):
         try:
             # === МУЛЬТИЧАТЫ: Обработчики callback ===
             if data == "new_chat":
-                handle_new_chat(c_id, app)
+                await handle_new_chat(c_id, app)
                 return
 
             elif data.startswith("switch_chat||"):
@@ -1074,7 +1074,7 @@ def register_handlers(app: Client):
 
             elif data.startswith("confirm_switch||"):
                 conversation_id = data.split("||")[1]
-                handle_switch_chat_confirm(c_id, conversation_id, app)
+                await handle_switch_chat_confirm(c_id, conversation_id, app)
                 return
 
             elif data.startswith("rename_chat||"):
@@ -1090,7 +1090,7 @@ def register_handlers(app: Client):
             elif data.startswith("confirm_delete||"):
                 conversation_id = data.split("||")[1]
                 username = get_username_from_chat(c_id, app)
-                handle_delete_chat_confirm(c_id, conversation_id, username, app)
+                await handle_delete_chat_confirm(c_id, conversation_id, username, app)
                 return
             # === КОНЕЦ МУЛЬТИЧАТЫ ===
 
@@ -1112,7 +1112,7 @@ def register_handlers(app: Client):
             elif data == "show_stats":
                 handle_show_stats(c_id, app)
             elif data == "show_my_reports":
-                handle_show_my_reports(c_id, app)
+                await handle_show_my_reports(c_id, app)
             # Просмотр файлов
             elif data.startswith("view||"):
                 handle_view_files(c_id, data, app)
@@ -1121,7 +1121,7 @@ def register_handlers(app: Client):
                 handle_file_selection(c_id, data, app)
 
             elif data.startswith("delete||"):
-                handle_file_deletion(c_id, data, app)
+                await handle_file_deletion(c_id, data, app)
 
             elif data.startswith("upload||"):
                 file_upload_handler(c_id, data, app)
