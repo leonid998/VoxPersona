@@ -43,11 +43,10 @@ from markups import (
 from menus import (
     send_main_menu,
     files_menu_markup,
-    register_menu_message,
-    clear_active_menus,
     show_confirmation_menu,
     show_edit_menu
 )
+from menu_manager import send_menu_and_remove_old
 from storage import process_stored_file
 
 from analysis import (
@@ -238,7 +237,7 @@ def handle_stats_command(message: Message, app: Client) -> None:
         app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
 
 
-def handle_reports_command(message: Message, app: Client) -> None:
+async def handle_reports_command(message: Message, app: Client) -> None:
     """Обработчик команды /reports."""
     chat_id = message.chat.id
 
@@ -270,11 +269,11 @@ def handle_reports_command(message: Message, app: Client) -> None:
 
         reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
 
-        app.send_message(
-            chat_id,
-            reports_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-
+        await send_menu_and_remove_old(
+            chat_id=chat_id,
+            app=app,
+            text=reports_text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
     except Exception as e:
@@ -484,30 +483,22 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
 # =========================================================================
 
 def handle_help_menu(chat_id: int, app: Client):
-    clear_active_menus(chat_id, app)
     kb, txt = help_menu_markup()
-    mm = app.send_message(chat_id, txt, reply_markup=kb)
-    register_menu_message(chat_id, mm.id)
+    app.send_message(chat_id, txt, reply_markup=kb)
 
 def handle_menu_storage(chat_id: int, app: Client):
-    clear_active_menus(chat_id, app)
-    mm = app.send_message(chat_id, "Что анализируем?:", reply_markup=interview_or_design_menu())
-    register_menu_message(chat_id, mm.id)
+    app.send_message(chat_id, "Что анализируем?:", reply_markup=interview_or_design_menu())
 
 def handle_menu_system(chat_id: int, app: Client):
-    clear_active_menus(chat_id, app)
-    mm = app.send_message(chat_id, "⚙️ Системные настройки:", reply_markup=system_menu_markup())
-    register_menu_message(chat_id, mm.id)
+    app.send_message(chat_id, "⚙️ Системные настройки:", reply_markup=system_menu_markup())
 
 def handle_menu_chats(chat_id: int, app: Client):
     """Показывает меню чатов с динамическим списком."""
-    clear_active_menus(chat_id, app)
-    mm = app.send_message(
+    app.send_message(
         chat_id,
         "📱 История и статистика чатов:",
         reply_markup=chats_menu_markup_dynamic(chat_id)
     )
-    register_menu_message(chat_id, mm.id)
 
 def handle_main_menu(chat_id: int, app: Client):
     send_main_menu(chat_id, app)
@@ -521,7 +512,7 @@ def handle_show_stats(chat_id: int, app: Client):
         logging.error(f"Error showing stats: {e}")
         app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
 
-def handle_show_my_reports(chat_id: int, app: Client):
+async def handle_show_my_reports(chat_id: int, app: Client):
     """Показывает список отчетов пользователя"""
     try:
         reports = md_storage_manager.get_user_reports(chat_id, limit=10)
@@ -549,11 +540,11 @@ def handle_show_my_reports(chat_id: int, app: Client):
 
         reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
 
-        app.send_message(
-            chat_id,
-            reports_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-
+        await send_menu_and_remove_old(
+            chat_id=chat_id,
+            app=app,
+            text=reports_text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
     except Exception as e:
         logging.error(f"Error showing reports: {e}")
@@ -564,9 +555,7 @@ def handle_view_files(chat_id: int, data, app: Client):
     if len(parts) < 2:
         return
     cat = parts[1]
-    clear_active_menus(chat_id, app)
-    mm = app.send_message(chat_id, f"Файлы в '{cat}':", reply_markup=files_menu_markup(cat))
-    register_menu_message(chat_id, mm.id)
+    app.send_message(chat_id, f"Файлы в '{cat}':", reply_markup=files_menu_markup(cat))
 
 def process_selected_file(chat_id: int, category: str, filename: str, app: Client):
     msg = app.send_message(chat_id, "⏳ Обрабатываю файл...")
@@ -609,7 +598,7 @@ def handle_file_selection(chat_id: int, data: str, app: Client):
         raise ValueError(f"Файл {real_name} не найден")
     process_selected_file(chat_id, category, real_name, app)
 
-def handle_file_deletion(chat_id: int, data: str, app: Client):
+async def handle_file_deletion(chat_id: int, data: str, app: Client):
     parts = preprocess_parts(data)
     if parts is None:
         app.send_message(chat_id, "Ошибка обработки данных")
@@ -623,14 +612,16 @@ def handle_file_deletion(chat_id: int, data: str, app: Client):
 
     try:
         os.remove(os.path.join(folder, real_name))
-        # app.send_message(chat_id, "Файл удалён.")
         logging.info("Файл удалён.")
     except Exception as e:
-        # app.send_message(chat_id, f"Ошибка удаления: {e}")
         logging.error(f"Ошибка удаления: {e}")
 
-    mm = app.send_message(chat_id, f"Список файлов в '{category}':", reply_markup=files_menu_markup(category))
-    register_menu_message(chat_id, mm.id)
+    await send_menu_and_remove_old(
+        chat_id=chat_id,
+        app=app,
+        text=f"Список файлов в '{category}':",
+        reply_markup=files_menu_markup(category)
+    )
 
 def file_upload_handler(chat_id: int, data: str, app: Client):
     parts = preprocess_parts(data, 2)
@@ -646,7 +637,7 @@ def file_upload_handler(chat_id: int, data: str, app: Client):
 #                        Подтверждение и сохранение (Callback)
 # --------------------------------------------------------------------------------------
 
-def handle_confirm_data(chat_id: int, app: Client):
+async def handle_confirm_data(chat_id: int, app: Client):
     st = user_states.get(chat_id)
     if not st:
         return
@@ -683,13 +674,22 @@ def handle_confirm_data(chat_id: int, app: Client):
     if client:
         msg += f"**ФИО Клиента**: {client}\n\n"
 
-    msg += "Теперь выберите отчёт."
+    msg += "**Доступные отчёты:**"
 
-    app.send_message(chat_id, msg)
+    # Отправляем объединенное сообщение с меню
+    markup = None
     if mode == "interview":
-        app.send_message(chat_id, "Доступные отчёты:", reply_markup=interview_menu_markup())
+        markup = interview_menu_markup()
     elif mode == "design":
-        app.send_message(chat_id, "Доступные отчёты:", reply_markup=design_menu_markup())
+        markup = design_menu_markup()
+
+    if markup:
+        await send_menu_and_remove_old(
+            chat_id=chat_id,
+            app=app,
+            text=msg,
+            reply_markup=markup
+        )
 
 def handle_back_to_confirm(chat_id: int, app: Client):
     st = user_states.get(chat_id)
@@ -703,14 +703,12 @@ def handle_mode_selection(chat_id: int, mode: str, app: Client):
     Выбор сценария «Интервью» или «Дизайн»
     """
 
-    clear_active_menus(chat_id, app)
     user_states[chat_id] = {
         "mode": "interview" if mode == "mode_interview" else "design",
         "data": {}
     }
     st = user_states[chat_id]
-    mm = app.send_message(chat_id, "📦 Меню хранилища:", reply_markup=storage_menu_markup())
-    register_menu_message(chat_id, mm.id)
+    app.send_message(chat_id, "📦 Меню хранилища:", reply_markup=storage_menu_markup())
 
 def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, building_name: str = "non-building"):
     validate_datas = []
@@ -743,9 +741,7 @@ def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, bu
 def preprocess_report_with_buildings(chat_id: int, data: str, app: Client):
     st = user_states.setdefault(chat_id, {})
     st["pending_report"] = data
-    clear_active_menus(chat_id, app)
-    mm = app.send_message(chat_id, "Выберите тип заведения:", reply_markup=building_type_menu_markup())
-    register_menu_message(chat_id, mm.id)
+    app.send_message(chat_id, "Выберите тип заведения:", reply_markup=building_type_menu_markup())
 
 def handle_report(chat_id: int, callback_data : str, app: Client):
     if callback_data  in [
@@ -852,8 +848,6 @@ def handle_toggle_deep(callback: CallbackQuery, app: Client):
 
 def handle_menu_dialog(chat_id: int, app: Client):
     # Сначала очищаем предыдущие меню
-    clear_active_menus(chat_id, app)
-
     user_states[chat_id] = {"step": "dialog_mode", "deep_search": False}
     app.send_message(
         chat_id,

@@ -33,24 +33,7 @@ def files_menu_markup(category: str):
     return InlineKeyboardMarkup(rows)
 
 def send_main_menu(chat_id: int, app: Client):
-    clear_active_menus(chat_id, app)
-    mm = app.send_message(chat_id, "🏠 Главное меню:", reply_markup=main_menu_markup())
-    if mm:
-        register_menu_message(chat_id, mm.id)
-
-def clear_active_menus(chat_id: int, app: Client):
-    if chat_id in active_menus:
-        for mid in active_menus[chat_id]:
-            try:
-                app.delete_messages(chat_id, mid)
-            except Exception:
-                pass
-        active_menus[chat_id] = []
-
-def register_menu_message(chat_id: int, msg_id: int):
-    if chat_id not in active_menus:
-        active_menus[chat_id] = []
-    active_menus[chat_id].append(msg_id)
+    app.send_message(chat_id, "🏠 Главное меню:", reply_markup=main_menu_markup())
 
 def show_confirmation_menu(chat_id: int, state: dict[str, Any], app: Client):
     """
@@ -68,10 +51,10 @@ def show_confirmation_menu(chat_id: int, state: dict[str, Any], app: Client):
     city = data_.get("city", "")
 
     kb, text_summary = confirm_menu_markup(
-        mode=mode, 
-        employee=employee, 
-        place=place, 
-        date=date_, 
+        mode=mode,
+        employee=employee,
+        place=place,
+        date=date_,
         city=city,
         zone_name=zone_name,
         file_number=file_number,
@@ -79,9 +62,7 @@ def show_confirmation_menu(chat_id: int, state: dict[str, Any], app: Client):
         client=client
         )
 
-    clear_active_menus(chat_id, app)
-    mm = app.send_message(chat_id, text_summary, reply_markup=kb)
-    register_menu_message(chat_id, mm.id)
+    app.send_message(chat_id, text_summary, reply_markup=kb)
 
 def show_edit_menu(chat_id: int, state: dict[str, Any], app: Client):
     """
@@ -91,6 +72,4 @@ def show_edit_menu(chat_id: int, state: dict[str, Any], app: Client):
     mode = state.get("mode", "")
 
     kb = edit_menu_markup(mode)
-    clear_active_menus(chat_id, app)
-    msg_ = app.send_message(chat_id, "Какое поле хотите изменить?", reply_markup=kb)
-    register_menu_message(chat_id, msg_.id)
+    app.send_message(chat_id, "Какое поле хотите изменить?", reply_markup=kb)

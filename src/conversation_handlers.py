@@ -26,6 +26,7 @@ from markups import (
     delete_chat_confirmation_markup,
     chats_menu_markup_dynamic
 )
+from menu_manager import send_menu_and_remove_old, clear_menus
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def ensure_active_conversation(user_id: int, username: str, first_message: str =
         )
 
 
-def handle_new_chat(chat_id: int, app: Client):
+async def handle_new_chat(chat_id: int, app: Client):
     """
     Обработчик создания нового чата.
     Callback: "new_chat"
@@ -102,16 +103,20 @@ def handle_new_chat(chat_id: int, app: Client):
         if chat_id in user_states:
             user_states[chat_id] = {}
 
-        # Отправляем приветственное сообщение
-        app.send_message(
-            chat_id=chat_id,
-            text="✨ Новый чат создан!\n\nКакую информацию вы хотели бы получить?"
+        # Очищаем историю меню (новый контекст)
+        clear_menus(chat_id)
+
+        # Объединяем текст и отправляем меню внизу
+        text = (
+            "✨ Новый чат создан!\n\n"
+            "Какую информацию вы хотели бы получить?\n\n"
+            "Выберите действие:"
         )
 
-        # Отправляем меню диалога
-        app.send_message(
+        await send_menu_and_remove_old(
             chat_id=chat_id,
-            text="Выберите действие:",
+            app=app,
+            text=text,
             reply_markup=make_dialog_markup(False)
         )
 
@@ -164,7 +169,7 @@ def handle_switch_chat_request(
         callback_query.answer("❌ Ошибка при переключении чата", show_alert=True)
 
 
-def handle_switch_chat_confirm(
+async def handle_switch_chat_confirm(
     chat_id: int,
     conversation_id: str,
     app: Client
@@ -182,7 +187,7 @@ def handle_switch_chat_confirm(
         # Устанавливаем чат как активный
         conversation_manager.set_active_conversation(chat_id, conversation_id)
 
-        # Загружаем последние 20 сообщений из истории
+        # Загружаем чат и последние 5 сообщений
         conversation = conversation_manager.load_conversation(chat_id, conversation_id)
 
         if not conversation:
@@ -192,38 +197,28 @@ def handle_switch_chat_confirm(
             )
             return
 
-        messages = conversation_manager.get_messages(chat_id, conversation_id, limit=20)
+        messages = conversation_manager.get_messages(chat_id, conversation_id, limit=5)
 
-        # Отправляем информацию о переключении
-        app.send_message(
-            chat_id=chat_id,
-            text=f"✅ Переключено на чат: {conversation.metadata.title}\n"
-                 f"📝 Сообщений в истории: {len(conversation.messages)}"
-        )
+        # Формируем единое сообщение
+        text = f"✅ Переключено на чат: {conversation.metadata.title}\n\n"
 
-        # Отправляем последние сообщения из истории
         if messages:
-            app.send_message(
-                chat_id=chat_id,
-                text="📜 Последние сообщения:"
-            )
-
+            text += "📜 Последние 5 сообщений:\n\n"
             for msg in messages:
                 role_emoji = "👤" if msg.type == "user_question" else "🤖"
-                app.send_message(
-                    chat_id=chat_id,
-                    text=f"{role_emoji} {msg.text}"
-                )
+                # Обрезаем длинные сообщения
+                msg_preview = msg.text[:100] + "..." if len(msg.text) > 100 else msg.text
+                text += f"{role_emoji} {msg_preview}\n\n"
         else:
-            app.send_message(
-                chat_id=chat_id,
-                text="💬 История пуста. Начните новый диалог!"
-            )
+            text += "💬 История пуста.\n\n"
 
-        # Отправляем меню диалога
-        app.send_message(
+        text += "Выберите действие:"
+
+        # Отправляем объединенное сообщение с меню внизу
+        await send_menu_and_remove_old(
             chat_id=chat_id,
-            text="Выберите действие:",
+            app=app,
+            text=text,
             reply_markup=make_dialog_markup(False)
         )
 
@@ -286,7 +281,7 @@ def handle_rename_chat_request(
         )
 
 
-def handle_rename_chat_input(
+async def handle_rename_chat_input(
     chat_id: int,
     new_name: str,
     app: Client
@@ -332,16 +327,13 @@ def handle_rename_chat_input(
         # Очищаем состояние
         user_states[chat_id] = {}
 
-        # Отправляем подтверждение
-        app.send_message(
-            chat_id=chat_id,
-            text=f"✅ Чат переименован в '{new_name}'"
-        )
+        # Объединяем результат + меню
+        text = f"✅ Чат переименован в '{new_name}'\n\nВаши чаты:"
 
-        # Возвращаемся в меню Чаты
-        app.send_message(
+        await send_menu_and_remove_old(
             chat_id=chat_id,
-            text="Ваши чаты:",
+            app=app,
+            text=text,
             reply_markup=chats_menu_markup_dynamic(chat_id)
         )
 
@@ -399,7 +391,7 @@ def handle_delete_chat_request(
         )
 
 
-def handle_delete_chat_confirm(
+async def handle_delete_chat_confirm(
     chat_id: int,
     conversation_id: str,
     username: str,
@@ -430,27 +422,35 @@ def handle_delete_chat_confirm(
                 first_question="Новый чат"
             )
 
-            app.send_message(
+            # Очищаем историю меню (новый контекст)
+            clear_menus(chat_id)
+
+            text = (
+                "✅ Чат удален\n\n"
+                "Это был ваш последний чат. Создан новый чат.\n\n"
+                "Ваши чаты:"
+            )
+
+            await send_menu_and_remove_old(
                 chat_id=chat_id,
-                text="✅ Чат удален\n\n"
-                     "Это был ваш последний чат. Создан новый чат."
+                app=app,
+                text=text,
+                reply_markup=chats_menu_markup_dynamic(chat_id)
             )
 
             logger.info(f"Удален последний чат {conversation_id}, создан новый {new_conversation_id} для пользователя {chat_id}")
         else:
-            app.send_message(
+            # Остались чаты - возвращаемся в меню
+            text = "✅ Чат удален\n\nВаши чаты:"
+
+            await send_menu_and_remove_old(
                 chat_id=chat_id,
-                text="✅ Чат удален"
+                app=app,
+                text=text,
+                reply_markup=chats_menu_markup_dynamic(chat_id)
             )
 
             logger.info(f"Удален чат {conversation_id} для пользователя {chat_id}")
-
-        # Возвращаемся в меню Чаты
-        app.send_message(
-            chat_id=chat_id,
-            text="Ваши чаты:",
-            reply_markup=chats_menu_markup_dynamic(chat_id)
-        )
 
     except Exception as e:
         logger.error(f"Ошибка при удалении чата {conversation_id} для пользователя {chat_id}: {e}")

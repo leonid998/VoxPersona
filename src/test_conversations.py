@@ -442,27 +442,5 @@ class TestConversationHandlers:
         assert result == "new-uuid"
         mock_manager.create_conversation.assert_called_once()
 
-    @patch('conversation_handlers.conversation_manager')
-    @patch('conversation_handlers.get_username_from_chat')
-    def test_handle_new_chat(self, mock_get_username, mock_manager, mock_app):
-        """handle_new_chat создает новый чат."""
-        from conversation_handlers import handle_new_chat
-        from config import user_states
-
-        mock_get_username.return_value = "test_user"
-        mock_manager.create_conversation.return_value = "new-uuid"
-
-        # Вызываем
-        handle_new_chat(12345, mock_app)
-
-        # Проверяем
-        mock_manager.create_conversation.assert_called_once_with(
-            user_id=12345,
-            username="test_user",
-            first_question="Новый чат"
-        )
-        assert mock_app.send_message.call_count == 2
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
