@@ -203,7 +203,7 @@ def handle_history_command(message: Message, app: Client) -> None:
         
         # Получаем и отправляем историю
         history_text = chat_history_manager.format_day_history_for_display(chat_id, target_date)
-        app.send_message(chat_id, history_text, parse_mode="Markdown")
+        app.send_message(chat_id, history_text, )
         
     except Exception as e:
         logging.error(f"Error handling history command: {e}")
@@ -216,7 +216,7 @@ def handle_stats_command(message: Message, app: Client) -> None:
     
     try:
         stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
-        app.send_message(chat_id, stats_text, parse_mode="Markdown")
+        app.send_message(chat_id, stats_text, )
         
     except Exception as e:
         logging.error(f"Error handling stats command: {e}")
@@ -234,7 +234,7 @@ def handle_reports_command(message: Message, app: Client) -> None:
             app.send_message(
                 chat_id,
                 "📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
-                parse_mode="Markdown"
+                
             )
             return
         
@@ -259,7 +259,7 @@ def handle_reports_command(message: Message, app: Client) -> None:
             chat_id,
             reports_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
+            
         )
         
     except Exception as e:
@@ -300,7 +300,7 @@ def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
                 chat_id,
                 callback_query.message.id,
                 reports_text,
-                parse_mode="Markdown"
+                
             )
             app.answer_callback_query(callback_query.id)
             
@@ -467,7 +467,7 @@ def handle_history_today(chat_id: int, app: Client):
     """Показывает историю чатов за сегодня"""
     try:
         history_text = chat_history_manager.format_day_history_for_display(chat_id, None)
-        app.send_message(chat_id, history_text, parse_mode="Markdown")
+        app.send_message(chat_id, history_text, )
     except Exception as e:
         logging.error(f"Error showing history: {e}")
         app.send_message(chat_id, "❌ Произошла ошибка при получении истории.")
@@ -476,7 +476,7 @@ def handle_show_stats(chat_id: int, app: Client):
     """Показывает статистику чатов"""
     try:
         stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
-        app.send_message(chat_id, stats_text, parse_mode="Markdown")
+        app.send_message(chat_id, stats_text, )
     except Exception as e:
         logging.error(f"Error showing stats: {e}")
         app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
@@ -490,7 +490,7 @@ def handle_show_my_reports(chat_id: int, app: Client):
             app.send_message(
                 chat_id,
                 "📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
-                parse_mode="Markdown"
+                
             )
             return
 
@@ -513,7 +513,7 @@ def handle_show_my_reports(chat_id: int, app: Client):
             chat_id,
             reports_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
+            
         )
     except Exception as e:
         logging.error(f"Error showing reports: {e}")
