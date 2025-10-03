@@ -1,4 +1,6 @@
 # VoxPersona - AI-Powered Voice Analysis Platform
+![CI Status](https://github.com/leonid998/VoxPersona/actions/workflows/python-app.yml/badge.svg)
+![Deploy Status](https://github.com/leonid998/VoxPersona/actions/workflows/deploy.yml/badge.svg)
 
 VoxPersona - это интеллектуальная платформа для анализа голосовых записей с использованием передовых технологий искусственного интеллекта. Система предоставляет автоматическую транскрипцию, анализ содержания и генерацию детальных отчетов на основе аудиоданных.
 

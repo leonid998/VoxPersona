@@ -1,8 +1,10 @@
 name: Intelligent VoxPersona Deployment
 
 on:
-  push:
-    branches: [ main ]
+  workflow_run:
+    workflows: ["Python application"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       force_restart_type:
@@ -26,7 +28,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
     steps:
     - name: Validate and sanitize user inputs
       id: validate_inputs
