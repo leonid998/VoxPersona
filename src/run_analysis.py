@@ -8,7 +8,7 @@ import asyncio
 import aiohttp
 
 from config import ANTHROPIC_API_KEY, ANTHROPIC_API_KEY_2, ANTHROPIC_API_KEY_3, ANTHROPIC_API_KEY_4, ANTHROPIC_API_KEY_5, ANTHROPIC_API_KEY_6, ANTHROPIC_API_KEY_7
-from utils import run_loading_animation, smart_send_text_sync, grouped_reports_to_string, get_username_from_chat
+from utils import run_loading_animation, split_and_send_long_text, grouped_reports_to_string, get_username_from_chat
 from db_handler.db import fetch_prompts_for_scenario_reporttype_building, fetch_prompt_by_name
 from datamodels import mapping_report_type_names, mapping_building_names, REPORT_MAPPING, CLASSIFY_DESIGN, CLASSIFY_INTERVIEW
 from menus import send_main_menu
@@ -134,6 +134,19 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
         content = grouped_reports_to_string(content)
         rag = rags[scenario_name]
 
+        # Получаем username
+        username = get_username_from_chat(chat_id, app)
+
+        # Сохраняем вопрос пользователя в историю ПЕРЕД поиском
+        from chat_history import chat_history_manager
+        chat_history_manager.save_message_to_history(
+            user_id=chat_id,
+            username=username,
+            message_id=0,  # Временный ID для пользовательского сообщения
+            message_type="user_question",
+            text=text
+        )
+
         if deep_search:
             app.send_message(chat_id, "Запущено Глубокое Исследование")
             logging.info("Запущено Глубокое исследование")
@@ -154,29 +167,25 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
 
         formatted_response = f"*Категория запроса:* {category}\n\n{answer}"
 
-        # Получаем username
-        username = get_username_from_chat(chat_id, app)
-
-        # Сохраняем вопрос пользователя в историю
-        from chat_history import chat_history_manager
-        chat_history_manager.save_message_to_history(
-            user_id=chat_id,
-            username=username,
-            message_id=0,  # Временный ID для пользовательского сообщения
-            message_type="user_question",
-            text=text
-        )
-
-        # Используем умную отправку
-        smart_send_text_sync(
+        # ИСПРАВЛЕНИЕ: Используем синхронную отправку вместо асинхронной
+        split_and_send_long_text(
             text=formatted_response,
             chat_id=chat_id,
             app=app,
-            username=username,
-            question=text,
-            search_type="deep" if deep_search else "fast",
             parse_mode=ParseMode.MARKDOWN
         )
+
+        # Сохраняем ответ в историю ПОСЛЕ успешной отправки
+        chat_history_manager.save_message_to_history(
+            user_id=chat_id,
+            username=username,
+            message_id=0,  # ID будет обновлен позже, если нужно
+            message_type="bot_answer",
+            text=formatted_response,
+            sent_as="message",
+            search_type="deep" if deep_search else "fast"
+        )
+
         max_log_length = 3000
         answer_to_log = answer if len(answer) <= max_log_length else answer[:max_log_length] + "... [обрезано]"
         logging.info(f"Ответ отправлен | Ответ: {answer_to_log}")
@@ -225,16 +234,26 @@ def run_analysis_pass(
             # Получаем username
             username = get_username_from_chat(chat_id, app)
 
-            # Используем умную отправку для анализа
-            smart_send_text_sync(
+            # ИСПРАВЛЕНИЕ: Используем синхронную отправку для анализа
+            split_and_send_long_text(
                 text=audit_text,
                 chat_id=chat_id,
                 app=app,
-                username=username,
-                question=f"Анализ: {label}",
-                search_type="analysis",
                 parse_mode=None
             )
+
+            # Сохраняем в историю
+            from chat_history import chat_history_manager
+            chat_history_manager.save_message_to_history(
+                user_id=chat_id,
+                username=username,
+                message_id=0,
+                message_type="bot_answer",
+                text=audit_text,
+                sent_as="message",
+                search_type="analysis"
+            )
+
             app.edit_message_text(chat_id, msg_.id, f"✅ Завершено: {label}")
 
         # Сохраняем в БД (теперь всё — сотрудник, place_name, city(если дизайн), building).
