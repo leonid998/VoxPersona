@@ -158,3 +158,4 @@ volumes:
 # Performance monitoring comments:
 # ТЕСТ ОПТИМИЗАЦИИ DOCKER - Build performance optimization applied
 # МНОГОЭТАПНАЯ СБОРКА - Multi-stage build with improved layer caching
+# АРХИТЕКТУРНАЯ ЧИСТОТА - Infrastructure rebuild for correct project structure (Oct 2025)
