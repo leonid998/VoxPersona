@@ -177,19 +177,6 @@ jobs:
         
         echo "📋 Final deployment decision: $DEPLOY_TYPE"
     
-    - name: Sync files to application directory
-      run: |
-        echo "📂 Syncing files to application directory..."
-        ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-          # Ensure app directory exists
-          mkdir -p ${{ env.APP_PATH }}
-          
-          # Sync files excluding .git directory
-          rsync -av --delete --exclude='.git' --exclude='*.log' ${{ env.PROJECT_PATH }}/ ${{ env.APP_PATH }}/
-          
-          echo 'Files synchronized successfully'
-        "
-    
     - name: Execute deployment
       id: execute_deployment
       env:
@@ -198,8 +185,8 @@ jobs:
         echo "🚀 Executing $DEPLOY_TYPE deployment..."
         
         ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-          cd ${{ env.APP_PATH }}
-          
+          cd ${{ env.PROJECT_PATH }}
+
           case '$DEPLOY_TYPE' in
             'FULL_RESTART')
               echo '🔄 Executing FULL_RESTART: Rebuilding all containers with cache optimization...'
@@ -235,8 +222,8 @@ jobs:
           
           # Check container status
           ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-            cd ${{ env.APP_PATH }}
-            
+            cd ${{ env.PROJECT_PATH }}
+
             echo '📊 Container status:'
             docker compose ps
 
@@ -306,7 +293,7 @@ jobs:
         
         # Log to server
         ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-          echo '$(date -Iseconds) [DEPLOY] $DEPLOY_TYPE: $OLD_COMMIT → $NEW_COMMIT (${DURATION}s)' >> ${{ env.APP_PATH }}/deployment.log
+          echo '$(date -Iseconds) [DEPLOY] $DEPLOY_TYPE: $OLD_COMMIT → $NEW_COMMIT (${DURATION}s)' >> ${{ env.PROJECT_PATH }}/deployment.log
         "
         
         echo "🎉 VoxPersona deployment completed:"
@@ -327,15 +314,11 @@ jobs:
             cd ${{ env.PROJECT_PATH }}
             echo '🔄 Rolling back to previous commit: $OLD_COMMIT'
             git reset --hard $OLD_COMMIT
-            
-            # Re-sync files
-            rsync -av --delete --exclude='.git' ${{ env.PROJECT_PATH }}/ ${{ env.APP_PATH }}/
-            
+
             # Restart application
-            cd ${{ env.APP_PATH }}
             docker compose stop voxpersona || true
             docker compose up -d voxpersona
-            
+
             echo '✅ Rollback completed'
           "
         else
@@ -344,7 +327,7 @@ jobs:
         
         # Log failure
         ssh ${{ env.SSH_OPTIONS }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-          echo '$(date -Iseconds) [DEPLOY-FAILED] Rollback executed: $NEW_COMMIT → $OLD_COMMIT' >> ${{ env.APP_PATH }}/deployment.log
+          echo '$(date -Iseconds) [DEPLOY-FAILED] Rollback executed: $NEW_COMMIT → $OLD_COMMIT' >> ${{ env.PROJECT_PATH }}/deployment.log
         " || true
     
     - name: Notify on failure
@@ -358,4 +341,4 @@ jobs:
         echo "  🎯 Target commit: $TARGET_COMMIT"
         echo "  📝 Commit message: $COMMIT_MESSAGE"
         echo "  🔄 Deployment type: $DEPLOY_TYPE"
-        echo "  ⚠️  Check deployment logs on server: ${{ env.APP_PATH }}/deployment.log"
+        echo "  ⚠️  Check deployment logs on server: ${{ env.PROJECT_PATH }}/deployment.log"
