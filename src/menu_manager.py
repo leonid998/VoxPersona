@@ -57,7 +57,7 @@ class MenuManager:
         await cls._remove_old_menu_buttons(chat_id, app)
 
         # 2. Отправляем новое меню ВНИЗУ чата
-        new_message = app.send_message(
+        new_message = await app.send_message(
             chat_id=chat_id,
             text=text,
             reply_markup=reply_markup
@@ -90,7 +90,7 @@ class MenuManager:
 
         try:
             # Удаляем кнопки, оставляя текст сообщения
-            app.edit_message_reply_markup(
+            await app.edit_message_reply_markup(
                 chat_id=chat_id,
                 message_id=last_menu_id,
                 reply_markup=None

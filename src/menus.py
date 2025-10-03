@@ -33,12 +33,14 @@ def files_menu_markup(category: str):
     return InlineKeyboardMarkup(rows)
 
 async def send_main_menu(chat_id: int, app: Client):
-    await app.send_message(chat_id, "🏠 Главное меню:", reply_markup=main_menu_markup())
+    from menu_manager import send_menu_and_remove_old
+    await send_menu_and_remove_old(chat_id, app, "🏠 Главное меню:", main_menu_markup())
 
-def show_confirmation_menu(chat_id: int, state: dict[str, Any], app: Client):
+async def show_confirmation_menu(chat_id: int, state: dict[str, Any], app: Client):
     """
     Показываем пользователю сводку всех полей и просим подтвердить или редактировать.
     """
+    from menu_manager import send_menu_and_remove_old
     data_ = state.get("data", {})
     mode = state.get("mode", "—")
     client = data_.get("client", "")
@@ -62,14 +64,14 @@ def show_confirmation_menu(chat_id: int, state: dict[str, Any], app: Client):
         client=client
         )
 
-    app.send_message(chat_id, text_summary, reply_markup=kb)
+    await send_menu_and_remove_old(chat_id, app, text_summary, kb)
 
-def show_edit_menu(chat_id: int, state: dict[str, Any], app: Client):
+async def show_edit_menu(chat_id: int, state: dict[str, Any], app: Client):
     """
     Клавиатура с вариантами, какое поле редактировать.
     """
-
+    from menu_manager import send_menu_and_remove_old
     mode = state.get("mode", "")
 
     kb = edit_menu_markup(mode)
-    app.send_message(chat_id, "Какое поле хотите изменить?", reply_markup=kb)
+    await send_menu_and_remove_old(chat_id, app, "Какое поле хотите изменить?", kb)

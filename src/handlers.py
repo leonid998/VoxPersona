@@ -92,11 +92,11 @@ async def set_rags(new_rags: dict[str, Any]) -> None:
     async with rags_lock:
         rags = new_rags
 
-def ask_client(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
+async def ask_client(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
     data["client"] = parse_name(text)
     # Переходим к шагу подтверждения
     state["step"] = "confirm_data"
-    show_confirmation_menu(chat_id, state, app)
+    await show_confirmation_menu(chat_id, state, app)
 
 def ask_employee(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
     data["employee"] = parse_name(text)
@@ -132,11 +132,11 @@ def ask_date(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: in
     state["step"] = "ask_employee"
     app.send_message(chat_id, "Введите ФИО сотрудника:")
 
-def ask_city(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
+async def ask_city(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
     data["city"] = parse_city(text)
     # Переходим к шагу подтверждения
     state["step"] = "confirm_data"
-    show_confirmation_menu(chat_id, state, app)
+    await show_confirmation_menu(chat_id, state, app)
 
 def ask_audio_number(data: dict[str, Any], text: str, state: dict[str, Any], chat_id: int, app: Client):
     """
@@ -332,7 +332,7 @@ def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
             show_alert=True
         )
 
-def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], message: Message):
+async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], message: Message):
     """
     Этот хендлер обрабатывает все текстовые сообщения от авторизованного пользователя,
     в т.ч. логику по шагам (сбор данных для интервью/дизайна).
@@ -420,7 +420,7 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
         previous_step = st.pop("previous_step", "confirm_data")
         st["step"] = previous_step
 
-        show_confirmation_menu(c_id, st, app)
+        await show_confirmation_menu(c_id, st, app)
         return
 
     mode = st.get("mode")        # 'interview' или 'design'
@@ -460,7 +460,7 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
         ask_date(data_, text_, st, c_id, app)
 
     elif step == "ask_city":
-        ask_city(data_, text_, st, c_id, app)
+        await ask_city(data_, text_, st, c_id, app)
         return
 
     elif step == "ask_building_type":
@@ -471,7 +471,7 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
         ask_zone(data_, text_, mode, st, c_id, app)
 
     elif step == "ask_client":
-        ask_client(data_, text_, st, c_id, app)
+        await ask_client(data_, text_, st, c_id, app)
     else:
         # На всякий случай, если что-то пошло не так
         user_states.pop(c_id, None)
@@ -484,20 +484,21 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
 
 async def handle_help_menu(chat_id: int, app: Client):
     kb, txt = help_menu_markup()
-    await app.send_message(chat_id, txt, reply_markup=kb)
+    await send_menu_and_remove_old(chat_id, app, txt, kb)
 
 async def handle_menu_storage(chat_id: int, app: Client):
-    await app.send_message(chat_id, "Что анализируем?:", reply_markup=interview_or_design_menu())
+    await send_menu_and_remove_old(chat_id, app, "Что анализируем?:", interview_or_design_menu())
 
 async def handle_menu_system(chat_id: int, app: Client):
-    await app.send_message(chat_id, "⚙️ Системные настройки:", reply_markup=system_menu_markup())
+    await send_menu_and_remove_old(chat_id, app, "⚙️ Системные настройки:", system_menu_markup())
 
 async def handle_menu_chats(chat_id: int, app: Client):
     """Показывает меню чатов с динамическим списком."""
-    await app.send_message(
+    await send_menu_and_remove_old(
         chat_id,
+        app,
         "📱 История и статистика чатов:",
-        reply_markup=chats_menu_markup_dynamic(chat_id)
+        chats_menu_markup_dynamic(chat_id)
     )
 
 async def handle_main_menu(chat_id: int, app: Client):
@@ -518,7 +519,7 @@ async def handle_show_my_reports(chat_id: int, app: Client):
         reports = md_storage_manager.get_user_reports(chat_id, limit=10)
 
         if not reports:
-            app.send_message(
+            await app.send_message(
                 chat_id,
                 "📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
 
@@ -548,14 +549,14 @@ async def handle_show_my_reports(chat_id: int, app: Client):
         )
     except Exception as e:
         logging.error(f"Error showing reports: {e}")
-        app.send_message(chat_id, "❌ Произошла ошибка при получении отчетов.")
+        await app.send_message(chat_id, "❌ Произошла ошибка при получении отчетов.")
 
 async def handle_view_files(chat_id: int, data, app: Client):
     parts = data.split("||")
     if len(parts) < 2:
         return
     cat = parts[1]
-    await app.send_message(chat_id, f"Файлы в '{cat}':", reply_markup=files_menu_markup(cat))
+    await send_menu_and_remove_old(chat_id, app, f"Файлы в '{cat}':", files_menu_markup(cat))
 
 def process_selected_file(chat_id: int, category: str, filename: str, app: Client):
     msg = app.send_message(chat_id, "⏳ Обрабатываю файл...")
@@ -691,12 +692,12 @@ async def handle_confirm_data(chat_id: int, app: Client):
             reply_markup=markup
         )
 
-def handle_back_to_confirm(chat_id: int, app: Client):
+async def handle_back_to_confirm(chat_id: int, app: Client):
     st = user_states.get(chat_id)
     if not st:
         return
     st["step"] = "confirm_data"
-    show_confirmation_menu(chat_id, st, app)
+    await show_confirmation_menu(chat_id, st, app)
 
 async def handle_mode_selection(chat_id: int, mode: str, app: Client):
     """
@@ -708,7 +709,7 @@ async def handle_mode_selection(chat_id: int, mode: str, app: Client):
         "data": {}
     }
     st = user_states[chat_id]
-    await app.send_message(chat_id, "📦 Меню хранилища:", reply_markup=storage_menu_markup())
+    await send_menu_and_remove_old(chat_id, app, "📦 Меню хранилища:", storage_menu_markup())
 
 def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, building_name: str = "non-building"):
     validate_datas = []
@@ -738,12 +739,12 @@ def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, bu
         logging.error(f"Ошибка при обработке отчёта {data}: {e}")
         # app.send_message(chat_id, f"❌ Произошла ошибка при обработке запроса: {str(e)}"))
 
-def preprocess_report_with_buildings(chat_id: int, data: str, app: Client):
+async def preprocess_report_with_buildings(chat_id: int, data: str, app: Client):
     st = user_states.setdefault(chat_id, {})
     st["pending_report"] = data
-    app.send_message(chat_id, "Выберите тип заведения:", reply_markup=building_type_menu_markup())
+    await send_menu_and_remove_old(chat_id, app, "Выберите тип заведения:", building_type_menu_markup())
 
-def handle_report(chat_id: int, callback_data : str, app: Client):
+async def handle_report(chat_id: int, callback_data : str, app: Client):
     if callback_data  in [
         "report_int_methodology",
         "report_int_links",
@@ -763,7 +764,7 @@ def handle_report(chat_id: int, callback_data : str, app: Client):
         building_type = data.get('building_type', "")
         valid_building_type = validate_building_type(building_type)
         if valid_building_type is None:
-            preprocess_report_with_buildings(chat_id, callback_data , app)
+            await preprocess_report_with_buildings(chat_id, callback_data , app)
         else:
             building_type = valid_building_type
             data['building_type'] = building_type
@@ -849,10 +850,11 @@ async def handle_toggle_deep(callback: CallbackQuery, app: Client):
 async def handle_menu_dialog(chat_id: int, app: Client):
     # Сначала очищаем предыдущие меню
     user_states[chat_id] = {"step": "dialog_mode", "deep_search": False}
-    await app.send_message(
+    await send_menu_and_remove_old(
         chat_id,
+        app,
         "Какую информацию вы хотели бы получить?",
-        reply_markup=make_dialog_markup(False)
+        make_dialog_markup(False)
     )
 
 def register_handlers(app: Client):
@@ -861,15 +863,15 @@ def register_handlers(app: Client):
     """
 
     @app.on_message(filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
-    def cmd_start(app: Client, message: Message):
+    async def cmd_start(app: Client, message: Message):
         c_id = message.chat.id
         if c_id not in authorized_users:
             app.send_message(c_id, "Вы не авторизованы. Введите пароль:")
         else:
-            send_main_menu(c_id, app)
+            await send_main_menu(c_id, app)
 
     @app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
-    def handle_auth_text(client: Client, message: Message):
+    async def handle_auth_text(client: Client, message: Message):
         """
         Обрабатываем ввод пользователя при авторизации.
         Если пользователь ещё не авторизован — ждём пароль.
@@ -879,7 +881,7 @@ def register_handlers(app: Client):
 
         # Пользователь уже авторизован?
         if c_id in authorized_users:
-            handle_authorized_text(app, user_states, message)
+            await handle_authorized_text(app, user_states, message)
             return
 
         # Если пользователь ещё не авторизован — проверяем пароль
@@ -887,7 +889,7 @@ def register_handlers(app: Client):
 
 
     @app.on_message(filters.voice | filters.audio | filter_wav_document)  # type: ignore[misc,reportUntypedFunctionDecorator]
-    def handle_audio_msg(app: Client, message: Message, tmpdir: str="/root/Vox/VoxPersona/temp_audio", max_size: int=2 * 1024 * 1024 * 1024):
+    async def handle_audio_msg(app: Client, message: Message, tmpdir: str="/root/Vox/VoxPersona/temp_audio", max_size: int=2 * 1024 * 1024 * 1024):
         """
         Приём голосового или аудио-сообщения, до 2 ГБ.
         Транскрибируем → assign_roles → сохраняем в processed_texts для дальнейшего анализа.
@@ -968,7 +970,7 @@ def register_handlers(app: Client):
                     if isinstance(mode, str):
                         parsed_data = parse_message_text(text, mode)
                         st["data"] = parsed_data
-                        show_confirmation_menu(c_id, st, app)
+                        await show_confirmation_menu(c_id, st, app)
                     else:
                         app.send_message(c_id, "Не удалось автоматически спарсить данные, необходимо заполнить вручную поля.\n Пожалуйста, введите номер файла:")
                 except Exception as e:
@@ -1139,10 +1141,10 @@ def register_handlers(app: Client):
                 handle_confirm_data(c_id, app)
             elif data == "edit_data":
                 current_state = user_states.get(c_id, {})
-                show_edit_menu(c_id, current_state, app)
+                await show_edit_menu(c_id, current_state, app)
 
             elif data == "back_to_confirm":
-                handle_back_to_confirm(c_id, app)
+                await handle_back_to_confirm(c_id, app)
 
             elif data.startswith("edit_"):
                 # Обрабатываем выбор поля для редактирования
@@ -1151,7 +1153,7 @@ def register_handlers(app: Client):
 
             #Отчеты
             elif data in REPORT_MAPPING.keys():
-                handle_report(c_id, data, app)
+                await handle_report(c_id, data, app)
 
             # # --- Обработка выбора здания:
             elif data.startswith("choose_building||"):

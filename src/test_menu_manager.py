@@ -39,7 +39,7 @@ class TestMenuManager:
         # Симулируем отправку сообщения
         mock_message = MagicMock(spec=Message)
         mock_message.id = 100
-        app.send_message.return_value = mock_message
+        app.send_message = AsyncMock(return_value=mock_message)
 
         # Вызываем метод
         import asyncio
@@ -71,7 +71,8 @@ class TestMenuManager:
         # Симулируем отправку нового сообщения
         mock_message = MagicMock(spec=Message)
         mock_message.id = 200
-        app.send_message.return_value = mock_message
+        app.send_message = AsyncMock(return_value=mock_message)
+        app.edit_message_reply_markup = AsyncMock()
 
         # Вызываем метод
         import asyncio
@@ -106,12 +107,12 @@ class TestMenuManager:
 
         # Старое меню уже без кнопок
         MenuManager._last_menu_ids[chat_id] = 100
-        app.edit_message_reply_markup.side_effect = MessageNotModified()
+        app.edit_message_reply_markup = AsyncMock(side_effect=MessageNotModified())
 
         # Новое сообщение
         mock_message = MagicMock(spec=Message)
         mock_message.id = 200
-        app.send_message.return_value = mock_message
+        app.send_message = AsyncMock(return_value=mock_message)
 
         text = "Меню"
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("Кнопка", callback_data="btn")]])
@@ -131,12 +132,12 @@ class TestMenuManager:
 
         # Старое меню было удалено
         MenuManager._last_menu_ids[chat_id] = 100
-        app.edit_message_reply_markup.side_effect = MessageIdInvalid()
+        app.edit_message_reply_markup = AsyncMock(side_effect=MessageIdInvalid())
 
         # Новое сообщение
         mock_message = MagicMock(spec=Message)
         mock_message.id = 200
-        app.send_message.return_value = mock_message
+        app.send_message = AsyncMock(return_value=mock_message)
 
         text = "Меню"
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("Кнопка", callback_data="btn")]])
