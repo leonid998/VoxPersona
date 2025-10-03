@@ -35,7 +35,7 @@ COPY requirements.txt ./
 # Install remaining dependencies and upgrade pip
 RUN pip install --no-cache-dir --upgrade pip && \
     # Remove GPU packages for CPU-only build
-    sed -i '/^faiss-gpu/d;/^triton/d' requirements.txt && \
+    sed -i '/^nvidia-/d;/^triton/d;/^faiss-gpu/d' requirements.txt && \
     # Install remaining dependencies
     pip install --no-cache-dir -r requirements.txt
 
