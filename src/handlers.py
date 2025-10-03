@@ -1040,6 +1040,8 @@ def register_handlers(app: Client):
                 handle_menu_storage(c_id, app)
 
             # Меню чатов
+            elif data == "new_chat":
+                handle_menu_dialog(c_id, app)
             elif data == "show_stats":
                 handle_show_stats(c_id, app)
             elif data == "show_my_reports":

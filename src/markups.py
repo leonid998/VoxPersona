@@ -30,9 +30,14 @@ def system_menu_markup():
 def chats_menu_markup():
     """Меню истории чатов"""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Статистика", callback_data="show_stats")],
-        [InlineKeyboardButton("📄 Мои отчеты", callback_data="show_my_reports")],
-        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
+        [
+            InlineKeyboardButton("🆕 Новый чат", callback_data="new_chat"),
+            InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")
+        ],
+        [
+            InlineKeyboardButton("📊 Статистика", callback_data="show_stats"),
+            InlineKeyboardButton("📄 Мои отчеты", callback_data="show_my_reports")
+        ]
     ])
 
 def confirm_menu_markup(mode: str, file_number: int,  employee: str, building_type: str, place: str, date: str, city: str, zone_name: str, client: str):
