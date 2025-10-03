@@ -116,7 +116,7 @@ def run_deep_search(content: str, text: str, chat_id: int, app: Client, category
 
     return aggregated_answer
 
-def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_search: bool = False):
+def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None):
     try:
         category = classify_query(text)
         logging.info(f"Сценарий: {category}")
@@ -147,6 +147,29 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
             text=text
         )
 
+        # Сохраняем вопрос пользователя в conversations (если передан conversation_id)
+        if conversation_id:
+            from conversation_manager import conversation_manager
+            from conversations import ConversationMessage
+            from datetime import datetime
+
+            user_message = ConversationMessage(
+                timestamp=datetime.now().isoformat(),
+                message_id=0,  # Временный ID для пользовательского сообщения
+                type="user_question",
+                text=text,
+                tokens=0,  # Токены вопроса не считаем
+                sent_as=None,
+                file_path=None,
+                search_type="deep" if deep_search else "fast"
+            )
+
+            conversation_manager.add_message(
+                user_id=chat_id,
+                conversation_id=conversation_id,
+                message=user_message
+            )
+
         if deep_search:
             app.send_message(chat_id, "Запущено Глубокое Исследование")
             logging.info("Запущено Глубокое исследование")
@@ -175,7 +198,8 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
             username=username,
             question=text,
             search_type="deep" if deep_search else "fast",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
+            conversation_id=conversation_id
         )
 
         max_log_length = 3000
@@ -208,7 +232,8 @@ def run_analysis_pass(
     prompts: list[tuple[str, int]],
     app: Client,
     transcription_text: str,
-    is_show_analysis: bool=True
+    is_show_analysis: bool=True,
+    conversation_id: str = None
 ) -> str:
     """
     Один «проход» анализа: крутит спиннер, вызывает analyze_methodology,
@@ -234,7 +259,8 @@ def run_analysis_pass(
                 username=username,
                 question="",  # Для анализа нет исходного вопроса
                 search_type="analysis",
-                parse_mode=None
+                parse_mode=None,
+                conversation_id=conversation_id
             )
 
             app.edit_message_text(chat_id, msg_.id, f"✅ Завершено: {label}")

@@ -32,6 +32,7 @@ from markups import (
     storage_menu_markup,
     system_menu_markup,
     chats_menu_markup,
+    chats_menu_markup_dynamic,
     interview_or_design_menu,
     interview_menu_markup,
     design_menu_markup,
@@ -40,7 +41,7 @@ from markups import (
 )
 
 from menus import (
-    send_main_menu, 
+    send_main_menu,
     files_menu_markup,
     register_menu_message,
     clear_active_menus,
@@ -59,6 +60,20 @@ from audio_utils import extract_audio_filename, define_audio_file_params, transc
 from auth_utils import handle_unauthorized_user
 
 from openai import PermissionDeniedError as OpenAIPermissionError
+
+# === МУЛЬТИЧАТЫ: Импорты ===
+from conversation_manager import conversation_manager
+from conversation_handlers import (
+    ensure_active_conversation,
+    handle_new_chat,
+    handle_switch_chat_request,
+    handle_switch_chat_confirm,
+    handle_rename_chat_request,
+    handle_rename_chat_input,
+    handle_delete_chat_request,
+    handle_delete_chat_confirm
+)
+# === КОНЕЦ МУЛЬТИЧАТЫ ===
 
 # Initialize MinIO manager
 minio_manager = get_minio_manager()
@@ -164,7 +179,7 @@ def handle_edit_field(chat_id: int, field: str, app: Client):
         edit_fields["city"] = "Введите новый город:"
     else:
         edit_fields["client"] = "Введите новое ФИО Клиента"
-    
+
     prompt_text = edit_fields.get(field, "Введите новое значение:")
 
     app.send_message(chat_id, prompt_text)
@@ -174,25 +189,25 @@ def handle_history_command(message: Message, app: Client) -> None:
     """Обработчик команды /history."""
     chat_id = message.chat.id
     username = get_username_from_chat(chat_id, app)
-    
+
     try:
         # Парсим дату из команды (опционально)
         text = message.text.strip()
         parts = text.split()
         target_date = None
-        
+
         if len(parts) > 1:
             date_str = parts[1]
             # Пытаемся распарсить дату в разных форматах
             date_formats = ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"]
-            
+
             for fmt in date_formats:
                 try:
                     target_date = datetime.strptime(date_str, fmt).date()
                     break
                 except ValueError:
                     continue
-            
+
             if target_date is None:
                 app.send_message(
                     chat_id,
@@ -200,11 +215,11 @@ def handle_history_command(message: Message, app: Client) -> None:
                     "Пример: `/history 2025-01-15`"
                 )
                 return
-        
+
         # Получаем и отправляем историю
         history_text = chat_history_manager.format_day_history_for_display(chat_id, target_date)
         app.send_message(chat_id, history_text, )
-        
+
     except Exception as e:
         logging.error(f"Error handling history command: {e}")
         app.send_message(chat_id, "❌ Произошла ошибка при получении истории.")
@@ -213,11 +228,11 @@ def handle_history_command(message: Message, app: Client) -> None:
 def handle_stats_command(message: Message, app: Client) -> None:
     """Обработчик команды /stats."""
     chat_id = message.chat.id
-    
+
     try:
         stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
         app.send_message(chat_id, stats_text, )
-        
+
     except Exception as e:
         logging.error(f"Error handling stats command: {e}")
         app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
@@ -226,42 +241,42 @@ def handle_stats_command(message: Message, app: Client) -> None:
 def handle_reports_command(message: Message, app: Client) -> None:
     """Обработчик команды /reports."""
     chat_id = message.chat.id
-    
+
     try:
         reports = md_storage_manager.get_user_reports(chat_id, limit=10)
-        
+
         if not reports:
             app.send_message(
                 chat_id,
                 "📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
-                
+
             )
             return
-        
+
         # Создаем inline клавиатуру с отчетами
         keyboard = []
-        
+
         for i, report in enumerate(reports[:5], 1):  # Показываем только 5 последних
             timestamp = datetime.fromisoformat(report.timestamp).strftime("%d.%m %H:%M")
             question_preview = report.question[:40] + "..." if len(report.question) > 40 else report.question
             search_icon = "⚡" if report.search_type == "fast" else "🔍"
-            
+
             button_text = f"{search_icon} {timestamp}: {question_preview}"
             callback_data = f"send_report||{report.file_path}"
-            
+
             keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
-        
+
         keyboard.append([InlineKeyboardButton("📊 Показать все отчеты", callback_data="show_all_reports")])
-        
+
         reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
-        
+
         app.send_message(
             chat_id,
             reports_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            
+
         )
-        
+
     except Exception as e:
         logging.error(f"Error handling reports command: {e}")
         app.send_message(chat_id, "❌ Произошла ошибка при получении отчетов.")
@@ -271,14 +286,14 @@ def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
     """Обработчик callback для отправки отчетов."""
     chat_id = callback_query.message.chat.id
     data = callback_query.data
-    
+
     try:
         if data.startswith("send_report||"):
             relative_path = data.split("send_report||", 1)[1]
-            
+
             # Получаем путь к файлу
             file_path = md_storage_manager.get_report_file_path(relative_path)
-            
+
             if file_path and file_path.exists():
                 app.send_document(
                     chat_id,
@@ -292,7 +307,7 @@ def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
                     "❌ Файл не найден",
                     show_alert=True
                 )
-        
+
         elif data == "show_all_reports":
             # Показываем полный список отчетов
             reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
@@ -309,7 +324,7 @@ def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
                 reply_markup=back_keyboard
             )
             app.answer_callback_query(callback_query.id)
-            
+
     except Exception as e:
         logging.error(f"Error handling report callback: {e}")
         app.answer_callback_query(
@@ -325,7 +340,7 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
     """
     c_id = message.chat.id
     text_ = message.text.strip()
-    
+
     # Проверяем команды истории, статистики и отчетов
     if text_.startswith(COMMAND_HISTORY):
         handle_history_command(message, app)
@@ -337,6 +352,22 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
         handle_reports_command(message, app)
         return
 
+    # === МУЛЬТИЧАТЫ: Проверка переименования чата ===
+    if c_id in user_states and user_states[c_id].get("step") == "renaming_chat":
+        handle_rename_chat_input(c_id, text_, app)
+        return
+    # === КОНЕЦ МУЛЬТИЧАТЫ ===
+
+    # === МУЛЬТИЧАТЫ: Обеспечение активного чата ===
+    username = get_username_from_chat(c_id, app)
+    conversation_id = ensure_active_conversation(c_id, username, text_)
+
+    # Сохраняем conversation_id в user_states для дальнейшего использования
+    if c_id not in user_states:
+        user_states[c_id] = {}
+    user_states[c_id]["conversation_id"] = conversation_id
+    # === КОНЕЦ МУЛЬТИЧАТЫ ===
+
     # Проверяем, есть ли у пользователя активное состояние
     st = user_states.get(c_id)
 
@@ -344,10 +375,10 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
         logging.info("Нет состояния. Пользователь что-то пишет без контекста")
         send_main_menu(c_id, app)
         return
-    
+
     # После проверки check_state мы знаем, что st не None
     assert st is not None
-    
+
     if st.get("step") == "dialog_mode":
         deep = st.get("deep_search", False)
         msg = app.send_message(c_id, "⏳ Думаю...")
@@ -358,7 +389,14 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
             if not rags:
                 app.send_message(c_id, "🔄 База знаний ещё загружается, попробуйте позже.")
             else:
-                run_dialog_mode(chat_id=c_id, app=app, text=text_, deep_search=deep, rags=rags)
+                run_dialog_mode(
+                    chat_id=c_id,
+                    app=app,
+                    text=text_,
+                    deep_search=deep,
+                    rags=rags,
+                    conversation_id=conversation_id
+                )
             return
         except Exception as e:
             logging.error(f"Ошибка: {e}")
@@ -370,19 +408,19 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
     # Если пользователь находится в режиме редактирования
     if st.get("step", "").startswith("edit_"):
         step = st["step"]
-        field = st["step"].split("edit_")[1]         
+        field = st["step"].split("edit_")[1]
         # Валидация даты
         if field == "date" and not validate_date_format(text_):
             app.send_message(c_id, "Неверный формат даты. Попробуйте снова.")
             return
-        
+
         # Сохраняем новое значение
         data_ = st.setdefault("data", {})
         data_[field] = text_
-        
+
         previous_step = st.pop("previous_step", "confirm_data")
         st["step"] = previous_step
-        
+
         show_confirmation_menu(c_id, st, app)
         return
 
@@ -399,7 +437,7 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
         app.send_message(c_id, "Некорректный режим. Начните заново /start.")
         send_main_menu(c_id, app)
         return
-    
+
     step = st.get("step")        # например, 'ask_employee'
     data_ = st.setdefault("data", {})
 
@@ -410,7 +448,7 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
     if step == "ask_employee":
         ask_employee(data_, text_, st, c_id, app)
         return
-    
+
     elif step == "ask_audio_number":
         ask_audio_number(data_, text_, st, c_id, app)
         return
@@ -418,18 +456,18 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
     elif step == "ask_place_name":
         ask_place_name(data_, text_, st, c_id, app)
         return
-    
+
     elif step == "ask_date":
         ask_date(data_, text_, st, c_id, app)
 
     elif step == "ask_city":
         ask_city(data_, text_, st, c_id, app)
         return
-    
+
     elif step == "ask_building_type":
         ask_building_type(data_, text_, st, c_id, app)
         return
-    
+
     elif step == "ask_zone":
         ask_zone(data_, text_, mode, st, c_id, app)
 
@@ -462,8 +500,13 @@ def handle_menu_system(chat_id: int, app: Client):
     register_menu_message(chat_id, mm.id)
 
 def handle_menu_chats(chat_id: int, app: Client):
+    """Показывает меню чатов с динамическим списком."""
     clear_active_menus(chat_id, app)
-    mm = app.send_message(chat_id, "📱 История и статистика чатов:", reply_markup=chats_menu_markup())
+    mm = app.send_message(
+        chat_id,
+        "📱 История и статистика чатов:",
+        reply_markup=chats_menu_markup_dynamic(chat_id)
+    )
     register_menu_message(chat_id, mm.id)
 
 def handle_main_menu(chat_id: int, app: Client):
@@ -487,7 +530,7 @@ def handle_show_my_reports(chat_id: int, app: Client):
             app.send_message(
                 chat_id,
                 "📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
-                
+
             )
             return
 
@@ -510,7 +553,7 @@ def handle_show_my_reports(chat_id: int, app: Client):
             chat_id,
             reports_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            
+
         )
     except Exception as e:
         logging.error(f"Error showing reports: {e}")
@@ -518,7 +561,7 @@ def handle_show_my_reports(chat_id: int, app: Client):
 
 def handle_view_files(chat_id: int, data, app: Client):
     parts = data.split("||")
-    if len(parts) < 2: 
+    if len(parts) < 2:
         return
     cat = parts[1]
     clear_active_menus(chat_id, app)
@@ -530,7 +573,7 @@ def process_selected_file(chat_id: int, category: str, filename: str, app: Clien
     stop_event = threading.Event()
     spinner_thread = threading.Thread(target=run_loading_animation, args=(chat_id, msg.id, stop_event, app))
     spinner_thread.start()
-    
+
     try:
         result = process_stored_file(category, filename, chat_id, app)
         if result is not None:
@@ -541,7 +584,7 @@ def process_selected_file(chat_id: int, category: str, filename: str, app: Clien
         stop_event.set()
         spinner_thread.join()
         app.delete_messages(chat_id, msg.id)
-    
+
     # app.send_message(chat_id, "Что анализируем дальше?", reply_markup=interview_or_design_menu())
     # send_main_menu(chat_id, app)
 
@@ -623,7 +666,7 @@ def handle_confirm_data(chat_id: int, app: Client):
 
     # Проверяем, что mode является строкой для безопасного доступа к словарю
     scenario_name = mapping_scenario_names.get(mode, "—") if isinstance(mode, str) else "—"
-    
+
     msg = (
         f"**Данные сохранены**:\n\n"
         f"**Сценарий**: {scenario_name}\n"
@@ -659,7 +702,7 @@ def handle_mode_selection(chat_id: int, mode: str, app: Client):
     """
     Выбор сценария «Интервью» или «Дизайн»
     """
-        
+
     clear_active_menus(chat_id, app)
     user_states[chat_id] = {
         "mode": "interview" if mode == "mode_interview" else "design",
@@ -668,20 +711,20 @@ def handle_mode_selection(chat_id: int, mode: str, app: Client):
     st = user_states[chat_id]
     mm = app.send_message(chat_id, "📦 Меню хранилища:", reply_markup=storage_menu_markup())
     register_menu_message(chat_id, mm.id)
-    
+
 def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, building_name: str = "non-building"):
     validate_datas = []
     st = user_states.get(chat_id, {})
     mode = st.get("mode")
     data_ = cast(dict[str, Any], st.get("data", {}))
-    
+
     data_["audio_file_name"] = audio_file_name_to_save
 
     validate_datas.append(mode)
     validate_datas.append(data_)
 
     check_valid_data(validate_datas, chat_id, app, "Не хватает данных для формирования отчёта. Начните заново.")
-    
+
     data_["type_of_location"] = building_name
 
     try:
@@ -713,7 +756,7 @@ def handle_report(chat_id: int, callback_data : str, app: Client):
         preprocess_report_without_buildings(chat_id, callback_data , app)
 
     elif callback_data  in [
-        "report_int_general", 
+        "report_int_general",
         "report_int_specific",
         "report_design_compliance",
         "report_design_structured"
@@ -743,15 +786,15 @@ def handle_assign_roles(chat_id: int, app: Client, mode: str, processed_texts: d
                 # Расставляем роли
                 roles_ = assign_roles(transcript)
                 processed_texts[chat_id] = roles_
-                
+
                 # Обновляем сообщение об успешной обработке
                 app.edit_message_text(chat_id, msg_.id, "✅ Роли в диалоге расставлены.")
                 logging.info("✅ Роли в диалоге расставлены.")
-                
+
             except Exception as e:
                 logging.exception(f"❌ Ошибка при расстановке ролей: {str(e)}")
                 # app.edit_message_text(chat_id, msg_.id, f"❌ Ошибка при расстановке ролей: {str(e)}")
-                
+
             finally:
                 # Останавливаем спиннер
                 st_ev.set()
@@ -768,14 +811,14 @@ def handle_choose_building(chat_id: int, data: str, app: Client):
     pending_report = st.get("pending_report", None)
     mode = st.get("mode")
     data_ = cast(dict[str, Any], st.get("data", {}))
-    
+
     if not isinstance(pending_report, str):
         logging.error("pending_report не является строкой")
         return
     if not isinstance(mode, str):
         logging.error("mode не является строкой")
         return
-    
+
     data_["audio_file_name"] = audio_file_name_to_save
 
     # Преобразуем short_name из callback в нормальное название
@@ -844,9 +887,9 @@ def register_handlers(app: Client):
         if c_id in authorized_users:
             handle_authorized_text(app, user_states, message)
             return
-        
+
         # Если пользователь ещё не авторизован — проверяем пароль
-        handle_unauthorized_user(authorized_users, message, app)  
+        handle_unauthorized_user(authorized_users, message, app)
 
 
     @app.on_message(filters.voice | filters.audio | filter_wav_document)  # type: ignore[misc,reportUntypedFunctionDecorator]
@@ -861,7 +904,7 @@ def register_handlers(app: Client):
         global transcription_text
         st = user_states.get(c_id, {})
         mode = st.get("mode")
-        
+
         # Проверяем тип mode
         if mode is not None and not isinstance(mode, str):
             logging.error("mode не является строкой")
@@ -873,7 +916,7 @@ def register_handlers(app: Client):
             logging.exception(e)
             app.send_message(c_id, "Вы не авторизованы.")
             return
-        
+
         file_size = define_audio_file_params(message)
 
         try:
@@ -906,13 +949,13 @@ def register_handlers(app: Client):
                 'file_type': 'audio',
                 'processing_status': 'uploaded'
             }
-            
+
             success = minio_manager.upload_audio_file(
                 file_path=downloaded,
                 object_name=file_name,
                 metadata=metadata
             )
-            
+
             if success:
                 logging.info(f"Аудиофайл {file_name} успешно загружен в MinIO.")
             else:
@@ -940,13 +983,13 @@ def register_handlers(app: Client):
                 return
             else:
                 app.send_message(c_id, "Не удалось автоматически спарсить данные, необходимо заполнить вручную поля.\n Пожалуйста, введите номер файла:")
-        
+
         except (MinIOError, MinIOConnectionError, MinIOUploadError) as e:
             logging.error(f"❌ Ошибка MinIO: {e}")
             app.edit_message_text(c_id, msg_.id, "❌ Ошибка загрузки в хранилище")
             send_main_menu(c_id, app)
             return
-            
+
         except S3Error as e:
             logging.error(f"❌ Ошибка: Не удалось загрузить файл в MinIO.: {e}")
             app.edit_message_text(c_id, msg_.id, "❌ Ошибка обработки аудио")
@@ -1014,7 +1057,7 @@ def register_handlers(app: Client):
             app.send_message(c_id, "Сначала выберите действие «Загрузить файл» в меню.")
 
         send_main_menu(c_id, app)
-    
+
     @app.on_callback_query()  # type: ignore[misc,reportUntypedFunctionDecorator]
     def callback_query_handler(client: Client, callback: CallbackQuery):
         c_id = callback.message.chat.id
@@ -1025,6 +1068,38 @@ def register_handlers(app: Client):
             pass
 
         try:
+            # === МУЛЬТИЧАТЫ: Обработчики callback ===
+            if data == "new_chat":
+                handle_new_chat(c_id, app)
+                return
+
+            elif data.startswith("switch_chat||"):
+                conversation_id = data.split("||")[1]
+                handle_switch_chat_request(c_id, conversation_id, app, callback)
+                return
+
+            elif data.startswith("confirm_switch||"):
+                conversation_id = data.split("||")[1]
+                handle_switch_chat_confirm(c_id, conversation_id, app)
+                return
+
+            elif data.startswith("rename_chat||"):
+                conversation_id = data.split("||")[1]
+                handle_rename_chat_request(c_id, conversation_id, app)
+                return
+
+            elif data.startswith("delete_chat||"):
+                conversation_id = data.split("||")[1]
+                handle_delete_chat_request(c_id, conversation_id, app)
+                return
+
+            elif data.startswith("confirm_delete||"):
+                conversation_id = data.split("||")[1]
+                username = get_username_from_chat(c_id, app)
+                handle_delete_chat_confirm(c_id, conversation_id, username, app)
+                return
+            # === КОНЕЦ МУЛЬТИЧАТЫ ===
+
             # Главное меню
             if data == "menu_main":
                 handle_main_menu(c_id, app)
@@ -1040,8 +1115,6 @@ def register_handlers(app: Client):
                 handle_menu_storage(c_id, app)
 
             # Меню чатов
-            elif data == "new_chat":
-                handle_menu_dialog(c_id, app)
             elif data == "show_stats":
                 handle_show_stats(c_id, app)
             elif data == "show_my_reports":
@@ -1089,11 +1162,11 @@ def register_handlers(app: Client):
             # # --- Обработка выбора здания:
             elif data.startswith("choose_building||"):
                 handle_choose_building(c_id, data, app)
-            
+
             # Обработка отчетов
             elif data.startswith("send_report||") or data == "show_all_reports":
                 handle_report_callback(callback, app)
-        
+
         except ValueError as ve:
             logging.exception(ve)
             return

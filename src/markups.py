@@ -1,6 +1,8 @@
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datamodels import mapping_scenario_names
 from constants import BUTTON_BACK, BUTTON_BACK_WITH_ARROW
+from conversation_manager import conversation_manager
+from conversations import ConversationMetadata
 
 def main_menu_markup():
     return InlineKeyboardMarkup([
@@ -25,6 +27,98 @@ def system_menu_markup():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📁 Хранилище", callback_data="menu_storage")],
         [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
+    ])
+
+def create_chat_button_row(conv: ConversationMetadata, is_active: bool) -> list:
+    """
+    Создает кнопку чата с пропорциями 60%/20%/20%.
+
+    Args:
+        conv: Метаданные чата
+        is_active: True если это активный чат
+
+    Returns:
+        List из 3 InlineKeyboardButton
+    """
+    emoji = "📝" if is_active else "💬"
+
+    # Обрезаем название до 25 символов
+    name = conv.title
+    if len(name) > 25:
+        name = name[:22] + "..."
+
+    return [
+        InlineKeyboardButton(f"{emoji} {name}", callback_data=f"switch_chat||{conv.conversation_id}"),
+        InlineKeyboardButton("✏️", callback_data=f"rename_chat||{conv.conversation_id}"),
+        InlineKeyboardButton("🗑️", callback_data=f"delete_chat||{conv.conversation_id}")
+    ]
+
+def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
+    """
+    Генерирует динамическое меню Чаты с списком чатов пользователя.
+
+    Структура:
+    - Строка 1: [🆕 Новый чат] [« Назад]
+    - Строка 2: [📊 Статистика] [📄 Мои отчеты]
+    - Строка 3: Активный чат (📝 эмодзи)
+    - Строка 4+: Остальные чаты (💬 эмодзи) по updated_at DESC
+
+    Формат кнопки чата: [60% название] [20% ✏️] [20% 🗑️]
+    """
+    # Статичные строки
+    buttons = [
+        [
+            InlineKeyboardButton("🆕 Новый чат", callback_data="new_chat"),
+            InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")
+        ],
+        [
+            InlineKeyboardButton("📊 Статистика", callback_data="show_stats"),
+            InlineKeyboardButton("📄 Мои отчеты", callback_data="show_my_reports")
+        ]
+    ]
+
+    # Загружаем список чатов
+    conversations = conversation_manager.list_conversations(user_id)
+
+    # Разделяем на активный и остальные
+    active_chat = None
+    other_chats = []
+
+    for conv in conversations:
+        if conv.is_active:
+            active_chat = conv
+        else:
+            other_chats.append(conv)
+
+    # Сортируем остальные чаты по updated_at DESC
+    other_chats.sort(key=lambda x: x.updated_at, reverse=True)
+
+    # Добавляем активный чат (если есть)
+    if active_chat:
+        buttons.append(create_chat_button_row(active_chat, True))
+
+    # Добавляем остальные чаты
+    for conv in other_chats:
+        buttons.append(create_chat_button_row(conv, False))
+
+    return InlineKeyboardMarkup(buttons)
+
+def switch_chat_confirmation_markup(conversation_id: str, chat_name: str) -> InlineKeyboardMarkup:
+    """Меню подтверждения переключения чата."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Да, перейти", callback_data=f"confirm_switch||{conversation_id}"),
+            InlineKeyboardButton("❌ Отмена", callback_data="menu_chats")
+        ]
+    ])
+
+def delete_chat_confirmation_markup(conversation_id: str, chat_name: str) -> InlineKeyboardMarkup:
+    """Меню подтверждения удаления чата."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🗑️ Да, удалить", callback_data=f"confirm_delete||{conversation_id}"),
+            InlineKeyboardButton("❌ Отмена", callback_data="menu_chats")
+        ]
     ])
 
 def chats_menu_markup():
@@ -52,12 +146,12 @@ def confirm_menu_markup(mode: str, file_number: int,  employee: str, building_ty
             f"**Тип заведения**: {building_type}\n"
             f"**Зона**: {zone_name}\n"
         )
-    
+
     if city:
         text_summary += f"**Город**: {city}\n\n"
     if client:
         text_summary += f"**ФИО Клиента**: {client}\n\n"
-    
+
     text_summary += "Подтвердить или изменить?"
 
     kb = InlineKeyboardMarkup([
@@ -85,7 +179,7 @@ def edit_menu_markup(mode: str):
         markups.append([InlineKeyboardButton("Город", callback_data="edit_city")])
     else:
         markups.append([InlineKeyboardButton("ФИО Клиента", callback_data="edit_client")],)
-    
+
     markups.append([InlineKeyboardButton(BUTTON_BACK_WITH_ARROW, callback_data="back_to_confirm")])
 
     kb = InlineKeyboardMarkup(markups)
@@ -137,7 +231,7 @@ def building_type_menu_markup():
             InlineKeyboardButton("Ресторан", callback_data="choose_building||restaurant"),
             InlineKeyboardButton("Центр здоровья", callback_data="choose_building||spa"),
         ]
-    ]) 
+    ])
 
 def interview_menu_markup():
     return InlineKeyboardMarkup([

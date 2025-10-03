@@ -30,19 +30,19 @@ def is_testing_environment() -> bool:
     # Method 1: PyTest execution detection (High priority)
     if os.getenv("PYTEST_CURRENT_TEST") is not None:
         return True
-    
+
     # Method 2: pytest module presence in sys.modules (Medium priority)
     if "pytest" in sys.modules:
         return True
-    
+
     # Method 3: Custom IS_TESTING flag (Low priority)
     if os.getenv("IS_TESTING", "false").lower() == "true":
         return True
-    
+
     # Method 4: RUN_MODE environment variable
     if os.getenv("RUN_MODE", "").upper() == "TEST":
         return True
-    
+
     return False
 
 IS_TESTING = is_testing_environment()
@@ -106,16 +106,16 @@ def get_db_config() -> dict[str, str | None]:
             "dbname": os.getenv("TEST_DB_NAME", "voxpersona_test"),
             "user": os.getenv("TEST_DB_USER", "test_user"),
             "password": os.getenv("TEST_DB_PASSWORD", "test_password"),
-            "host": os.getenv("TEST_DB_HOST", "localhost"),  
-            "port": os.getenv("TEST_DB_PORT", "5432"),       
+            "host": os.getenv("TEST_DB_HOST", "localhost"),
+            "port": os.getenv("TEST_DB_PORT", "5432"),
         }
     else:
         return {
             "dbname": os.getenv("DB_NAME"),
             "user": os.getenv("DB_USER"),
             "password": os.getenv("DB_PASSWORD"),
-            "host": os.getenv("DB_HOST"),  
-            "port": os.getenv("DB_PORT"),     
+            "host": os.getenv("DB_HOST"),
+            "port": os.getenv("DB_PORT"),
         }
 
 # Initialize DB_CONFIG as a constant
@@ -169,6 +169,9 @@ TELEGRAM_MESSAGE_THRESHOLD = int(os.getenv("TELEGRAM_MESSAGE_THRESHOLD", "1200")
 CHAT_HISTORY_DIR = os.getenv("CHAT_HISTORY_DIR", "/home/voxpersona_user/VoxPersona/chat_history")
 MD_REPORTS_DIR = os.getenv("MD_REPORTS_DIR", "/home/voxpersona_user/VoxPersona/md_reports")
 
+# Conversations Configuration
+CONVERSATIONS_DIR = os.getenv("CONVERSATIONS_DIR", "/home/voxpersona_user/VoxPersona/conversations")
+
 # Preview text configuration
 PREVIEW_TEXT_LENGTH = int(os.getenv("PREVIEW_TEXT_LENGTH", "300"))
 
@@ -181,7 +184,7 @@ if not IS_TESTING:
     if not TELEGRAM_BOT_TOKEN: missing_keys.append("TELEGRAM_BOT_TOKEN")
     if not API_ID: missing_keys.append("API_ID")
     if not API_HASH: missing_keys.append("API_HASH")
-    
+
     if missing_keys:
         raise ValueError(f"Missing required API keys in production: {', '.join(missing_keys)}")
 else:
@@ -192,13 +195,13 @@ else:
 # Глобальные словари/сеты
 processed_texts: dict[int, str] = {}
 user_states: dict[int, dict[str, object]] = {}
-authorized_users: Set[int] = set()  
+authorized_users: Set[int] = set()
 active_menus: dict[int, list[int]] = {}
 
 # Директории хранения (deferred creation pattern)
 STORAGE_DIRS = {
     "audio": "/root/Vox/VoxPersona/audio_files",
-    "text_without_roles": "/root/Vox/VoxPersona/text_with_roles", 
+    "text_without_roles": "/root/Vox/VoxPersona/text_with_roles",
     "text_with_roles": "/root/Vox/VoxPersona/text_without_roles"
 }
 

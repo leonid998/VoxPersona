@@ -13,6 +13,7 @@ import logging
 from datamodels import spinner_chars, OPENAI_AUDIO_EXTS
 from config import ENC, TELEGRAM_MESSAGE_THRESHOLD, PREVIEW_TEXT_LENGTH, EMBEDDING_MODEL
 from constants import ERROR_FILE_SEND_FAILED
+from datetime import datetime
 
 # Условный импорт для sentence_transformers
 try:
@@ -201,6 +202,47 @@ def _save_to_history_sync(
         logging.error(f"Error saving to history: {e}")
 
 
+def _save_to_conversation_sync(
+    user_id: int,
+    conversation_id: str,
+    message_id: int,
+    message_type: str,
+    text: str,
+    sent_as: Optional[str] = None,
+    file_path: Optional[str] = None,
+    search_type: Optional[str] = None
+) -> None:
+    """Синхронно сохраняет сообщение в мультичат."""
+    try:
+        from conversation_manager import conversation_manager
+        from conversations import ConversationMessage
+
+        # Создаем объект сообщения
+        message = ConversationMessage(
+            timestamp=datetime.now().isoformat(),
+            message_id=message_id,
+            type=message_type,
+            text=text,
+            tokens=count_tokens(text),
+            sent_as=sent_as,
+            file_path=file_path,
+            search_type=search_type
+        )
+
+        # Сохраняем в conversation
+        success = conversation_manager.add_message(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message=message
+        )
+
+        if not success:
+            logging.error(f"Failed to save message to conversation: user_id={user_id}, conversation_id={conversation_id}")
+
+    except Exception as e:
+        logging.error(f"Error saving to conversation: {e}")
+
+
 def smart_send_text_unified(
     text: str,
     chat_id: int,
@@ -208,7 +250,8 @@ def smart_send_text_unified(
     username: Optional[str] = None,
     question: str = "",
     search_type: str = "fast",
-    parse_mode: Optional[ParseMode] = None
+    parse_mode: Optional[ParseMode] = None,
+    conversation_id: Optional[str] = None
 ) -> bool:
     """
     Единая синхронная функция для умной отправки текста.
@@ -222,6 +265,7 @@ def smart_send_text_unified(
         question: Исходный вопрос пользователя
         search_type: Тип поиска ("fast" или "deep")
         parse_mode: Режим парсинга для сообщений
+        conversation_id: ID мультичата (если None, сохранение в conversations не выполняется)
 
     Returns:
         bool: True если отправка успешна
@@ -245,6 +289,13 @@ def smart_send_text_unified(
                     chat_id, username, sent_message.id, "bot_answer", text,
                     sent_as="message", search_type=search_type
                 )
+
+                # Синхронно сохраняем в conversations (если передан conversation_id)
+                if conversation_id:
+                    _save_to_conversation_sync(
+                        chat_id, conversation_id, sent_message.id, "bot_answer", text,
+                        sent_as="message", search_type=search_type
+                    )
 
                 logging.info(f"Message sent to {chat_id}, length: {len(text)} chars")
                 return True
@@ -295,6 +346,13 @@ def smart_send_text_unified(
                         chat_id, username, sent_file_msg.id, "bot_answer", text,
                         sent_as="file", file_path=file_path, search_type=search_type
                     )
+
+                    # Синхронно сохраняем в conversations (если передан conversation_id)
+                    if conversation_id:
+                        _save_to_conversation_sync(
+                            chat_id, conversation_id, sent_file_msg.id, "bot_answer", text,
+                            sent_as="file", file_path=file_path, search_type=search_type
+                        )
 
                     logging.info(f"File sent to {chat_id}, path: {file_path}")
                     return True
