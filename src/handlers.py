@@ -28,8 +28,10 @@ from storage import delete_tmp_params, safe_filename, find_real_filename
 from datamodels import mapping_building_names, REPORT_MAPPING, mapping_scenario_names
 
 from markups import (
-    help_menu_markup, 
+    help_menu_markup,
     storage_menu_markup,
+    system_menu_markup,
+    chats_menu_markup,
     interview_or_design_menu,
     interview_menu_markup,
     design_menu_markup,
@@ -448,8 +450,74 @@ def handle_menu_storage(chat_id: int, app: Client):
     mm = app.send_message(chat_id, "Что анализируем?:", reply_markup=interview_or_design_menu())
     register_menu_message(chat_id, mm.id)
 
+def handle_menu_system(chat_id: int, app: Client):
+    clear_active_menus(chat_id, app)
+    mm = app.send_message(chat_id, "⚙️ Системные настройки:", reply_markup=system_menu_markup())
+    register_menu_message(chat_id, mm.id)
+
+def handle_menu_chats(chat_id: int, app: Client):
+    clear_active_menus(chat_id, app)
+    mm = app.send_message(chat_id, "📱 История и статистика чатов:", reply_markup=chats_menu_markup())
+    register_menu_message(chat_id, mm.id)
+
 def handle_main_menu(chat_id: int, app: Client):
     send_main_menu(chat_id, app)
+
+def handle_history_today(chat_id: int, app: Client):
+    """Показывает историю чатов за сегодня"""
+    try:
+        history_text = chat_history_manager.format_day_history_for_display(chat_id, None)
+        app.send_message(chat_id, history_text, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Error showing history: {e}")
+        app.send_message(chat_id, "❌ Произошла ошибка при получении истории.")
+
+def handle_show_stats(chat_id: int, app: Client):
+    """Показывает статистику чатов"""
+    try:
+        stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
+        app.send_message(chat_id, stats_text, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Error showing stats: {e}")
+        app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
+
+def handle_show_my_reports(chat_id: int, app: Client):
+    """Показывает список отчетов пользователя"""
+    try:
+        reports = md_storage_manager.get_user_reports(chat_id, limit=10)
+
+        if not reports:
+            app.send_message(
+                chat_id,
+                "📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
+                parse_mode="Markdown"
+            )
+            return
+
+        keyboard = []
+        for i, report in enumerate(reports[:5], 1):
+            timestamp = datetime.fromisoformat(report.timestamp).strftime("%d.%m %H:%M")
+            question_preview = report.question[:40] + "..." if len(report.question) > 40 else report.question
+            search_icon = "⚡" if report.search_type == "fast" else "🔍"
+
+            button_text = f"{search_icon} {timestamp}: {question_preview}"
+            callback_data = f"send_report||{report.file_path}"
+
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+
+        keyboard.append([InlineKeyboardButton("📊 Показать все отчеты", callback_data="show_all_reports")])
+
+        reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
+
+        app.send_message(
+            chat_id,
+            reports_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logging.error(f"Error showing reports: {e}")
+        app.send_message(chat_id, "❌ Произошла ошибка при получении отчетов.")
 
 def handle_view_files(chat_id: int, data, app: Client):
     parts = data.split("||")
@@ -967,8 +1035,20 @@ def register_handlers(app: Client):
                 handle_menu_dialog(c_id, app)
             elif data == "menu_help":
                 handle_help_menu(c_id, app)
+            elif data == "menu_system":
+                handle_menu_system(c_id, app)
+            elif data == "menu_chats":
+                handle_menu_chats(c_id, app)
             elif data == "menu_storage":
                 handle_menu_storage(c_id, app)
+
+            # Меню чатов
+            elif data == "history_today":
+                handle_history_today(c_id, app)
+            elif data == "show_stats":
+                handle_show_stats(c_id, app)
+            elif data == "show_my_reports":
+                handle_show_my_reports(c_id, app)
             # Просмотр файлов
             elif data.startswith("view||"):
                 handle_view_files(c_id, data, app)

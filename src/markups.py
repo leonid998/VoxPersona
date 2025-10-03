@@ -4,16 +4,31 @@ from constants import BUTTON_BACK, BUTTON_BACK_WITH_ARROW
 
 def main_menu_markup():
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📁 Хранилище", callback_data="menu_storage"),
-            InlineKeyboardButton("Режим диалога", callback_data="menu_dialog"),
-            InlineKeyboardButton("❓ Помощь", callback_data="menu_help")
-        ]
+        [InlineKeyboardButton("💬 Режим диалога", callback_data="menu_dialog")],
+        [InlineKeyboardButton("📱 Чаты", callback_data="menu_chats")],
+        [InlineKeyboardButton("⚙️ Системная", callback_data="menu_system")],
+        [InlineKeyboardButton("❓ Помощь", callback_data="menu_help")]
     ])
 
 def storage_menu_markup():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Аудио файлы", callback_data="view||audio")],
+        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_system")]
+    ])
+
+def system_menu_markup():
+    """Меню системных настроек"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📁 Хранилище", callback_data="menu_storage")],
+        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
+    ])
+
+def chats_menu_markup():
+    """Меню истории чатов"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📜 История за сегодня", callback_data="history_today")],
+        [InlineKeyboardButton("📊 Статистика", callback_data="show_stats")],
+        [InlineKeyboardButton("📄 Мои отчеты", callback_data="show_my_reports")],
         [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
     ])
 
