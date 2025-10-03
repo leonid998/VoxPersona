@@ -202,18 +202,18 @@ jobs:
           
           case '$DEPLOY_TYPE' in
             'FULL_RESTART')
-              echo '🔄 Executing FULL_RESTART: Rebuilding all containers...'
+              echo '🔄 Executing FULL_RESTART: Rebuilding all containers with cache optimization...'
               docker compose down || true
-              docker compose build --no-cache
+              DOCKER_BUILDKIT=1 docker compose build --pull
               docker compose up -d
-              echo '✅ FULL_RESTART completed'
+              echo '✅ FULL_RESTART completed with layer caching'
               ;;
             'APP_ONLY')
-              echo '🚀 Executing APP_ONLY: Rebuilding app container...'
+              echo '🚀 Executing APP_ONLY: Rebuilding app container with cache optimization...'
               docker compose stop voxpersona || true
-              docker compose build voxpersona
+              DOCKER_BUILDKIT=1 docker compose build voxpersona
               docker compose up -d voxpersona
-              echo '✅ APP_ONLY completed'
+              echo '✅ APP_ONLY completed with layer caching'
               ;;
             'NO_RESTART')
               echo '📝 Executing NO_RESTART: Files synced, no container restart needed'
