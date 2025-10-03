@@ -4,10 +4,14 @@ from constants import BUTTON_BACK, BUTTON_BACK_WITH_ARROW
 
 def main_menu_markup():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💬 Режим диалога", callback_data="menu_dialog")],
-        [InlineKeyboardButton("📱 Чаты", callback_data="menu_chats")],
-        [InlineKeyboardButton("⚙️ Системная", callback_data="menu_system")],
-        [InlineKeyboardButton("❓ Помощь", callback_data="menu_help")]
+        [
+            InlineKeyboardButton("💬 Режим диалога", callback_data="menu_dialog"),
+            InlineKeyboardButton("📱 Чаты", callback_data="menu_chats")
+        ],
+        [
+            InlineKeyboardButton("⚙️ Системная", callback_data="menu_system"),
+            InlineKeyboardButton("❓ Помощь", callback_data="menu_help")
+        ]
     ])
 
 def storage_menu_markup():
