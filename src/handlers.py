@@ -482,35 +482,35 @@ def handle_authorized_text(app: Client, user_states: dict[int, dict[str, Any]], 
 #  Callback-queries
 # =========================================================================
 
-def handle_help_menu(chat_id: int, app: Client):
+async def handle_help_menu(chat_id: int, app: Client):
     kb, txt = help_menu_markup()
-    app.send_message(chat_id, txt, reply_markup=kb)
+    await app.send_message(chat_id, txt, reply_markup=kb)
 
-def handle_menu_storage(chat_id: int, app: Client):
-    app.send_message(chat_id, "Что анализируем?:", reply_markup=interview_or_design_menu())
+async def handle_menu_storage(chat_id: int, app: Client):
+    await app.send_message(chat_id, "Что анализируем?:", reply_markup=interview_or_design_menu())
 
-def handle_menu_system(chat_id: int, app: Client):
-    app.send_message(chat_id, "⚙️ Системные настройки:", reply_markup=system_menu_markup())
+async def handle_menu_system(chat_id: int, app: Client):
+    await app.send_message(chat_id, "⚙️ Системные настройки:", reply_markup=system_menu_markup())
 
-def handle_menu_chats(chat_id: int, app: Client):
+async def handle_menu_chats(chat_id: int, app: Client):
     """Показывает меню чатов с динамическим списком."""
-    app.send_message(
+    await app.send_message(
         chat_id,
         "📱 История и статистика чатов:",
         reply_markup=chats_menu_markup_dynamic(chat_id)
     )
 
-def handle_main_menu(chat_id: int, app: Client):
-    send_main_menu(chat_id, app)
+async def handle_main_menu(chat_id: int, app: Client):
+    await send_main_menu(chat_id, app)
 
-def handle_show_stats(chat_id: int, app: Client):
+async def handle_show_stats(chat_id: int, app: Client):
     """Показывает статистику чатов"""
     try:
         stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
-        app.send_message(chat_id, stats_text, )
+        await app.send_message(chat_id, stats_text, )
     except Exception as e:
         logging.error(f"Error showing stats: {e}")
-        app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
+        await app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
 
 async def handle_show_my_reports(chat_id: int, app: Client):
     """Показывает список отчетов пользователя"""
@@ -550,12 +550,12 @@ async def handle_show_my_reports(chat_id: int, app: Client):
         logging.error(f"Error showing reports: {e}")
         app.send_message(chat_id, "❌ Произошла ошибка при получении отчетов.")
 
-def handle_view_files(chat_id: int, data, app: Client):
+async def handle_view_files(chat_id: int, data, app: Client):
     parts = data.split("||")
     if len(parts) < 2:
         return
     cat = parts[1]
-    app.send_message(chat_id, f"Файлы в '{cat}':", reply_markup=files_menu_markup(cat))
+    await app.send_message(chat_id, f"Файлы в '{cat}':", reply_markup=files_menu_markup(cat))
 
 def process_selected_file(chat_id: int, category: str, filename: str, app: Client):
     msg = app.send_message(chat_id, "⏳ Обрабатываю файл...")
@@ -585,10 +585,10 @@ def preprocess_parts(data: str, treshold: int=3) -> list[str] | None:
         return None
     return parts
 
-def handle_file_selection(chat_id: int, data: str, app: Client):
+async def handle_file_selection(chat_id: int, data: str, app: Client):
     parts = preprocess_parts(data)
     if parts is None:
-        app.send_message(chat_id, "Ошибка обработки данных")
+        await app.send_message(chat_id, "Ошибка обработки данных")
         return
     category, file_name = parts[1], parts[2]
     folder = STORAGE_DIRS.get(category, "")
@@ -623,15 +623,15 @@ async def handle_file_deletion(chat_id: int, data: str, app: Client):
         reply_markup=files_menu_markup(category)
     )
 
-def file_upload_handler(chat_id: int, data: str, app: Client):
+async def file_upload_handler(chat_id: int, data: str, app: Client):
     parts = preprocess_parts(data, 2)
     if parts is None:
-        app.send_message(chat_id, "Ошибка обработки данных")
+        await app.send_message(chat_id, "Ошибка обработки данных")
         return
     category = parts[1]
     # user_states[chat_id] = {"upload_category": category}
     user_states.setdefault(chat_id, {})["upload_category"] = category
-    app.send_message(chat_id, f"Отправьте документ для сохранения в '{category}'.")
+    await app.send_message(chat_id, f"Отправьте документ для сохранения в '{category}'.")
 
 # --------------------------------------------------------------------------------------
 #                        Подтверждение и сохранение (Callback)
@@ -698,7 +698,7 @@ def handle_back_to_confirm(chat_id: int, app: Client):
     st["step"] = "confirm_data"
     show_confirmation_menu(chat_id, st, app)
 
-def handle_mode_selection(chat_id: int, mode: str, app: Client):
+async def handle_mode_selection(chat_id: int, mode: str, app: Client):
     """
     Выбор сценария «Интервью» или «Дизайн»
     """
@@ -708,7 +708,7 @@ def handle_mode_selection(chat_id: int, mode: str, app: Client):
         "data": {}
     }
     st = user_states[chat_id]
-    app.send_message(chat_id, "📦 Меню хранилища:", reply_markup=storage_menu_markup())
+    await app.send_message(chat_id, "📦 Меню хранилища:", reply_markup=storage_menu_markup())
 
 def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, building_name: str = "non-building"):
     validate_datas = []
@@ -840,16 +840,16 @@ def handle_choose_building(chat_id: int, data: str, app: Client):
 
     st["pending_report"] = None
 
-def handle_toggle_deep(callback: CallbackQuery, app: Client):
+async def handle_toggle_deep(callback: CallbackQuery, app: Client):
     chat_id = callback.message.chat.id
     st = user_states.get(chat_id, {})
     st["deep_search"] = not st.get("deep_search", False)
-    callback.message.edit_reply_markup(make_dialog_markup(st["deep_search"]))
+    await callback.message.edit_reply_markup(make_dialog_markup(st["deep_search"]))
 
-def handle_menu_dialog(chat_id: int, app: Client):
+async def handle_menu_dialog(chat_id: int, app: Client):
     # Сначала очищаем предыдущие меню
     user_states[chat_id] = {"step": "dialog_mode", "deep_search": False}
-    app.send_message(
+    await app.send_message(
         chat_id,
         "Какую информацию вы хотели бы получить?",
         reply_markup=make_dialog_markup(False)
@@ -1096,43 +1096,43 @@ def register_handlers(app: Client):
 
             # Главное меню
             if data == "menu_main":
-                handle_main_menu(c_id, app)
+                await handle_main_menu(c_id, app)
             elif data == "menu_dialog":
-                handle_menu_dialog(c_id, app)
+                await handle_menu_dialog(c_id, app)
             elif data == "menu_help":
-                handle_help_menu(c_id, app)
+                await handle_help_menu(c_id, app)
             elif data == "menu_system":
-                handle_menu_system(c_id, app)
+                await handle_menu_system(c_id, app)
             elif data == "menu_chats":
-                handle_menu_chats(c_id, app)
+                await handle_menu_chats(c_id, app)
             elif data == "menu_storage":
-                handle_menu_storage(c_id, app)
+                await handle_menu_storage(c_id, app)
 
             # Меню чатов
             elif data == "show_stats":
-                handle_show_stats(c_id, app)
+                await handle_show_stats(c_id, app)
             elif data == "show_my_reports":
                 await handle_show_my_reports(c_id, app)
             # Просмотр файлов
             elif data.startswith("view||"):
-                handle_view_files(c_id, data, app)
+                await handle_view_files(c_id, data, app)
 
             elif data.startswith("select||"):
-                handle_file_selection(c_id, data, app)
+                await handle_file_selection(c_id, data, app)
 
             elif data.startswith("delete||"):
                 await handle_file_deletion(c_id, data, app)
 
             elif data.startswith("upload||"):
-                file_upload_handler(c_id, data, app)
+                await file_upload_handler(c_id, data, app)
 
             elif data == "toggle_deep":
-                handle_toggle_deep(callback, app)
+                await handle_toggle_deep(callback, app)
                 return
 
             # Выбор сценария
             elif data in ["mode_interview", "mode_design"]:
-                handle_mode_selection(c_id, data, app)
+                await handle_mode_selection(c_id, data, app)
 
             # Подтверждение данных
             elif data == "confirm_data":

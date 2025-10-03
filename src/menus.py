@@ -32,8 +32,8 @@ def files_menu_markup(category: str):
     rows.append([InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")])
     return InlineKeyboardMarkup(rows)
 
-def send_main_menu(chat_id: int, app: Client):
-    app.send_message(chat_id, "🏠 Главное меню:", reply_markup=main_menu_markup())
+async def send_main_menu(chat_id: int, app: Client):
+    await app.send_message(chat_id, "🏠 Главное меню:", reply_markup=main_menu_markup())
 
 def show_confirmation_menu(chat_id: int, state: dict[str, Any], app: Client):
     """
