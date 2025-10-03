@@ -1057,7 +1057,7 @@ def register_handlers(app: Client):
         c_id = callback.message.chat.id
         data = callback.data
         try:
-            callback.answer()
+            await callback.answer()
         except:
             pass
 
