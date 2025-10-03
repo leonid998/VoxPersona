@@ -99,9 +99,12 @@ async def handle_new_chat(chat_id: int, app: Client):
             first_question="Новый чат"
         )
 
-        # Очищаем состояние пользователя
-        if chat_id in user_states:
-            user_states[chat_id] = {}
+        # Устанавливаем состояние для нового чата
+        user_states[chat_id] = {
+            "conversation_id": new_conversation_id,
+            "step": "dialog_mode",
+            "deep_search": False
+        }
 
         # Очищаем историю меню (новый контекст)
         clear_menus(chat_id)
@@ -186,6 +189,13 @@ async def handle_switch_chat_confirm(
     try:
         # Устанавливаем чат как активный
         conversation_manager.set_active_conversation(chat_id, conversation_id)
+
+        # Устанавливаем состояние для переключенного чата
+        user_states[chat_id] = {
+            "conversation_id": conversation_id,
+            "step": "dialog_mode",
+            "deep_search": False
+        }
 
         # Загружаем чат и последние 5 сообщений
         conversation = conversation_manager.load_conversation(chat_id, conversation_id)

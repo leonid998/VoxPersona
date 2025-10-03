@@ -357,26 +357,33 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
         return
     # === КОНЕЦ МУЛЬТИЧАТЫ ===
 
-    # === МУЛЬТИЧАТЫ: Обеспечение активного чата ===
-    username = get_username_from_chat(c_id, app)
-    conversation_id = ensure_active_conversation(c_id, username, text_)
-
-    # Сохраняем conversation_id в user_states для дальнейшего использования
-    if c_id not in user_states:
-        user_states[c_id] = {}
-    user_states[c_id]["conversation_id"] = conversation_id
-    # === КОНЕЦ МУЛЬТИЧАТЫ ===
-
     # Проверяем, есть ли у пользователя активное состояние
     st = user_states.get(c_id)
 
-    if not check_state(st, c_id, app):
-        logging.info("Нет состояния. Пользователь что-то пишет без контекста")
-        send_main_menu(c_id, app)
+    # === ПРОВЕРКА РЕЖИМА ДИАЛОГА ===
+    # Пользователь должен сначала выбрать чат и режим поиска
+    if not st or st.get("step") != "dialog_mode":
+        logging.info(f"Пользователь {c_id} пытается задать вопрос без выбора чата/режима")
+        await app.send_message(
+            c_id,
+            "📌 Для начала работы:\n\n"
+            "1️⃣ Выберите чат или создайте новый\n"
+            "2️⃣ Выберите режим поиска (быстрый или глубокий)\n"
+            "3️⃣ Задайте вопрос\n\n"
+            "Откройте главное меню ниже 👇"
+        )
+        await send_main_menu(c_id, app)
         return
+    # === КОНЕЦ ПРОВЕРКИ ===
 
-    # После проверки check_state мы знаем, что st не None
-    assert st is not None
+    # === МУЛЬТИЧАТЫ: Получение conversation_id ===
+    conversation_id = st.get("conversation_id")
+    if not conversation_id:
+        # Fallback: создаем чат если его нет в состоянии
+        username = get_username_from_chat(c_id, app)
+        conversation_id = ensure_active_conversation(c_id, username, text_)
+        st["conversation_id"] = conversation_id
+    # === КОНЕЦ МУЛЬТИЧАТЫ ===
 
     if st.get("step") == "dialog_mode":
         deep = st.get("deep_search", False)
@@ -848,13 +855,27 @@ async def handle_toggle_deep(callback: CallbackQuery, app: Client):
     await callback.message.edit_reply_markup(make_dialog_markup(st["deep_search"]))
 
 async def handle_menu_dialog(chat_id: int, app: Client):
-    # Сначала очищаем предыдущие меню
-    user_states[chat_id] = {"step": "dialog_mode", "deep_search": False}
+    # Получаем текущее состояние или создаем новое
+    st = user_states.get(chat_id, {})
+
+    # Сохраняем conversation_id если он есть, иначе создаем новый чат
+    conversation_id = st.get("conversation_id")
+    if not conversation_id:
+        username = get_username_from_chat(chat_id, app)
+        conversation_id = ensure_active_conversation(chat_id, username)
+
+    # Устанавливаем состояние диалога
+    user_states[chat_id] = {
+        "conversation_id": conversation_id,
+        "step": "dialog_mode",
+        "deep_search": st.get("deep_search", False)  # Сохраняем предыдущий режим
+    }
+
     await send_menu_and_remove_old(
         chat_id,
         app,
         "Какую информацию вы хотели бы получить?",
-        make_dialog_markup(False)
+        make_dialog_markup(st.get("deep_search", False))
     )
 
 def register_handlers(app: Client):
@@ -866,7 +887,7 @@ def register_handlers(app: Client):
     async def cmd_start(app: Client, message: Message):
         c_id = message.chat.id
         if c_id not in authorized_users:
-            app.send_message(c_id, "Вы не авторизованы. Введите пароль:")
+            await app.send_message(c_id, "Вы не авторизованы. Введите пароль:")
         else:
             await send_main_menu(c_id, app)
 
