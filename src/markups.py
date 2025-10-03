@@ -30,7 +30,6 @@ def system_menu_markup():
 def chats_menu_markup():
     """Меню истории чатов"""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📜 История за сегодня", callback_data="history_today")],
         [InlineKeyboardButton("📊 Статистика", callback_data="show_stats")],
         [InlineKeyboardButton("📄 Мои отчеты", callback_data="show_my_reports")],
         [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]

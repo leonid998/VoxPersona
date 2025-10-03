@@ -296,11 +296,17 @@ def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
         elif data == "show_all_reports":
             # Показываем полный список отчетов
             reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
+
+            # Добавляем кнопку "Назад"
+            back_keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("« Назад к отчетам", callback_data="show_my_reports")]
+            ])
+
             app.edit_message_text(
                 chat_id,
                 callback_query.message.id,
                 reports_text,
-                
+                reply_markup=back_keyboard
             )
             app.answer_callback_query(callback_query.id)
             
@@ -462,15 +468,6 @@ def handle_menu_chats(chat_id: int, app: Client):
 
 def handle_main_menu(chat_id: int, app: Client):
     send_main_menu(chat_id, app)
-
-def handle_history_today(chat_id: int, app: Client):
-    """Показывает историю чатов за сегодня"""
-    try:
-        history_text = chat_history_manager.format_day_history_for_display(chat_id, None)
-        app.send_message(chat_id, history_text, )
-    except Exception as e:
-        logging.error(f"Error showing history: {e}")
-        app.send_message(chat_id, "❌ Произошла ошибка при получении истории.")
 
 def handle_show_stats(chat_id: int, app: Client):
     """Показывает статистику чатов"""
@@ -1043,8 +1040,6 @@ def register_handlers(app: Client):
                 handle_menu_storage(c_id, app)
 
             # Меню чатов
-            elif data == "history_today":
-                handle_history_today(c_id, app)
             elif data == "show_stats":
                 handle_show_stats(c_id, app)
             elif data == "show_my_reports":
