@@ -20,17 +20,33 @@ def save_rag_indices(rags: dict) -> None:
 
 def load_rag_indices() -> dict:
     """Load FAISS indices from disk."""
+    import logging
+    logging.info(f"🔍 Сканирование директории {RAG_INDEX_DIR} для загрузки FAISS индексов...")
+
     model = get_embedding_model()
     embeddings = CustomSentenceTransformerEmbeddings(model)
     rags = {}
 
-    for name in os.listdir(RAG_INDEX_DIR):
+    if not os.path.exists(RAG_INDEX_DIR):
+        logging.warning(f"⚠️  Директория {RAG_INDEX_DIR} не существует!")
+        return rags
+
+    found_dirs = [d for d in os.listdir(RAG_INDEX_DIR) if os.path.isdir(os.path.join(RAG_INDEX_DIR, d))]
+    logging.info(f"📁 Найдено директорий: {found_dirs}")
+
+    for name in found_dirs:
         path = os.path.join(RAG_INDEX_DIR, name)
-        if not os.path.isdir(path):
-            continue
         try:
-            rags[name] = FAISS.load_local(path, embeddings)
-        except Exception:
+            logging.info(f"⏳ Загрузка FAISS индекса {name} из {path}...")
+            rags[name] = FAISS.load_local(path, embeddings, allow_dangerous_deserialization=True)
+            logging.info(f"✅ Индекс {name} успешно загружен")
+        except Exception as e:
+            logging.error(f"❌ Ошибка загрузки индекса {name}: {e}")
             continue
+
+    if rags:
+        logging.info(f"✅ Всего загружено FAISS индексов с диска: {len(rags)} ({list(rags.keys())})")
+    else:
+        logging.warning("⚠️  Ни одного FAISS индекса не загружено!")
 
     return rags

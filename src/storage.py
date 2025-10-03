@@ -2,7 +2,6 @@ import os
 import re
 import logging
 import shutil
-import logging
 from pyrogram import Client
 import psycopg2
 import psycopg2.extras
@@ -17,11 +16,11 @@ from datamodels import translit_map
 from utils import clean_text, get_embedding_model, split_markdown_text, CustomSentenceTransformerEmbeddings
 
 from db_handler.db import (
-    get_scenario, 
-    get_or_create_employee, 
+    get_scenario,
+    get_or_create_employee,
     get_or_create_client,
-    get_or_create_place_with_zone, 
-    get_or_create_city, 
+    get_or_create_place_with_zone,
+    get_or_create_city,
     save_audit,
     get_or_save_transcription,
     get_report_type,
@@ -87,7 +86,7 @@ def create_db_in_memory(markdown_text: str):
     logging.info("Информация о токенах в чанках:")
     total_tokens = 0
     for i, doc in enumerate(chunks_documents):
-        tokens = len(doc.page_content.split()) * 1.5  
+        tokens = len(doc.page_content.split()) * 1.5
         total_tokens += tokens
 
     logging.info(f"Всего токенов во всех чанках: {int(total_tokens)}")
@@ -96,11 +95,17 @@ def create_db_in_memory(markdown_text: str):
 
     embedding = CustomSentenceTransformerEmbeddings(model)
 
+    # Логируем начало создания FAISS индекса
+    logging.info(f"Начинаем создание FAISS индекса для {len(chunks_documents)} документов...")
+    logging.info("Этот процесс может занять 10-20 минут в зависимости от количества документов. Пожалуйста, ожидайте...")
+
     # Создаем FAISS из документов
     db_index = FAISS.from_documents(
         documents=chunks_documents,
         embedding=embedding  # Теперь здесь правильный Embeddings-объект
     )
+
+    logging.info(f"✅ FAISS индекс успешно создан! Обработано {len(chunks_documents)} документов.")
 
     return db_index
 
@@ -113,7 +118,7 @@ def save_user_input_to_db(transcript: str, scenario_name: str, data: dict, audit
       - transcript   : транскрибация
       - scenario_name         : 'Интервью' или 'Дизайн'
       - data         : словарь, где хранятся 'employee', 'place_name', 'type_of_location', ...
-      - label        : строка, которая указывает, какой именно отчёт выбрал пользователь 
+      - label        : строка, которая указывает, какой именно отчёт выбрал пользователь
                         (например, 'report_int_general'), чтобы получить report_type_desc.
       - audit_text   : Результат аудита (отчёт)
     """
@@ -121,7 +126,7 @@ def save_user_input_to_db(transcript: str, scenario_name: str, data: dict, audit
     client_name =   data.get("client", "")
     place_name    = data.get("place_name", "")
     type_of_location = data.get("type_of_location", "")
-    city_name     = data.get("city", "")  
+    city_name     = data.get("city", "")
     audit_date    = data.get("date", "")
     zone_name     = data.get("zone_name", "")
     number_audio  = data.get("audio_number", "")
@@ -139,10 +144,10 @@ def save_user_input_to_db(transcript: str, scenario_name: str, data: dict, audit
     city_id = get_or_create_city(city_name)
     client_id = get_or_create_client(client_name)
 
-    # 3) Сохраняем транскрипт 
+    # 3) Сохраняем транскрипт
     transcription_id = get_or_save_transcription(
         transcription_text=transcript,
-        audio_file_name=audio_file_name, 
+        audio_file_name=audio_file_name,
         number_audio=number_audio
     )
 
@@ -200,7 +205,7 @@ def delete_tmp_dir(tmp_dir: str):
         logging.info(f"Временная директория {tmp_dir} удалена.")
     except Exception as e:
         logging.error(f"Ошибка удаления временной директории: {e}")
-    
+
 def delete_tmp_file(tmp_file: str):
     try:
         if os.path.exists(tmp_file):
@@ -249,7 +254,7 @@ def process_stored_file(category: str, filename: str, chat_id: int, app: Client)
             except Exception as e:
                 logging.exception(f"❌ Ошибка при расстановке ролей: {str(e)}")
                 # app.edit_message_text(chat_id, msg_.id, f"❌ Ошибка при расстановке ролей: {str(e)}")
-                
+
             logging.info(f"[process_stored_file|audio] Сохранён текст длиной {len(roles_)} символов.")
             return roles_
 

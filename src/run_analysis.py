@@ -19,6 +19,13 @@ from storage import save_user_input_to_db, build_reports_grouped, create_db_in_m
 
 def init_rags(existing_rags: dict | None = None) -> dict:
     rags = existing_rags.copy() if existing_rags else {}
+
+    # Логируем какие индексы уже загружены
+    if rags:
+        logging.info(f"📦 Получены pre-loaded RAG индексы: {list(rags.keys())}")
+    else:
+        logging.info("📦 Pre-loaded RAG индексов нет, создаем все с нуля")
+
     rag_configs = [
         ("Интервью", None, None),
         ("Дизайн", None, None),
@@ -36,19 +43,26 @@ def init_rags(existing_rags: dict | None = None) -> dict:
         try:
             rag_name = report_type if report_type else scenario_name
             if rag_name in rags:
+                logging.info(f"⏭️  Пропуск {rag_name}: уже загружен с диска")
                 continue
+            logging.info(f"🏗️  Создание индекса {rag_name}...")
             content = build_reports_grouped(scenario_name=scenario_name, report_type=report_type)
             content_str = grouped_reports_to_string(content)
 
             if rag_name == "Интервью" or rag_name == "Дизайн":
                 rag_db = create_db_in_memory(content_str)
                 rags[rag_name] = rag_db
-                logging.info(f"Раг для {rag_name} сформирован успешно")
+                logging.info(f"✅ FAISS индекс для {rag_name} сформирован успешно")
             else:
                 rags[rag_name] = content_str
+                logging.info(f"✅ Текстовый индекс для {rag_name} сформирован успешно")
         except Exception as e:
             logging.error(f"Ошибка при создании рага для {config}: {e}")
-            return
+            continue  # Продолжить со следующим индексом вместо return
+
+    # Проверка, были ли созданы хотя бы какие-то индексы
+    if not rags:
+        logging.warning("Не удалось создать ни одного RAG индекса!")
 
     return rags
 
@@ -59,7 +73,7 @@ def run_fast_search(text: str, rag) -> str:
 
 def run_deep_search(content: str, text: str, chat_id: int, app: Client, category: str) -> str:
     api_keys = [ANTHROPIC_API_KEY, ANTHROPIC_API_KEY_2, ANTHROPIC_API_KEY_3, ANTHROPIC_API_KEY_4, ANTHROPIC_API_KEY_5, ANTHROPIC_API_KEY_6, ANTHROPIC_API_KEY_7]
-        
+
     chunks = re.split(r'^# Чанк transcription_id \d+', content, flags=re.MULTILINE)
     chunks = [chunk.strip() for chunk in chunks if chunk.strip()]
 
@@ -68,7 +82,7 @@ def run_deep_search(content: str, text: str, chat_id: int, app: Client, category
     if not chunks:
         app.send_message(chat_id, f"Ошибка: не найдены отчеты для категории '{category}'")
         return
-    
+
     extract_prompt = fetch_prompt_by_name(prompt_name="prompt_extract")
     aggregation_prompt = fetch_prompt_by_name(prompt_name="prompt_agg")
 
@@ -80,7 +94,7 @@ def run_deep_search(content: str, text: str, chat_id: int, app: Client, category
                 chunks=chunks,
                 extract_prompt=extract_prompt,
                 api_keys=api_keys,
-                session=session  
+                session=session
             )
 
     try:
@@ -90,7 +104,7 @@ def run_deep_search(content: str, text: str, chat_id: int, app: Client, category
         results = asyncio.run(main())
 
     citations = [r for r in results if r != "##not_found##" and not r.startswith("[ERROR]")]
-    
+
     if citations:
         aggregated_answer = aggregate_citations(
             text=text,
@@ -115,11 +129,11 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
             scenario_name="Интервью"
         else:
             raise ValueError(f"Не удалось определить сценарий для анализа отчетов")
-        
+
         content = build_reports_grouped(scenario_name=scenario_name, report_type=None)
         content = grouped_reports_to_string(content)
         rag = rags[scenario_name]
-        
+
         if deep_search:
             app.send_message(chat_id, "Запущено Глубокое Исследование")
             logging.info("Запущено Глубокое исследование")
@@ -139,10 +153,10 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
             answer = run_fast_search(text=text, rag=rag)
 
         formatted_response = f"*Категория запроса:* {category}\n\n{answer}"
-        
+
         # Получаем username
         username = get_username_from_chat(chat_id, app)
-        
+
         # Сохраняем вопрос пользователя в историю
         from chat_history import chat_history_manager
         chat_history_manager.save_message_to_history(
@@ -152,7 +166,7 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
             message_type="user_question",
             text=text
         )
-        
+
         # Используем умную отправку
         smart_send_text_sync(
             text=formatted_response,
@@ -210,7 +224,7 @@ def run_analysis_pass(
         if is_show_analysis:
             # Получаем username
             username = get_username_from_chat(chat_id, app)
-            
+
             # Используем умную отправку для анализа
             smart_send_text_sync(
                 text=audit_text,
@@ -279,7 +293,7 @@ def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str], dat
             )
         except Exception as e:
             logging.exception("Ошибка при выборке промптов")
-        
+
     json_prompts = [(p, rp) for (p, rp, is_json_prompt) in prompts_list if is_json_prompt]
     ordinary_prompts = [(p, rp) for (p, rp, is_json_prompt) in prompts_list if not is_json_prompt]
 
