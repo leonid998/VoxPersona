@@ -22,7 +22,7 @@ from openai import PermissionDeniedError as OpenAIPermissionError
 from constants import BUTTON_BACK, CLAUDE_ERROR_MESSAGE
 
 warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] %(levelname)s: %(message)s')
 
 # ================== Загрузка .env (ключи) ==================
 load_dotenv()

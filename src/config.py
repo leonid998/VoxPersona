@@ -13,7 +13,7 @@ import tiktoken
 
 warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
 
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] %(levelname)s: %(message)s')
 
 # Load environment files with proper precedence
 # First load .env, then .env.test if in testing environment
