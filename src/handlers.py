@@ -917,7 +917,7 @@ def register_handlers(app: Client):
             return
 
         # Если пользователь ещё не авторизован — проверяем пароль
-        handle_unauthorized_user(authorized_users, message, app)
+        await handle_unauthorized_user(authorized_users, message, app)
 
 
     @app.on_message(filters.voice | filters.audio | filter_wav_document)  # type: ignore[misc,reportUntypedFunctionDecorator]
