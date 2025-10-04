@@ -48,7 +48,7 @@ class VisualContextManager:
             cls._tracked_messages[chat_id][context] = []
 
         cls._tracked_messages[chat_id][context].append(message_id)
-        logger.debug(f"Tracked message {message_id} in context '{context}' for chat {chat_id}")
+        logger.info(f"Tracked message {message_id} in context '{context}' for chat {chat_id}")
 
     @classmethod
     async def minimize_messages(
@@ -72,7 +72,7 @@ class VisualContextManager:
         message_ids = cls._tracked_messages.get(chat_id, {}).get(context, [])
 
         if not message_ids:
-            logger.debug(f"No messages to minimize for context '{context}' in chat {chat_id}")
+            logger.info(f"No messages to minimize for context '{context}' in chat {chat_id}")
             return 0
 
         minimized_count = 0
