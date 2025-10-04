@@ -105,11 +105,11 @@ def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
     if not conversations:
         return InlineKeyboardMarkup(buttons)
 
-    # Создаем словарь conversation_id -> номер (по порядку создания)
-    conversations_sorted_by_creation = sorted(conversations, key=lambda x: x.created_at)
+    # Используем сохраненные номера чатов из metadata (или 0 для старых чатов)
+    # Старые чаты без chat_number получат номер 0, новые - постоянный номер
     chat_numbers = {
-        conv.conversation_id: idx + 1
-        for idx, conv in enumerate(conversations_sorted_by_creation)
+        conv.conversation_id: conv.chat_number
+        for conv in conversations
     }
 
     # Разделяем на активный и остальные
@@ -232,7 +232,7 @@ def make_dialog_markup() -> InlineKeyboardMarkup:
             InlineKeyboardButton("⚡ Быстрый поиск", callback_data="mode_fast"),
             InlineKeyboardButton("🔬 Глубокое исследование", callback_data="mode_deep")
         ],
-        [InlineKeyboardButton("🏠 Главное меню", callback_data="menu_main")]
+        [InlineKeyboardButton("📱 Чаты/Диалоги", callback_data="menu_chats")]
     ])
 
 def help_menu_markup():

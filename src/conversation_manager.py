@@ -100,20 +100,26 @@ class ConversationManager:
                 "user_id": user_id,
                 "username": "",
                 "last_active_conversation_id": None,
-                "conversations": []
+                "conversations": [],
+                "next_chat_number": 1  # Счетчик для автоинкремента номеров чатов
             }
             return empty_index
 
         try:
             with open(index_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                index_data = json.load(f)
+                # Добавляем next_chat_number если его нет (обратная совместимость)
+                if "next_chat_number" not in index_data:
+                    index_data["next_chat_number"] = 1
+                return index_data
         except Exception as e:
             logger.error(f"Failed to load index for user {user_id}: {e}")
             return {
                 "user_id": user_id,
                 "username": "",
                 "last_active_conversation_id": None,
-                "conversations": []
+                "conversations": [],
+                "next_chat_number": 1
             }
 
     def save_index(self, user_id: int, index_data: dict) -> bool:
@@ -190,7 +196,11 @@ class ConversationManager:
         # 1. Генерируем UUID
         conversation_id = str(uuid.uuid4())
 
-        # 2. Создаем ConversationMetadata
+        # 2. Загружаем индекс и получаем следующий номер чата
+        index_data = self.load_index(user_id)
+        chat_number = index_data.get("next_chat_number", 1)
+
+        # 3. Создаем ConversationMetadata с постоянным номером
         now = datetime.now().isoformat()
         chat_name = generate_chat_name(first_question)
 
@@ -203,29 +213,30 @@ class ConversationManager:
             updated_at=now,
             is_active=True,
             message_count=0,
-            total_tokens=0
+            total_tokens=0,
+            chat_number=chat_number
         )
 
-        # 3. Создаем Conversation с пустым списком сообщений
+        # 4. Создаем Conversation с пустым списком сообщений
         conversation = Conversation(
             metadata=metadata,
             messages=[]
         )
 
-        # 4. Обновляем все старые чаты: is_active=False
-        index_data = self.load_index(user_id)
+        # 5. Обновляем все старые чаты: is_active=False
         for conv_dict in index_data.get("conversations", []):
             conv_dict["is_active"] = False
 
-        # 5. Сохраняем новый чат
+        # 6. Сохраняем новый чат
         if not self.save_conversation(conversation):
             logger.error(f"Failed to save new conversation {conversation_id}")
             raise RuntimeError("Failed to save new conversation")
 
-        # 6. Обновляем index.json
+        # 7. Обновляем index.json и инкрементируем счетчик
         index_data["username"] = username
         index_data["last_active_conversation_id"] = conversation_id
         index_data["conversations"].append(asdict(metadata))
+        index_data["next_chat_number"] = chat_number + 1  # Инкрементируем счетчик
 
         if not self.save_index(user_id, index_data):
             logger.error(f"Failed to save index for user {user_id}")

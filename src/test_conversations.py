@@ -93,7 +93,8 @@ class TestConversationMetadata:
             updated_at=now,
             is_active=True,
             message_count=0,
-            total_tokens=0
+            total_tokens=0,
+            chat_number=1
         )
 
         assert metadata.conversation_id == "test-uuid-123"
@@ -103,6 +104,7 @@ class TestConversationMetadata:
         assert metadata.is_active is True
         assert metadata.message_count == 0
         assert metadata.total_tokens == 0
+        assert metadata.chat_number == 1
 
 
 class TestGenerateChatName:

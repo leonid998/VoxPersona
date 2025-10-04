@@ -48,6 +48,7 @@ class ConversationMetadata:
         is_active: True если это текущий активный чат
         message_count: Количество сообщений в чате
         total_tokens: Сумма токенов всех сообщений
+        chat_number: Уникальный постоянный номер чата (не пересчитывается при удалении других чатов)
     """
     conversation_id: str
     user_id: int
@@ -58,6 +59,7 @@ class ConversationMetadata:
     is_active: bool
     message_count: int
     total_tokens: int
+    chat_number: int = 0  # По умолчанию 0 для обратной совместимости со старыми чатами
 
 
 @dataclass
