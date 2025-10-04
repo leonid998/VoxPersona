@@ -7,8 +7,7 @@ from conversations import ConversationMetadata
 def main_menu_markup():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("💬 Режим диалога", callback_data="menu_dialog"),
-            InlineKeyboardButton("📱 Чаты", callback_data="menu_chats")
+            InlineKeyboardButton("📱 Чаты/Диалоги", callback_data="menu_chats")
         ],
         [
             InlineKeyboardButton("⚙️ Системная", callback_data="menu_system"),
