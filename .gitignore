@@ -93,3 +93,8 @@ docker-compose.override.yml
 .aws/
 
 %userprofile%/
+
+# Persistent data directories
+conversations/
+md_reports/
+chat_history/

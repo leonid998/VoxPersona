@@ -71,6 +71,10 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./rag_indices:/app/rag_indices
+      # Persistent data storage
+      - ./conversations:/home/voxpersona_user/VoxPersona/conversations
+      - ./md_reports:/home/voxpersona_user/VoxPersona/md_reports
+      - ./chat_history:/home/voxpersona_user/VoxPersona/chat_history
       # Cache volumes for development
       - pip_cache:/root/.cache/pip
       - huggingface_cache:/root/.cache/huggingface
