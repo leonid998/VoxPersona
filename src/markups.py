@@ -29,26 +29,31 @@ def system_menu_markup():
         [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
     ])
 
-def create_chat_button_row(conv: ConversationMetadata, is_active: bool) -> list:
+def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_number: int = None) -> list:
     """
     Создает кнопку чата с пропорциями 60%/20%/20%.
 
     Args:
         conv: Метаданные чата
         is_active: True если это активный чат
+        chat_number: Номер чата по порядку создания (опционально)
 
     Returns:
         List из 3 InlineKeyboardButton
     """
     emoji = "📝" if is_active else "💬"
 
-    # Обрезаем название до 25 символов
+    # Обрезаем название до 25 символов (или 22 если есть номер)
     name = conv.title
-    if len(name) > 25:
-        name = name[:22] + "..."
+    max_length = 22 if chat_number else 25
+    if len(name) > max_length:
+        name = name[:max_length - 3] + "..."
+
+    # Добавляем номер если указан
+    display_name = f"{chat_number}. {name}" if chat_number else name
 
     return [
-        InlineKeyboardButton(f"{emoji} {name}", callback_data=f"switch_chat||{conv.conversation_id}"),
+        InlineKeyboardButton(f"{emoji} {display_name}", callback_data=f"switch_chat||{conv.conversation_id}"),
         InlineKeyboardButton("✏️", callback_data=f"rename_chat||{conv.conversation_id}"),
         InlineKeyboardButton("🗑️", callback_data=f"delete_chat||{conv.conversation_id}")
     ]
@@ -60,10 +65,11 @@ def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
     Структура:
     - Строка 1: [🆕 Новый чат] [« Назад]
     - Строка 2: [📊 Статистика] [📄 Мои отчеты]
-    - Строка 3: Активный чат (📝 эмодзи)
-    - Строка 4+: Остальные чаты (💬 эмодзи) по updated_at DESC
+    - Строка 3: Активный чат (📝 эмодзи) с номером
+    - Строка 4+: Остальные чаты (💬 эмодзи) с номерами по updated_at DESC
 
-    Формат кнопки чата: [60% название] [20% ✏️] [20% 🗑️]
+    Формат кнопки чата: [60% номер+название] [20% ✏️] [20% 🗑️]
+    Нумерация: по порядку создания (created_at ASC)
     """
     # Статичные строки
     buttons = [
@@ -80,6 +86,16 @@ def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
     # Загружаем список чатов
     conversations = conversation_manager.list_conversations(user_id)
 
+    if not conversations:
+        return InlineKeyboardMarkup(buttons)
+
+    # Создаем словарь conversation_id -> номер (по порядку создания)
+    conversations_sorted_by_creation = sorted(conversations, key=lambda x: x.created_at)
+    chat_numbers = {
+        conv.conversation_id: idx + 1
+        for idx, conv in enumerate(conversations_sorted_by_creation)
+    }
+
     # Разделяем на активный и остальные
     active_chat = None
     other_chats = []
@@ -93,13 +109,15 @@ def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
     # Сортируем остальные чаты по updated_at DESC
     other_chats.sort(key=lambda x: x.updated_at, reverse=True)
 
-    # Добавляем активный чат (если есть)
+    # Добавляем активный чат (если есть) с номером
     if active_chat:
-        buttons.append(create_chat_button_row(active_chat, True))
+        chat_num = chat_numbers[active_chat.conversation_id]
+        buttons.append(create_chat_button_row(active_chat, True, chat_num))
 
-    # Добавляем остальные чаты
+    # Добавляем остальные чаты с номерами
     for conv in other_chats:
-        buttons.append(create_chat_button_row(conv, False))
+        chat_num = chat_numbers[conv.conversation_id]
+        buttons.append(create_chat_button_row(conv, False, chat_num))
 
     return InlineKeyboardMarkup(buttons)
 

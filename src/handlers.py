@@ -872,6 +872,7 @@ async def handle_mode_fast(callback: CallbackQuery, app: Client):
     chat_id = callback.message.chat.id
     st = user_states.get(chat_id, {})
     st["deep_search"] = False
+    user_states[chat_id] = st  # ✅ Сохраняем изменения в глобальный словарь
     await callback.answer("⚡ Выбран быстрый поиск")
     logging.info(f"Пользователь {chat_id} выбрал быстрый поиск")
 
@@ -881,6 +882,7 @@ async def handle_mode_deep(callback: CallbackQuery, app: Client):
     chat_id = callback.message.chat.id
     st = user_states.get(chat_id, {})
     st["deep_search"] = True
+    user_states[chat_id] = st  # ✅ Сохраняем изменения в глобальный словарь
     await callback.answer("🔬 Выбрано глубокое исследование")
     logging.info(f"Пользователь {chat_id} выбрал глубокое исследование")
 
