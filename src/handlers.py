@@ -1181,7 +1181,7 @@ def register_handlers(app: Client):
 
             elif data.startswith("switch_chat||"):
                 conversation_id = data.split("||")[1]
-                handle_switch_chat_request(c_id, conversation_id, app, callback)
+                await handle_switch_chat_request(c_id, conversation_id, app, callback)
                 return
 
             elif data.startswith("confirm_switch||"):
@@ -1191,12 +1191,12 @@ def register_handlers(app: Client):
 
             elif data.startswith("rename_chat||"):
                 conversation_id = data.split("||")[1]
-                handle_rename_chat_request(c_id, conversation_id, app)
+                await handle_rename_chat_request(c_id, conversation_id, app)
                 return
 
             elif data.startswith("delete_chat||"):
                 conversation_id = data.split("||")[1]
-                handle_delete_chat_request(c_id, conversation_id, app)
+                await handle_delete_chat_request(c_id, conversation_id, app)
                 return
 
             elif data.startswith("confirm_delete||"):

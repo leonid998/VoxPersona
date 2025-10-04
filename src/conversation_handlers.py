@@ -137,7 +137,7 @@ async def handle_new_chat(chat_id: int, app: Client):
         )
 
 
-def handle_switch_chat_request(
+async def handle_switch_chat_request(
     chat_id: int,
     conversation_id: str,
     app: Client,
@@ -158,13 +158,13 @@ def handle_switch_chat_request(
         conversation = conversation_manager.load_conversation(chat_id, conversation_id)
 
         if not conversation:
-            callback_query.answer("❌ Чат не найден", show_alert=True)
+            await callback_query.answer("❌ Чат не найден", show_alert=True)
             return
 
         chat_name = conversation.metadata.title
 
         # Отправляем запрос на подтверждение
-        callback_query.edit_message_text(
+        await callback_query.edit_message_text(
             text=f"🔄 Перейти в чат '{chat_name}'?",
             reply_markup=switch_chat_confirmation_markup(conversation_id, chat_name)
         )
@@ -173,7 +173,7 @@ def handle_switch_chat_request(
 
     except Exception as e:
         logger.error(f"Ошибка при запросе переключения чата {conversation_id} для пользователя {chat_id}: {e}")
-        callback_query.answer("❌ Ошибка при переключении чата", show_alert=True)
+        await callback_query.answer("❌ Ошибка при переключении чата", show_alert=True)
 
 
 async def handle_switch_chat_confirm(
@@ -249,7 +249,7 @@ async def handle_switch_chat_confirm(
         )
 
 
-def handle_rename_chat_request(
+async def handle_rename_chat_request(
     chat_id: int,
     conversation_id: str,
     app: Client
@@ -268,7 +268,7 @@ def handle_rename_chat_request(
         conversation = conversation_manager.load_conversation(chat_id, conversation_id)
 
         if not conversation:
-            app.send_message(
+            await app.send_message(
                 chat_id=chat_id,
                 text="❌ Чат не найден"
             )
@@ -283,7 +283,7 @@ def handle_rename_chat_request(
         }
 
         # Запрашиваем новое название
-        app.send_message(
+        await app.send_message(
             chat_id=chat_id,
             text=f"✏️ Введите новое название для чата '{old_name}':"
         )
@@ -292,7 +292,7 @@ def handle_rename_chat_request(
 
     except Exception as e:
         logger.error(f"Ошибка при запросе переименования чата {conversation_id} для пользователя {chat_id}: {e}")
-        app.send_message(
+        await app.send_message(
             chat_id=chat_id,
             text="❌ Произошла ошибка. Попробуйте еще раз."
         )
@@ -364,7 +364,7 @@ async def handle_rename_chat_input(
         )
 
 
-def handle_delete_chat_request(
+async def handle_delete_chat_request(
     chat_id: int,
     conversation_id: str,
     app: Client
@@ -383,7 +383,7 @@ def handle_delete_chat_request(
         conversation = conversation_manager.load_conversation(chat_id, conversation_id)
 
         if not conversation:
-            app.send_message(
+            await app.send_message(
                 chat_id=chat_id,
                 text="❌ Чат не найден"
             )
@@ -392,7 +392,7 @@ def handle_delete_chat_request(
         chat_name = conversation.metadata.title
 
         # Отправляем запрос на подтверждение
-        app.send_message(
+        await app.send_message(
             chat_id=chat_id,
             text=f"⚠️ Удалить чат '{chat_name}'?\n\nЭто действие необратимо.",
             reply_markup=delete_chat_confirmation_markup(conversation_id, chat_name)
@@ -402,7 +402,7 @@ def handle_delete_chat_request(
 
     except Exception as e:
         logger.error(f"Ошибка при запросе удаления чата {conversation_id} для пользователя {chat_id}: {e}")
-        app.send_message(
+        await app.send_message(
             chat_id=chat_id,
             text="❌ Произошла ошибка. Попробуйте еще раз."
         )
