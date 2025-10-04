@@ -346,9 +346,9 @@ async def smart_send_text_unified(
                         caption=f"🔍 Результат {search_type} поиска\n📝 Токенов: {count_tokens(text):,}"
                     )
 
-                    # Трекаем сообщение для визуальной минимизации
+                    # Трекаем сообщение для визуальной минимизации (тип "document")
                     context = conversation_id if conversation_id else "system"
-                    VisualContextManager.track_message(chat_id, context, sent_file_msg.id)
+                    VisualContextManager.track_message(chat_id, context, sent_file_msg.id, message_type="document")
 
                     # Синхронно сохраняем в историю
                     _save_to_history_sync(
