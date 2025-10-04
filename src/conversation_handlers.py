@@ -26,8 +26,7 @@ from markups import (
     delete_chat_confirmation_markup,
     chats_menu_markup_dynamic
 )
-from menu_manager import send_menu_and_remove_old, clear_menus
-from visual_context_manager import VisualContextManager
+from menu_manager import send_menu, clear_menus
 
 logger = logging.getLogger(__name__)
 
@@ -113,10 +112,6 @@ async def handle_new_chat(chat_id: int, app: Client):
         # Очищаем историю меню (новый контекст)
         clear_menus(chat_id)
 
-        # Минимизируем сообщения СТАРОГО чата (если был)
-        if old_conversation_id:
-            await VisualContextManager.minimize_messages(chat_id, app, old_conversation_id)
-
         # Объединяем текст и отправляем меню внизу
         text = (
             "✨ Новый чат создан!\n\n"
@@ -124,12 +119,11 @@ async def handle_new_chat(chat_id: int, app: Client):
             "Выберите действие:"
         )
 
-        await send_menu_and_remove_old(
+        await send_menu(
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=make_dialog_markup(),
-            context=new_conversation_id
+            reply_markup=make_dialog_markup()
         )
 
         logger.info(f"Создан новый чат {new_conversation_id} для пользователя {chat_id}")
@@ -209,10 +203,6 @@ async def handle_switch_chat_confirm(
             "deep_search": False
         }
 
-        # Минимизируем сообщения СТАРОГО чата (если был)
-        if old_conversation_id:
-            await VisualContextManager.minimize_messages(chat_id, app, old_conversation_id)
-
         # Загружаем чат и последние 5 сообщений
         conversation = conversation_manager.load_conversation(chat_id, conversation_id)
 
@@ -241,12 +231,11 @@ async def handle_switch_chat_confirm(
         text += "Выберите действие:"
 
         # Отправляем объединенное сообщение с меню внизу
-        await send_menu_and_remove_old(
+        await send_menu(
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=make_dialog_markup(),
-            context=conversation_id
+            reply_markup=make_dialog_markup()
         )
 
         logger.info(f"Пользователь {chat_id} переключился на чат {conversation_id}")
@@ -357,12 +346,11 @@ async def handle_rename_chat_input(
         # Объединяем результат + меню
         text = f"✅ Чат переименован в '{new_name}'\n\nВаши чаты:"
 
-        await send_menu_and_remove_old(
+        await send_menu(
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=chats_menu_markup_dynamic(chat_id),
-            context="system"
+            reply_markup=chats_menu_markup_dynamic(chat_id)
         )
 
         logger.info(f"Чат {conversation_id} переименован в '{new_name}' для пользователя {chat_id}")
@@ -459,12 +447,11 @@ async def handle_delete_chat_confirm(
                 "Ваши чаты:"
             )
 
-            await send_menu_and_remove_old(
+            await send_menu(
                 chat_id=chat_id,
                 app=app,
                 text=text,
-                reply_markup=chats_menu_markup_dynamic(chat_id),
-                context="system"
+                reply_markup=chats_menu_markup_dynamic(chat_id)
             )
 
             logger.info(f"Удален последний чат {conversation_id}, создан новый {new_conversation_id} для пользователя {chat_id}")
@@ -472,12 +459,11 @@ async def handle_delete_chat_confirm(
             # Остались чаты - возвращаемся в меню
             text = "✅ Чат удален\n\nВаши чаты:"
 
-            await send_menu_and_remove_old(
+            await send_menu(
                 chat_id=chat_id,
                 app=app,
                 text=text,
-                reply_markup=chats_menu_markup_dynamic(chat_id),
-                context="system"
+                reply_markup=chats_menu_markup_dynamic(chat_id)
             )
 
             logger.info(f"Удален чат {conversation_id} для пользователя {chat_id}")

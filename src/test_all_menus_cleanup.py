@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, AsyncMock
 from pyrogram import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
-from menu_manager import MenuManager, send_menu_and_remove_old
+from menu_manager import MenuManager, send_menu
 
 
 # Полный список всех меню из menu_analysis.md
@@ -84,7 +84,7 @@ def test_full_menu_cycle():
         ]])
 
         # Отправляем меню
-        asyncio.run(send_menu_and_remove_old(
+        asyncio.run(send_menu(
             chat_id=chat_id,
             app=app,
             text=menu_text,
@@ -221,7 +221,7 @@ def test_edge_cases():
     app.send_message = AsyncMock(return_value=mock_message)
 
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("Тест", callback_data="test")]])
-    asyncio.run(send_menu_and_remove_old(chat_id, app, long_text, markup))
+    asyncio.run(send_menu(chat_id, app, long_text, markup))
 
     print(f"   ✅ Длинный текст обработан, message_id={mock_message.id}")
 
@@ -234,7 +234,7 @@ def test_edge_cases():
     app.send_message = AsyncMock(return_value=mock_message2)
     app.delete_messages.reset_mock()
 
-    asyncio.run(send_menu_and_remove_old(chat_id, app, same_text, markup))
+    asyncio.run(send_menu(chat_id, app, same_text, markup))
 
     if app.delete_messages.called:
         print(f"   ✅ Предыдущее меню удалено, даже с одинаковым текстом")
@@ -249,7 +249,7 @@ def test_edge_cases():
     mock_message3.id = 1002
     app.send_message = AsyncMock(return_value=mock_message3)
 
-    asyncio.run(send_menu_and_remove_old(chat_id, app, empty_text, markup))
+    asyncio.run(send_menu(chat_id, app, empty_text, markup))
 
     print(f"   ✅ Пустой текст обработан, message_id={mock_message3.id}")
 
@@ -261,7 +261,7 @@ def test_edge_cases():
     mock_message4.id = 1003
     app.send_message = AsyncMock(return_value=mock_message4)
 
-    asyncio.run(send_menu_and_remove_old(chat_id, app, special_text, markup))
+    asyncio.run(send_menu(chat_id, app, special_text, markup))
 
     print(f"   ✅ Специальные символы обработаны, message_id={mock_message4.id}")
 

@@ -13,7 +13,7 @@ from pyrogram import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import MessageIdInvalid
 
-from menu_manager import MenuManager, send_menu_and_remove_old, clear_menus
+from menu_manager import MenuManager, send_menu, clear_menus
 from conversation_handlers import (
     handle_new_chat,
     handle_switch_chat_confirm,
@@ -43,7 +43,7 @@ class TestMenuManager:
 
         # Вызываем метод
         import asyncio
-        result = asyncio.run(send_menu_and_remove_old(chat_id, app, text, markup))
+        result = asyncio.run(send_menu(chat_id, app, text, markup))
 
         # Проверяем
         assert result.id == 100
@@ -76,7 +76,7 @@ class TestMenuManager:
 
         # Вызываем метод
         import asyncio
-        asyncio.run(send_menu_and_remove_old(chat_id, app, text, markup))
+        asyncio.run(send_menu(chat_id, app, text, markup))
 
         # Проверяем, что старое меню было ПОЛНОСТЬЮ удалено
         app.delete_messages.assert_called_once_with(
@@ -118,7 +118,7 @@ class TestMenuManager:
 
         # Не должно вызвать исключение
         import asyncio
-        asyncio.run(send_menu_and_remove_old(chat_id, app, text, markup))
+        asyncio.run(send_menu(chat_id, app, text, markup))
 
         # Новое меню все равно отправлено
         app.send_message.assert_called_once()
@@ -135,7 +135,7 @@ class TestConversationHandlers:
 
     @patch('conversation_handlers.conversation_manager')
     @patch('conversation_handlers.get_username_from_chat')
-    @patch('conversation_handlers.send_menu_and_remove_old', new_callable=AsyncMock)
+    @patch('conversation_handlers.send_menu', new_callable=AsyncMock)
     @patch('conversation_handlers.clear_menus')
     def test_handle_new_chat(self, mock_clear_menus, mock_send_menu, mock_get_username, mock_manager):
         """handle_new_chat использует MenuManager корректно."""
@@ -151,7 +151,7 @@ class TestConversationHandlers:
         # Проверяем, что clear_menus вызван
         mock_clear_menus.assert_called_once_with(chat_id)
 
-        # Проверяем, что send_menu_and_remove_old вызван с правильными параметрами
+        # Проверяем, что send_menu вызван с правильными параметрами
         mock_send_menu.assert_called_once()
         call_kwargs = mock_send_menu.call_args.kwargs
         assert call_kwargs['chat_id'] == chat_id
@@ -160,7 +160,7 @@ class TestConversationHandlers:
         assert call_kwargs['reply_markup'] is not None
 
     @patch('conversation_handlers.conversation_manager')
-    @patch('conversation_handlers.send_menu_and_remove_old', new_callable=AsyncMock)
+    @patch('conversation_handlers.send_menu', new_callable=AsyncMock)
     def test_handle_switch_chat_confirm(self, mock_send_menu, mock_manager):
         """handle_switch_chat_confirm объединяет сообщения и использует MenuManager."""
         chat_id = 12345
@@ -176,14 +176,14 @@ class TestConversationHandlers:
         import asyncio
         asyncio.run(handle_switch_chat_confirm(chat_id, conversation_id, app))
 
-        # Проверяем, что send_menu_and_remove_old вызван
+        # Проверяем, что send_menu вызван
         mock_send_menu.assert_called_once()
         call_kwargs = mock_send_menu.call_args.kwargs
         assert "Переключено на чат" in call_kwargs['text']
         assert "Выберите действие" in call_kwargs['text']
 
     @patch('conversation_handlers.conversation_manager')
-    @patch('conversation_handlers.send_menu_and_remove_old', new_callable=AsyncMock)
+    @patch('conversation_handlers.send_menu', new_callable=AsyncMock)
     @patch('conversation_handlers.user_states', {})
     def test_handle_rename_chat_input(self, mock_send_menu, mock_manager):
         """handle_rename_chat_input объединяет результат и меню."""
@@ -202,14 +202,14 @@ class TestConversationHandlers:
         import asyncio
         asyncio.run(handle_rename_chat_input(chat_id, new_name, app))
 
-        # Проверяем, что send_menu_and_remove_old вызван
+        # Проверяем, что send_menu вызван
         mock_send_menu.assert_called_once()
         call_kwargs = mock_send_menu.call_args.kwargs
         assert "переименован" in call_kwargs['text']
         assert "Ваши чаты" in call_kwargs['text']
 
     @patch('conversation_handlers.conversation_manager')
-    @patch('conversation_handlers.send_menu_and_remove_old', new_callable=AsyncMock)
+    @patch('conversation_handlers.send_menu', new_callable=AsyncMock)
     @patch('conversation_handlers.clear_menus')
     def test_handle_delete_chat_confirm_last_chat(self, mock_clear_menus, mock_send_menu, mock_manager):
         """handle_delete_chat_confirm очищает меню при создании нового чата."""
@@ -228,7 +228,7 @@ class TestConversationHandlers:
         # Проверяем, что clear_menus вызван
         mock_clear_menus.assert_called_once_with(chat_id)
 
-        # Проверяем, что send_menu_and_remove_old вызван
+        # Проверяем, что send_menu вызван
         mock_send_menu.assert_called_once()
 
 

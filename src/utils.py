@@ -14,7 +14,6 @@ from datamodels import spinner_chars, OPENAI_AUDIO_EXTS
 from config import ENC, TELEGRAM_MESSAGE_THRESHOLD, PREVIEW_TEXT_LENGTH, EMBEDDING_MODEL
 from constants import ERROR_FILE_SEND_FAILED
 from datetime import datetime
-from visual_context_manager import VisualContextManager
 
 # Условный импорт для sentence_transformers
 try:
@@ -285,10 +284,6 @@ async def smart_send_text_unified(
             try:
                 sent_message = await app.send_message(chat_id, text, parse_mode=parse_mode)
 
-                # Трекаем сообщение для визуальной минимизации
-                context = conversation_id if conversation_id else "system"
-                VisualContextManager.track_message(chat_id, context, sent_message.id)
-
                 # Синхронно сохраняем в историю
                 _save_to_history_sync(
                     chat_id, username, sent_message.id, "bot_answer", text,
@@ -345,10 +340,6 @@ async def smart_send_text_unified(
                         file_path,
                         caption=f"🔍 Результат {search_type} поиска\n📝 Токенов: {count_tokens(text):,}"
                     )
-
-                    # Трекаем сообщение для визуальной минимизации (тип "document")
-                    context = conversation_id if conversation_id else "system"
-                    VisualContextManager.track_message(chat_id, context, sent_file_msg.id, message_type="document")
 
                     # Синхронно сохраняем в историю
                     _save_to_history_sync(

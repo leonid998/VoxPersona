@@ -46,9 +46,8 @@ from menus import (
     show_confirmation_menu,
     show_edit_menu
 )
-from menu_manager import send_menu_and_remove_old
+from menu_manager import send_menu
 from storage import process_stored_file
-from visual_context_manager import VisualContextManager
 
 from analysis import (
     assign_roles
@@ -270,7 +269,7 @@ async def handle_reports_command(message: Message, app: Client) -> None:
 
         reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
 
-        await send_menu_and_remove_old(
+        await send_menu(
             chat_id=chat_id,
             app=app,
             text=reports_text,
@@ -494,17 +493,17 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
 
 async def handle_help_menu(chat_id: int, app: Client):
     kb, txt = help_menu_markup()
-    await send_menu_and_remove_old(chat_id, app, txt, kb)
+    await send_menu(chat_id, app, txt, kb)
 
 async def handle_menu_storage(chat_id: int, app: Client):
-    await send_menu_and_remove_old(chat_id, app, "Что анализируем?:", interview_or_design_menu())
+    await send_menu(chat_id, app, "Что анализируем?:", interview_or_design_menu())
 
 async def handle_menu_system(chat_id: int, app: Client):
-    await send_menu_and_remove_old(chat_id, app, "⚙️ Системные настройки:", system_menu_markup())
+    await send_menu(chat_id, app, "⚙️ Системные настройки:", system_menu_markup())
 
 async def handle_menu_chats(chat_id: int, app: Client):
     """Показывает меню чатов с динамическим списком."""
-    await send_menu_and_remove_old(
+    await send_menu(
         chat_id,
         app,
         "📱 История и статистика чатов:",
@@ -512,16 +511,6 @@ async def handle_menu_chats(chat_id: int, app: Client):
     )
 
 async def handle_main_menu(chat_id: int, app: Client):
-    # Получаем текущий активный чат (если есть)
-    from conversation_manager import conversation_manager
-    from visual_context_manager import VisualContextManager
-
-    active_conversation_id = conversation_manager.get_active_conversation_id(chat_id)
-
-    # Минимизируем сообщения текущего чата перед выходом в главное меню
-    if active_conversation_id:
-        await VisualContextManager.minimize_messages(chat_id, app, active_conversation_id)
-
     await send_main_menu(chat_id, app)
 
 async def handle_show_stats(chat_id: int, app: Client):
@@ -530,7 +519,7 @@ async def handle_show_stats(chat_id: int, app: Client):
         stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
 
         # Показываем статистику с меню чатов внизу
-        await send_menu_and_remove_old(
+        await send_menu(
             chat_id=chat_id,
             app=app,
             text=stats_text,
@@ -538,7 +527,7 @@ async def handle_show_stats(chat_id: int, app: Client):
         )
     except Exception as e:
         logging.error(f"Error showing stats: {e}")
-        await send_menu_and_remove_old(
+        await send_menu(
             chat_id=chat_id,
             app=app,
             text="❌ Произошла ошибка при получении статистики.",
@@ -552,7 +541,7 @@ async def handle_show_my_reports(chat_id: int, app: Client):
 
         if not reports:
             # Показываем сообщение об отсутствии отчетов с меню чатов внизу
-            await send_menu_and_remove_old(
+            await send_menu(
                 chat_id=chat_id,
                 app=app,
                 text="📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
@@ -575,7 +564,7 @@ async def handle_show_my_reports(chat_id: int, app: Client):
 
         reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
 
-        await send_menu_and_remove_old(
+        await send_menu(
             chat_id=chat_id,
             app=app,
             text=reports_text,
@@ -583,7 +572,7 @@ async def handle_show_my_reports(chat_id: int, app: Client):
         )
     except Exception as e:
         logging.error(f"Error showing reports: {e}")
-        await send_menu_and_remove_old(
+        await send_menu(
             chat_id=chat_id,
             app=app,
             text="❌ Произошла ошибка при получении отчетов.",
@@ -595,7 +584,7 @@ async def handle_view_files(chat_id: int, data, app: Client):
     if len(parts) < 2:
         return
     cat = parts[1]
-    await send_menu_and_remove_old(chat_id, app, f"Файлы в '{cat}':", files_menu_markup(cat))
+    await send_menu(chat_id, app, f"Файлы в '{cat}':", files_menu_markup(cat))
 
 def process_selected_file(chat_id: int, category: str, filename: str, app: Client):
     msg = app.send_message(chat_id, "⏳ Обрабатываю файл...")
@@ -656,7 +645,7 @@ async def handle_file_deletion(chat_id: int, data: str, app: Client):
     except Exception as e:
         logging.error(f"Ошибка удаления: {e}")
 
-    await send_menu_and_remove_old(
+    await send_menu(
         chat_id=chat_id,
         app=app,
         text=f"Список файлов в '{category}':",
@@ -724,7 +713,7 @@ async def handle_confirm_data(chat_id: int, app: Client):
         markup = design_menu_markup()
 
     if markup:
-        await send_menu_and_remove_old(
+        await send_menu(
             chat_id=chat_id,
             app=app,
             text=msg,
@@ -748,7 +737,7 @@ async def handle_mode_selection(chat_id: int, mode: str, app: Client):
         "data": {}
     }
     st = user_states[chat_id]
-    await send_menu_and_remove_old(chat_id, app, "📦 Меню хранилища:", storage_menu_markup())
+    await send_menu(chat_id, app, "📦 Меню хранилища:", storage_menu_markup())
 
 async def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, building_name: str = "non-building"):
     validate_datas = []
@@ -781,7 +770,7 @@ async def preprocess_report_without_buildings(chat_id: int, data: str, app: Clie
 async def preprocess_report_with_buildings(chat_id: int, data: str, app: Client):
     st = user_states.setdefault(chat_id, {})
     st["pending_report"] = data
-    await send_menu_and_remove_old(chat_id, app, "Выберите тип заведения:", building_type_menu_markup())
+    await send_menu(chat_id, app, "Выберите тип заведения:", building_type_menu_markup())
 
 async def handle_report(chat_id: int, callback_data : str, app: Client):
     if callback_data  in [
@@ -908,7 +897,7 @@ async def handle_mode_fast(callback: CallbackQuery, app: Client):
     logging.info(f"Пользователь {chat_id} выбрал быстрый поиск. Состояние: {st}")
 
     # Удаляем старое меню и показываем инструкцию
-    await send_menu_and_remove_old(
+    await send_menu(
         chat_id,
         app,
         "✅ Режим установлен: **Быстрый поиск**\n\n"
@@ -946,7 +935,7 @@ async def handle_mode_deep(callback: CallbackQuery, app: Client):
     logging.info(f"Пользователь {chat_id} выбрал глубокое исследование. Состояние: {st}")
 
     # Удаляем старое меню и показываем инструкцию
-    await send_menu_and_remove_old(
+    await send_menu(
         chat_id,
         app,
         "✅ Режим установлен: **Глубокое исследование**\n\n"
@@ -972,7 +961,7 @@ async def handle_menu_dialog(chat_id: int, app: Client):
         "deep_search": st.get("deep_search", False)  # Сохраняем предыдущий режим
     }
 
-    await send_menu_and_remove_old(
+    await send_menu(
         chat_id,
         app,
         "Какую информацию вы хотели бы получить?",
