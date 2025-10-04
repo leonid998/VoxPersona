@@ -354,7 +354,7 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
 
     # === МУЛЬТИЧАТЫ: Проверка переименования чата ===
     if c_id in user_states and user_states[c_id].get("step") == "renaming_chat":
-        handle_rename_chat_input(c_id, text_, app)
+        await handle_rename_chat_input(c_id, text_, app)
         return
     # === КОНЕЦ МУЛЬТИЧАТЫ ===
 
