@@ -31,7 +31,7 @@ def system_menu_markup():
 
 def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_number: int = None) -> list:
     """
-    Создает кнопку чата с пропорциями 60%/20%/20%.
+    Создает кнопку чата с пропорциями 50%/25%/25%.
 
     Args:
         conv: Метаданные чата
@@ -43,9 +43,10 @@ def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_num
     """
     emoji = "📝" if is_active else "💬"
 
-    # Обрезаем название до 25 символов (или 22 если есть номер)
+    # Обрезаем название до 15 символов (или 13 если есть номер)
+    # Меньше текста = меньше ширина кнопки = 50% вместо 60%
     name = conv.title
-    max_length = 22 if chat_number else 25
+    max_length = 13 if chat_number else 15
     if len(name) > max_length:
         name = name[:max_length - 3] + "..."
 
@@ -54,8 +55,8 @@ def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_num
 
     return [
         InlineKeyboardButton(f"{emoji} {display_name}", callback_data=f"switch_chat||{conv.conversation_id}"),
-        InlineKeyboardButton("✏️", callback_data=f"rename_chat||{conv.conversation_id}"),
-        InlineKeyboardButton("🗑️", callback_data=f"delete_chat||{conv.conversation_id}")
+        InlineKeyboardButton("✏️ Ред.", callback_data=f"rename_chat||{conv.conversation_id}"),
+        InlineKeyboardButton("🗑️ Удал.", callback_data=f"delete_chat||{conv.conversation_id}")
     ]
 
 def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
