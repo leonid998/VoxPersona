@@ -654,7 +654,7 @@ def handle_mode_selection(c_id: int, data: str) -> bool:
     
     return False
 
-def handle_interview_reports(c_id: int, data: str) -> bool:
+async def handle_interview_reports(c_id: int, data: str) -> bool:
     """Обработка отчетов интервью"""
     interview_reports = {
         "report_int_methodology": (analyze_interview_methodology, "Оценка методологии интервью"),
@@ -663,51 +663,58 @@ def handle_interview_reports(c_id: int, data: str) -> bool:
         "report_int_specific": (analyze_interview_specific, "Факторы в этом заведении (Интервью)"),
         "report_int_employee": (analyze_employee_performance, "Анализ работы сотрудника")
     }
-    
+
     if data in interview_reports:
         func, label = interview_reports[data]
-        run_analysis_with_spinner(c_id, func, label)
+        await run_analysis_with_spinner(c_id, func, label)
         return True
-    
+
     return False
 
-def handle_design_reports(c_id: int, data: str) -> bool:
+async def handle_design_reports(c_id: int, data: str) -> bool:
     """Обработка отчетов дизайна"""
     design_reports = {
         "report_design_audit_methodology": (analyze_design_audit, "Оценка методологии аудита"),
         "report_design_compliance": (analyze_audit_compliance, "Информация о соответствии программе аудита"),
         "report_design_structured": (analyze_structured_audit, "Структурированный отчет аудита")
     }
-    
+
     if data in design_reports:
         func, label = design_reports[data]
-        run_analysis_with_spinner(c_id, func, label)
+        await run_analysis_with_spinner(c_id, func, label)
         return True
-    
+
     return False
 
-def callback_query_handler(_: Client, callback: CallbackQuery) -> None:
+async def callback_query_handler(_: Client, callback: CallbackQuery) -> None:
     """Обработчик callback запросов с явной типизацией"""
     c_id = callback.message.chat.id
     data = callback.data
-    
+
     try:
-        callback.answer()
+        await callback.answer()
     except Exception:
         pass
-    
+
     try:
         # Делегируем обработку специализированным функциям
-        handlers = [
+        # Синхронные хендлеры (старый код)
+        sync_handlers = [
             handle_menu_navigation,
             handle_file_operations,
-            handle_mode_selection,
+            handle_mode_selection
+        ]
+        for handler in sync_handlers:
+            if handler(c_id, data):
+                return
+
+        # Async хендлеры
+        async_handlers = [
             handle_interview_reports,
             handle_design_reports
         ]
-        
-        for handler in handlers:
-            if handler(c_id, data):
+        for handler in async_handlers:
+            if await handler(c_id, data):
                 return
                 
     except Exception:

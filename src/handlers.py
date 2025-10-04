@@ -184,10 +184,10 @@ def handle_edit_field(chat_id: int, field: str, app: Client):
     app.send_message(chat_id, prompt_text)
 
 
-def handle_history_command(message: Message, app: Client) -> None:
+async def handle_history_command(message: Message, app: Client) -> None:
     """Обработчик команды /history."""
     chat_id = message.chat.id
-    username = get_username_from_chat(chat_id, app)
+    username = await get_username_from_chat(chat_id, app)
 
     try:
         # Парсим дату из команды (опционально)
@@ -224,17 +224,17 @@ def handle_history_command(message: Message, app: Client) -> None:
         app.send_message(chat_id, "❌ Произошла ошибка при получении истории.")
 
 
-def handle_stats_command(message: Message, app: Client) -> None:
+async def handle_stats_command(message: Message, app: Client) -> None:
     """Обработчик команды /stats."""
     chat_id = message.chat.id
 
     try:
         stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
-        app.send_message(chat_id, stats_text, )
+        await app.send_message(chat_id, stats_text, )
 
     except Exception as e:
         logging.error(f"Error handling stats command: {e}")
-        app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
+        await app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
 
 
 async def handle_reports_command(message: Message, app: Client) -> None:
@@ -342,13 +342,13 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
 
     # Проверяем команды истории, статистики и отчетов
     if text_.startswith(COMMAND_HISTORY):
-        handle_history_command(message, app)
+        await handle_history_command(message, app)
         return
     elif text_.startswith(COMMAND_STATS):
-        handle_stats_command(message, app)
+        await handle_stats_command(message, app)
         return
     elif text_.startswith(COMMAND_REPORTS):
-        handle_reports_command(message, app)
+        await handle_reports_command(message, app)
         return
 
     # === МУЛЬТИЧАТЫ: Проверка переименования чата ===
@@ -380,7 +380,7 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
     conversation_id = st.get("conversation_id")
     if not conversation_id:
         # Fallback: создаем чат если его нет в состоянии
-        username = get_username_from_chat(c_id, app)
+        username = await get_username_from_chat(c_id, app)
         conversation_id = ensure_active_conversation(c_id, username, text_)
         st["conversation_id"] = conversation_id
     # === КОНЕЦ МУЛЬТИЧАТЫ ===
@@ -395,7 +395,7 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
             if not rags:
                 app.send_message(c_id, "🔄 База знаний ещё загружается, попробуйте позже.")
             else:
-                run_dialog_mode(
+                await run_dialog_mode(
                     chat_id=c_id,
                     app=app,
                     text=text_,
@@ -737,7 +737,7 @@ async def handle_mode_selection(chat_id: int, mode: str, app: Client):
     st = user_states[chat_id]
     await send_menu_and_remove_old(chat_id, app, "📦 Меню хранилища:", storage_menu_markup())
 
-def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, building_name: str = "non-building"):
+async def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, building_name: str = "non-building"):
     validate_datas = []
     st = user_states.get(chat_id, {})
     mode = st.get("mode")
@@ -753,7 +753,7 @@ def preprocess_report_without_buildings(chat_id: int, data: str, app: Client, bu
     data_["type_of_location"] = building_name
 
     try:
-        run_analysis_with_spinner(
+        await run_analysis_with_spinner(
             chat_id=chat_id,
             processed_texts=processed_texts,
             app=app,
@@ -776,7 +776,7 @@ async def handle_report(chat_id: int, callback_data : str, app: Client):
         "report_int_links",
         "report_design_audit_methodology"
     ]:
-        preprocess_report_without_buildings(chat_id, callback_data , app)
+        await preprocess_report_without_buildings(chat_id, callback_data , app)
 
     elif callback_data  in [
         "report_int_general",
@@ -823,7 +823,7 @@ def handle_assign_roles(chat_id: int, app: Client, mode: str, processed_texts: d
                 st_ev.set()
                 sp_th.join()
 
-def handle_choose_building(chat_id: int, data: str, app: Client):
+async def handle_choose_building(chat_id: int, data: str, app: Client):
     validate_datas = []
     parts = preprocess_parts(data, 2) # 'hotel' / 'restaurant' / 'spa'
     if parts is None:
@@ -856,7 +856,7 @@ def handle_choose_building(chat_id: int, data: str, app: Client):
     check_valid_data(validate_datas, chat_id, app, "Неизвестно, какой отчёт вы хотели. Начните заново.")
 
     #Запускаем анализ
-    run_analysis_with_spinner(
+    await run_analysis_with_spinner(
         chat_id=chat_id,
         processed_texts=processed_texts,
         app=app,
@@ -891,7 +891,7 @@ async def handle_menu_dialog(chat_id: int, app: Client):
     # Сохраняем conversation_id если он есть, иначе создаем новый чат
     conversation_id = st.get("conversation_id")
     if not conversation_id:
-        username = get_username_from_chat(chat_id, app)
+        username = await get_username_from_chat(chat_id, app)
         conversation_id = ensure_active_conversation(chat_id, username)
 
     # Устанавливаем состояние диалога
@@ -1142,7 +1142,7 @@ def register_handlers(app: Client):
 
             elif data.startswith("confirm_delete||"):
                 conversation_id = data.split("||")[1]
-                username = get_username_from_chat(c_id, app)
+                username = await get_username_from_chat(c_id, app)
                 await handle_delete_chat_confirm(c_id, conversation_id, username, app)
                 return
             # === КОНЕЦ МУЛЬТИЧАТЫ ===
@@ -1212,7 +1212,7 @@ def register_handlers(app: Client):
 
             # # --- Обработка выбора здания:
             elif data.startswith("choose_building||"):
-                handle_choose_building(c_id, data, app)
+                await handle_choose_building(c_id, data, app)
 
             # Обработка отчетов
             elif data.startswith("send_report||") or data == "show_all_reports":

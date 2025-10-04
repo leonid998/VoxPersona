@@ -90,7 +90,7 @@ async def handle_new_chat(chat_id: int, app: Client):
     """
     try:
         # Получаем username пользователя
-        username = get_username_from_chat(chat_id, app)
+        username = await get_username_from_chat(chat_id, app)
 
         # Создаем новый чат
         new_conversation_id = conversation_manager.create_conversation(

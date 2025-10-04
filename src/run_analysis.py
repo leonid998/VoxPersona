@@ -116,7 +116,7 @@ def run_deep_search(content: str, text: str, chat_id: int, app: Client, category
 
     return aggregated_answer
 
-def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None):
+async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None):
     try:
         category = classify_query(text)
         logging.info(f"Сценарий: {category}")
@@ -135,7 +135,7 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
         rag = rags[scenario_name]
 
         # Получаем username
-        username = get_username_from_chat(chat_id, app)
+        username = await get_username_from_chat(chat_id, app)
 
         # Сохраняем вопрос пользователя в историю ПЕРЕД поиском
         from chat_history import chat_history_manager
@@ -191,7 +191,7 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
         formatted_response = f"*Категория запроса:* {category}\n\n{answer}"
 
         # Используем умную отправку с автоматическим выбором между сообщением и MD файлом
-        smart_send_text_unified(
+        await smart_send_text_unified(
             text=formatted_response,
             chat_id=chat_id,
             app=app,
@@ -218,7 +218,7 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
             reply_markup=make_dialog_markup()
         )
 
-def run_analysis_pass(
+async def run_analysis_pass(
     chat_id: int,
     source_text: str,
     label: str,
@@ -244,10 +244,10 @@ def run_analysis_pass(
 
         if is_show_analysis:
             # Получаем username
-            username = get_username_from_chat(chat_id, app)
+            username = await get_username_from_chat(chat_id, app)
 
             # Используем умную отправку с автоматическим выбором между сообщением и MD файлом
-            smart_send_text_unified(
+            await smart_send_text_unified(
                 text=audit_text,
                 chat_id=chat_id,
                 app=app,
@@ -280,7 +280,7 @@ def run_analysis_pass(
 
     return audit_text
 
-def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str], data: dict, app: Client, callback_data: str, transcription_text: str):
+async def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str], data: dict, app: Client, callback_data: str, transcription_text: str):
     """
     Показывает «спиннер» и запускает функцию анализа.
     Подгружает промпты из БД (scenario, report_type, building).
@@ -333,7 +333,7 @@ def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str], dat
         # можно подстраховаться проверкой. В простом случае:
         if part1:
             # Первый проход
-            result1 = run_analysis_pass(
+            result1 = await run_analysis_pass(
                 chat_id=chat_id,
                 source_text=txt,
                 label=label,
@@ -349,7 +349,7 @@ def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str], dat
             # Вывести результат пользователю (уже внутри run_analysis_pass)
         if part2:
             # Второй проход
-            result2 = run_analysis_pass(
+            result2 = await run_analysis_pass(
                 chat_id=chat_id,
                 source_text=txt,
                 label=label,
@@ -363,7 +363,7 @@ def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str], dat
 
             logging.info("Отчет с неизученными факторами сформирован")
             # Вывести результат пользователю (уже внутри run_analysis_pass)
-        json_result = run_analysis_pass(
+        json_result = await run_analysis_pass(
             chat_id=chat_id,
             source_text=result1 + "\n" + result2,
             label=label,
@@ -380,7 +380,7 @@ def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str], dat
         # Любой другой отчёт — один проход, игнорируем run_part
         # Считаем, что prompts_list содержит один набор (или много промптов),
         # но все они обрабатываются в один вызов analyze_methodology.
-        result = run_analysis_pass(
+        result = await run_analysis_pass(
             chat_id=chat_id,
             source_text=txt,
             label=label,
@@ -394,7 +394,7 @@ def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str], dat
 
         logging.info("Отчёт сформирован")
 
-        json_result = run_analysis_pass(
+        json_result = await run_analysis_pass(
             chat_id=chat_id,
             source_text=result,
             label=label,

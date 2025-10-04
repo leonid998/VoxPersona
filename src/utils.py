@@ -136,11 +136,11 @@ def grouped_reports_to_string(grouped_reports):
     return result
 
 
-def get_username_from_chat(chat_id: int, app: Optional[Client] = None) -> str:
+async def get_username_from_chat(chat_id: int, app: Optional[Client] = None) -> str:
     """Получает username пользователя из чата."""
     try:
         if app:
-            chat = app.get_chat(chat_id)
+            chat = await app.get_chat(chat_id)
             return chat.username or f"user_{chat_id}"
         return f"user_{chat_id}"
     except Exception as e:
@@ -243,7 +243,7 @@ def _save_to_conversation_sync(
         logging.error(f"Error saving to conversation: {e}")
 
 
-def smart_send_text_unified(
+async def smart_send_text_unified(
     text: str,
     chat_id: int,
     app: Client,
@@ -254,7 +254,7 @@ def smart_send_text_unified(
     conversation_id: Optional[str] = None
 ) -> bool:
     """
-    Единая синхронная функция для умной отправки текста.
+    Единая async функция для умной отправки текста.
     Автоматически выбирает между сообщением и файлом на основе длины текста.
 
     Args:
@@ -273,7 +273,7 @@ def smart_send_text_unified(
     try:
         # Получаем username если не предоставлен
         if username is None:
-            username = get_username_from_chat(chat_id, app)
+            username = await get_username_from_chat(chat_id, app)
 
         # Удаляем префикс @ если есть
         username = username.lstrip('@')
