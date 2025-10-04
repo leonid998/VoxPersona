@@ -136,9 +136,7 @@ def chat_actions_menu_markup(conversation_id: str, chat_name: str) -> InlineKeyb
     Показывается после клика на название чата.
 
     Структура:
-    - Строка 1: [✅ Перейти]
-    - Строка 2: [✏️ Изменить] [🗑️ Удалить]
-    - Строка 3: [« Назад]
+    - Строка 1: [✅ Перейти] [✏️ Изменить] [🗑️ Удалить] [« Назад]
 
     Args:
         conversation_id: ID чата
@@ -149,13 +147,9 @@ def chat_actions_menu_markup(conversation_id: str, chat_name: str) -> InlineKeyb
     """
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Перейти", callback_data=f"confirm_switch||{conversation_id}")
-        ],
-        [
+            InlineKeyboardButton("✅ Перейти", callback_data=f"confirm_switch||{conversation_id}"),
             InlineKeyboardButton("✏️ Изменить", callback_data=f"rename_chat||{conversation_id}"),
-            InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_chat||{conversation_id}")
-        ],
-        [
+            InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_chat||{conversation_id}"),
             InlineKeyboardButton("« Назад", callback_data="menu_chats")
         ]
     ])

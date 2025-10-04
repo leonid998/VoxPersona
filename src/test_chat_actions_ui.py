@@ -129,28 +129,25 @@ class TestChatActionsUI:
         """Проверка структуры меню chat_actions."""
         markup = chat_actions_menu_markup("test-uuid", "Тестовый чат")
 
-        # Проверяем количество строк - теперь 3 строки
-        assert len(markup.inline_keyboard) == 3
+        # Проверяем количество строк - теперь 1 строка с 4 кнопками
+        assert len(markup.inline_keyboard) == 1
 
-        # Строка 1: [Перейти]
+        # Строка 1: [Перейти] [Изменить] [Удалить] [Назад]
         row1 = markup.inline_keyboard[0]
-        assert len(row1) == 1
+        assert len(row1) == 4
+        
+        # Проверяем каждую кнопку
         assert row1[0].callback_data == "confirm_switch||test-uuid"
         assert "Перейти" in row1[0].text
-
-        # Строка 2: [Изменить] [Удалить]
-        row2 = markup.inline_keyboard[1]
-        assert len(row2) == 2
-        assert row2[0].callback_data == "rename_chat||test-uuid"
-        assert row2[1].callback_data == "delete_chat||test-uuid"
-        assert "Изменить" in row2[0].text
-        assert "Удалить" in row2[1].text
-
-        # Строка 3: [Назад]
-        row3 = markup.inline_keyboard[2]
-        assert len(row3) == 1
-        assert row3[0].callback_data == "menu_chats"
-        assert "Назад" in row3[0].text
+        
+        assert row1[1].callback_data == "rename_chat||test-uuid"
+        assert "Изменить" in row1[1].text
+        
+        assert row1[2].callback_data == "delete_chat||test-uuid"
+        assert "Удалить" in row1[2].text
+        
+        assert row1[3].callback_data == "menu_chats"
+        assert "Назад" in row1[3].text
 
     @patch('conversation_handlers.conversation_manager')
     @patch('conversation_handlers.send_menu')
