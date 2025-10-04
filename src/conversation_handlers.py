@@ -28,6 +28,7 @@ from markups import (
     chat_actions_menu_markup
 )
 from menu_manager import send_menu, clear_menus
+from message_tracker import cleanup_all_tracked
 from message_tracker import track_and_send
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -112,8 +113,8 @@ async def handle_new_chat(chat_id: int, app: Client):
             "deep_search": False
         }
 
-        # Очищаем историю меню (новый контекст)
-        clear_menus(chat_id)
+        # ✅ ФИЗИЧЕСКИ удаляем все предыдущие меню из чата (новый контекст)
+        await cleanup_all_tracked(chat_id, app)
 
         # Объединяем текст и отправляем меню внизу
         text = (
@@ -499,8 +500,8 @@ async def handle_delete_chat_confirm(
                 first_question="Новый чат"
             )
 
-            # Очищаем историю меню (новый контекст)
-            clear_menus(chat_id)
+            # ✅ ФИЗИЧЕСКИ удаляем все предыдущие меню из чата (новый контекст)
+            await cleanup_all_tracked(chat_id, app)
 
             text = (
                 "✅ Чат удален\n\n"
