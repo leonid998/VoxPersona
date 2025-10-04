@@ -13,6 +13,7 @@ from db_handler.db import fetch_prompts_for_scenario_reporttype_building, fetch_
 from datamodels import mapping_report_type_names, mapping_building_names, REPORT_MAPPING, CLASSIFY_DESIGN, CLASSIFY_INTERVIEW
 from menus import send_main_menu
 from markups import interview_menu_markup, design_menu_markup, main_menu_markup, make_dialog_markup
+from menu_manager import send_menu_and_remove_old
 from analysis import analyze_methodology, classify_query, extract_from_chunk_parallel, aggregate_citations, classify_report_type, generate_db_answer, extract_from_chunk_parallel_async
 from storage import save_user_input_to_db, build_reports_grouped, create_db_in_memory
 
@@ -212,10 +213,12 @@ async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep
         await app.send_message(chat_id, error_message) #TODO: не забыть удалить в продакшене
     finally:
         # После ответа показываем меню выбора режима
-        await app.send_message(
-            chat_id,
-            "Какую информацию вы хотели бы получить?",
-            reply_markup=make_dialog_markup()
+        await send_menu_and_remove_old(
+            chat_id=chat_id,
+            app=app,
+            text="Какую информацию вы хотели бы получить?",
+            reply_markup=make_dialog_markup(),
+            context=conversation_id
         )
 
 async def run_analysis_pass(

@@ -976,7 +976,8 @@ async def handle_menu_dialog(chat_id: int, app: Client):
         chat_id,
         app,
         "Какую информацию вы хотели бы получить?",
-        make_dialog_markup()
+        make_dialog_markup(),
+        context=conversation_id
     )
 
 def register_handlers(app: Client):
