@@ -171,7 +171,7 @@ async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep
             )
 
         if deep_search:
-            app.send_message(chat_id, "Запущено Глубокое Исследование")
+            await app.send_message(chat_id, "Запущено Глубокое Исследование")
             logging.info("Запущено Глубокое исследование")
 
             # report_type_code = classify_report_type(text, prompt_name=prompt_name)
@@ -180,7 +180,7 @@ async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep
             # logging.info(f"Тип отчета: {report_type}")
             answer = run_deep_search(content, text=text, chat_id=chat_id, app=app, category=category)
         else:
-            app.send_message(chat_id, "Запущен быстрый поиск")
+            await app.send_message(chat_id, "Запущен быстрый поиск")
             logging.info("Запущен быстрый поиск")
 
             # content = build_reports_grouped(scenario_name=scenario_name, report_type=None)
@@ -209,10 +209,10 @@ async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep
     except Exception as e:
         error_message = f"Произошла ошибка: {str(e)}"
         logging.error(f"Произошла ошибка: {e}", exc_info=True)
-        app.send_message(chat_id, error_message) #TODO: не забыть удалить в продакшене
+        await app.send_message(chat_id, error_message) #TODO: не забыть удалить в продакшене
     finally:
         # После ответа показываем меню выбора режима
-        app.send_message(
+        await app.send_message(
             chat_id,
             "Какую информацию вы хотели бы получить?",
             reply_markup=make_dialog_markup()

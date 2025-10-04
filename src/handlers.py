@@ -389,13 +389,13 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
 
     if st.get("step") == "dialog_mode":
         deep = st.get("deep_search", False)
-        msg = app.send_message(c_id, "⏳ Думаю...")
+        msg = await app.send_message(c_id, "⏳ Думаю...")
         st_ev = threading.Event()
         sp_th = threading.Thread(target=run_loading_animation, args=(c_id, msg.id, st_ev, app))
         sp_th.start()
         try:
             if not rags:
-                app.send_message(c_id, "🔄 База знаний ещё загружается, попробуйте позже.")
+                await app.send_message(c_id, "🔄 База знаний ещё загружается, попробуйте позже.")
             else:
                 await run_dialog_mode(
                     chat_id=c_id,
@@ -408,7 +408,7 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
             return
         except Exception as e:
             logging.error(f"Ошибка: {e}")
-            app.send_message(c_id, "Произошла ошибка")
+            await app.send_message(c_id, "Произошла ошибка")
         finally:
             st_ev.set()
             sp_th.join()
