@@ -512,6 +512,16 @@ async def handle_menu_chats(chat_id: int, app: Client):
     )
 
 async def handle_main_menu(chat_id: int, app: Client):
+    # Получаем текущий активный чат (если есть)
+    from conversation_manager import conversation_manager
+    from visual_context_manager import VisualContextManager
+
+    active_conversation_id = conversation_manager.get_active_conversation_id(chat_id)
+
+    # Минимизируем сообщения текущего чата перед выходом в главное меню
+    if active_conversation_id:
+        await VisualContextManager.minimize_messages(chat_id, app, active_conversation_id)
+
     await send_main_menu(chat_id, app)
 
 async def handle_show_stats(chat_id: int, app: Client):
