@@ -27,6 +27,7 @@ from markups import (
     chats_menu_markup_dynamic
 )
 from menu_manager import send_menu_and_remove_old, clear_menus
+from visual_context_manager import VisualContextManager
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,9 @@ async def handle_new_chat(chat_id: int, app: Client):
 
         # Очищаем историю меню (новый контекст)
         clear_menus(chat_id)
+
+        # Минимизируем старые системные сообщения для визуальной очистки
+        await VisualContextManager.minimize_messages(chat_id, app, "system")
 
         # Объединяем текст и отправляем меню внизу
         text = (
@@ -196,6 +200,9 @@ async def handle_switch_chat_confirm(
             "step": "dialog_mode",
             "deep_search": False
         }
+
+        # Минимизируем старые системные сообщения для визуальной очистки
+        await VisualContextManager.minimize_messages(chat_id, app, "system")
 
         # Загружаем чат и последние 5 сообщений
         conversation = conversation_manager.load_conversation(chat_id, conversation_id)

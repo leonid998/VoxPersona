@@ -48,6 +48,7 @@ from menus import (
 )
 from menu_manager import send_menu_and_remove_old
 from storage import process_stored_file
+from visual_context_manager import VisualContextManager
 
 from analysis import (
     assign_roles
