@@ -1,34 +1,49 @@
 """
 Менеджер меню для Telegram бота VoxPersona.
-Решает проблему дублирования меню через правильное управление жизненным циклом.
 
-КЛЮЧЕВОЙ ПРИНЦИП:
-- Старое меню ПОЛНОСТЬЮ удаляется (текст + кнопки)
-- Новое меню ВСЕГДА появляется внизу чата
-- Пользователь НИКОГДА не остается без активного меню
-- Чат НЕ захламляется текстовыми артефактами меню
+⚠️ УСТАРЕЛ: Теперь используется message_tracker.py с интеллектуальной системой очистки.
+
+НОВАЯ СИСТЕМА (message_tracker.py):
+- Автоматически отслеживает ВСЕ интерактивные элементы
+- Умная очистка по типу элемента (menu/input_request/confirmation)
+- Не нужно ручное управление в каждом обработчике
+- Гарантирует чистоту чата
+
+ОБРАТНАЯ СОВМЕСТИМОСТЬ:
+Этот модуль оставлен для обратной совместимости.
+Все функции теперь используют MessageTracker под капотом.
+
+Используйте напрямую:
+```python
+from message_tracker import track_and_send, clear_tracked_messages
+
+# Вместо send_menu:
+await track_and_send(chat_id, app, text, markup, message_type="menu")
+
+# Вместо clear_menus:
+clear_tracked_messages(chat_id)
+```
 """
 
 from pyrogram import Client
 from pyrogram.types import InlineKeyboardMarkup, Message
-from pyrogram.errors import MessageIdInvalid
 import logging
 from typing import Optional
+
+# Импортируем новую систему
+from message_tracker import track_and_send as _track_and_send, clear_tracked_messages as _clear_tracked
 
 logger = logging.getLogger(__name__)
 
 
 class MenuManager:
     """
-    Менеджер для правильного управления меню в Telegram боте.
+    ⚠️ УСТАРЕВШИЙ КЛАСС - сохранен для обратной совместимости.
 
-    Основная задача: гарантировать что пользователь всегда видит
-    только ОДНО активное меню, и оно всегда находится внизу чата.
+    Теперь используется MessageTracker из message_tracker.py.
+
+    Все методы этого класса теперь используют MessageTracker под капотом.
     """
-
-    # Словарь для хранения ID последнего меню каждого пользователя
-    # Формат: {chat_id: message_id}
-    _last_menu_ids = {}
 
     @classmethod
     async def send_menu_with_cleanup(
@@ -39,104 +54,32 @@ class MenuManager:
         reply_markup: InlineKeyboardMarkup
     ) -> Message:
         """
-        Основной метод для отправки меню.
+        ⚠️ УСТАРЕЛ: Используйте track_and_send() из message_tracker.py
 
-        Алгоритм:
-        1. ПОЛНОСТЬЮ удаляет предыдущее меню (текст + кнопки)
-        2. Отправляет новое меню внизу чата
-        3. Запоминает ID нового меню
-
-        Это предотвращает захламление чата текстовыми артефактами.
-
-        Args:
-            chat_id: ID чата
-            app: Pyrogram Client
-            text: Текст сообщения
-            reply_markup: Клавиатура меню
-
-        Returns:
-            Message: Отправленное сообщение с меню
+        Этот метод оставлен для обратной совместимости.
+        Теперь использует MessageTracker под капотом.
         """
-        # 1. Полностью удаляем старое меню (текст + кнопки)
-        await cls._remove_old_menu_buttons(chat_id, app)
-
-        # 2. Отправляем новое меню ВНИЗУ чата
-        new_message = await app.send_message(
+        return await _track_and_send(
             chat_id=chat_id,
+            app=app,
             text=text,
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            message_type="menu"
         )
-
-        # 3. Запоминаем ID нового меню
-        cls._last_menu_ids[chat_id] = new_message.id
-
-        logger.info(
-            f"Меню отправлено для chat_id={chat_id}, "
-            f"message_id={new_message.id}"
-        )
-
-        return new_message
-
-    @classmethod
-    async def _remove_old_menu_buttons(cls, chat_id: int, app: Client) -> None:
-        """
-        Полностью удаляет предыдущее меню (сообщение + кнопки).
-
-        Это предотвращает захламление чата текстовыми артефактами меню.
-
-        Args:
-            chat_id: ID чата
-            app: Pyrogram Client
-        """
-        last_menu_id = cls._last_menu_ids.get(chat_id)
-
-        if not last_menu_id:
-            logger.debug(f"Нет старого меню для chat_id={chat_id}")
-            return
-
-        try:
-            # Полностью удаляем старое сообщение (текст + кнопки)
-            await app.delete_messages(
-                chat_id=chat_id,
-                message_ids=last_menu_id
-            )
-
-            logger.debug(
-                f"Удалено меню (message_id={last_menu_id}) "
-                f"из чата {chat_id}"
-            )
-
-        except MessageIdInvalid:
-            # Сообщение не найдено - возможно уже удалено
-            logger.debug(
-                f"Сообщение {last_menu_id} не найдено в чате {chat_id} "
-                f"(возможно уже удалено)"
-            )
-
-        except Exception as e:
-            logger.error(
-                f"Ошибка при удалении меню {last_menu_id} из чата {chat_id}: {e}"
-            )
 
     @classmethod
     def clear_menu_history(cls, chat_id: int) -> None:
         """
-        Очищает историю меню для пользователя.
+        ⚠️ УСТАРЕЛ: Используйте clear_tracked_messages() из message_tracker.py
 
-        Используется при:
-        - Создании нового чата
-        - Завершении ConversationHandler
-        - Сбросе состояния пользователя
-
-        Args:
-            chat_id: ID чата
+        Этот метод оставлен для обратной совместимости.
+        Теперь использует MessageTracker под капотом.
         """
-        cls._last_menu_ids.pop(chat_id, None)
-        logger.info(f"История меню очищена для chat_id={chat_id}")
+        _clear_tracked(chat_id)
 
 
 # ========================================
-# Вспомогательные функции
+# Вспомогательные функции (обратная совместимость)
 # ========================================
 
 async def send_menu(
@@ -146,34 +89,45 @@ async def send_menu(
     reply_markup: InlineKeyboardMarkup
 ) -> Message:
     """
-    Shortcut для MenuManager.send_menu_with_cleanup().
+    ⚠️ УСТАРЕЛ: Используйте track_and_send() из message_tracker.py
+
+    Этот метод оставлен для обратной совместимости.
+    Теперь использует MessageTracker под капотом.
 
     Использование:
     ```python
-    await send_menu(
-        chat_id=message.chat.id,
-        app=app,
-        text="Выберите действие:",
-        reply_markup=get_main_menu()
-    )
+    # Старый способ (работает):
+    await send_menu(chat_id, app, text, markup)
+
+    # Новый способ (рекомендуется):
+    from message_tracker import track_and_send
+    await track_and_send(chat_id, app, text, markup, message_type="menu")
     ```
     """
-    return await MenuManager.send_menu_with_cleanup(
+    return await _track_and_send(
         chat_id=chat_id,
         app=app,
         text=text,
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        message_type="menu"
     )
 
 
 def clear_menus(chat_id: int) -> None:
     """
-    Shortcut для MenuManager.clear_menu_history().
+    ⚠️ УСТАРЕЛ: Используйте clear_tracked_messages() из message_tracker.py
+
+    Этот метод оставлен для обратной совместимости.
+    Теперь использует MessageTracker под капотом.
 
     Использование:
     ```python
-    # При создании нового чата
+    # Старый способ (работает):
     clear_menus(chat_id)
+
+    # Новый способ (рекомендуется):
+    from message_tracker import clear_tracked_messages
+    clear_tracked_messages(chat_id)
     ```
     """
-    MenuManager.clear_menu_history(chat_id)
+    _clear_tracked(chat_id)

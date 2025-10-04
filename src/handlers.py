@@ -37,7 +37,8 @@ from markups import (
     interview_menu_markup,
     design_menu_markup,
     building_type_menu_markup,
-    make_dialog_markup
+    make_dialog_markup,
+    edit_menu_markup
 )
 
 from menus import (
@@ -47,6 +48,7 @@ from menus import (
     show_edit_menu
 )
 from menu_manager import send_menu
+from message_tracker import track_and_send
 from storage import process_stored_file
 
 from analysis import (
@@ -155,9 +157,11 @@ def ask_audio_number(data: dict[str, Any], text: str, state: dict[str, Any], cha
 #                                Редактирование полей
 # --------------------------------------------------------------------------------------
 
-def handle_edit_field(chat_id: int, field: str, app: Client):
+async def handle_edit_field(chat_id: int, field: str, app: Client):
     """
     Ставит шаг (step) на редактирование нужного поля, затем просит ввести новое значение.
+
+    ✅ ОБНОВЛЕНО: Использует track_and_send для автоматической очистки артефактов.
     """
     st = user_states.get(chat_id, {})
     if not st:
@@ -182,7 +186,19 @@ def handle_edit_field(chat_id: int, field: str, app: Client):
 
     prompt_text = edit_fields.get(field, "Введите новое значение:")
 
-    app.send_message(chat_id, prompt_text)
+    # Создаем кнопку "Назад" для отмены редактирования
+    cancel_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("« Назад", callback_data="back_to_confirm")]
+    ])
+
+    # Используем track_and_send для автоматической очистки
+    await track_and_send(
+        chat_id=chat_id,
+        app=app,
+        text=prompt_text,
+        reply_markup=cancel_markup,
+        message_type="input_request"
+    )
 
 
 async def handle_history_command(message: Message, app: Client) -> None:
@@ -1268,7 +1284,7 @@ def register_handlers(app: Client):
             elif data.startswith("edit_"):
                 # Обрабатываем выбор поля для редактирования
                 field = data.split("edit_")[1]
-                handle_edit_field(c_id, field, app)
+                await handle_edit_field(c_id, field, app)
 
             #Отчеты
             elif data in REPORT_MAPPING.keys():

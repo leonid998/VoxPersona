@@ -28,6 +28,8 @@ from markups import (
     chat_actions_menu_markup
 )
 from menu_manager import send_menu, clear_menus
+from message_tracker import track_and_send
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 logger = logging.getLogger(__name__)
 
@@ -331,10 +333,17 @@ async def handle_rename_chat_request(
             "conversation_id": conversation_id
         }
 
-        # Запрашиваем новое название
-        await app.send_message(
+        # Запрашиваем новое название с кнопкой отмены
+        cancel_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Отмена", callback_data="menu_chats")]
+        ])
+
+        await track_and_send(
             chat_id=chat_id,
-            text=f"✏️ Введите новое название для чата '{old_name}':"
+            app=app,
+            text=f"✏️ Введите новое название для чата '{old_name}':",
+            reply_markup=cancel_markup,
+            message_type="input_request"
         )
 
         logger.info(f"Запрошено переименование чата {conversation_id} для пользователя {chat_id}")
@@ -440,11 +449,13 @@ async def handle_delete_chat_request(
 
         chat_name = conversation.metadata.title
 
-        # Отправляем запрос на подтверждение
-        await app.send_message(
+        # Отправляем запрос на подтверждение с автоматической очисткой
+        await track_and_send(
             chat_id=chat_id,
+            app=app,
             text=f"⚠️ Удалить чат '{chat_name}'?\n\nЭто действие необратимо.",
-            reply_markup=delete_chat_confirmation_markup(conversation_id, chat_name)
+            reply_markup=delete_chat_confirmation_markup(conversation_id, chat_name),
+            message_type="confirmation"
         )
 
         logger.info(f"Запрошено удаление чата {conversation_id} для пользователя {chat_id}")
