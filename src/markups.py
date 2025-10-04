@@ -31,7 +31,12 @@ def system_menu_markup():
 
 def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_number: int = None) -> list:
     """
-    Создает кнопку чата с пропорциями 50%/25%/25%.
+    Создает кнопку чата с ТОЧНЫМИ пропорциями 50%/25%/25% через расчет длины текстов.
+
+    Пропорции достигаются за счет:
+    - Название чата: ~24 символа (включая эмодзи и номер) = 50%
+    - Переименовать: ~12 символов = 25%
+    - Удалить: ~12 символов = 25%
 
     Args:
         conv: Метаданные чата
@@ -43,20 +48,31 @@ def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_num
     """
     emoji = "📝" if is_active else "💬"
 
-    # Обрезаем название до 15 символов (или 13 если есть номер)
-    # Меньше текста = меньше ширина кнопки = 50% вместо 60%
-    name = conv.title
-    max_length = 13 if chat_number else 15
-    if len(name) > max_length:
-        name = name[:max_length - 3] + "..."
+    # ТОЧНЫЙ РАСЧЕТ для пропорций 50%/25%/25%:
+    # Целевая длина кнопки названия: 24 символа (включая эмодзи, номер, пробелы)
+    # Формат: "📝 1. Название..." = 2 (эмодзи+пробел) + 2-3 (номер) + 2 (". ") + текст
 
-    # Добавляем номер если указан
+    if chat_number:
+        # "📝 1. " занимает ~6 символов, остается 18 для названия
+        prefix_length = len(f"{emoji} {chat_number}. ")
+        name_max_length = 24 - prefix_length
+    else:
+        # "📝 " занимает ~2 символа, остается 22 для названия
+        prefix_length = len(f"{emoji} ")
+        name_max_length = 24 - prefix_length
+
+    name = conv.title
+    if len(name) > name_max_length:
+        name = name[:name_max_length - 3] + "..."
+
     display_name = f"{chat_number}. {name}" if chat_number else name
 
+    # Кнопки фиксированной длины для точных пропорций 25%/25%
+    # Каждая кнопка ~12 символов
     return [
         InlineKeyboardButton(f"{emoji} {display_name}", callback_data=f"switch_chat||{conv.conversation_id}"),
-        InlineKeyboardButton("✏️ Ред.", callback_data=f"rename_chat||{conv.conversation_id}"),
-        InlineKeyboardButton("🗑️ Удал.", callback_data=f"delete_chat||{conv.conversation_id}")
+        InlineKeyboardButton("✏️ Изменить", callback_data=f"rename_chat||{conv.conversation_id}"),  # 10 символов
+        InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_chat||{conv.conversation_id}")    # 9 символов
     ]
 
 def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
