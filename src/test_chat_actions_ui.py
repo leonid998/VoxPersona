@@ -132,20 +132,20 @@ class TestChatActionsUI:
         # Проверяем количество строк - теперь 1 строка с 4 кнопками
         assert len(markup.inline_keyboard) == 1
 
-        # Строка 1: [Перейти] [Изменить] [Удалить] [Назад]
+        # Строка 1: [В Чат] [✏️] [🗑️] [Назад]
         row1 = markup.inline_keyboard[0]
         assert len(row1) == 4
-        
+
         # Проверяем каждую кнопку
         assert row1[0].callback_data == "confirm_switch||test-uuid"
-        assert "Перейти" in row1[0].text
-        
+        assert "В Чат" in row1[0].text
+
         assert row1[1].callback_data == "rename_chat||test-uuid"
-        assert "Изменить" in row1[1].text
-        
+        assert "✏️" == row1[1].text
+
         assert row1[2].callback_data == "delete_chat||test-uuid"
-        assert "Удалить" in row1[2].text
-        
+        assert "🗑️" == row1[2].text
+
         assert row1[3].callback_data == "menu_chats"
         assert "Назад" in row1[3].text
 
