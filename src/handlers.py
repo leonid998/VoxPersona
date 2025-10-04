@@ -913,7 +913,8 @@ async def handle_mode_fast(callback: CallbackQuery, app: Client):
         app,
         "✅ Режим установлен: **Быстрый поиск**\n\n"
         "Теперь задайте ваш вопрос 👇",
-        make_dialog_markup()
+        make_dialog_markup(),
+        context=st["conversation_id"]
     )
 
 
@@ -950,7 +951,8 @@ async def handle_mode_deep(callback: CallbackQuery, app: Client):
         app,
         "✅ Режим установлен: **Глубокое исследование**\n\n"
         "Теперь задайте ваш вопрос 👇",
-        make_dialog_markup()
+        make_dialog_markup(),
+        context=st["conversation_id"]
     )
 
 async def handle_menu_dialog(chat_id: int, app: Client):

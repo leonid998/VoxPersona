@@ -128,7 +128,8 @@ async def handle_new_chat(chat_id: int, app: Client):
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=make_dialog_markup()
+            reply_markup=make_dialog_markup(),
+            context=new_conversation_id
         )
 
         logger.info(f"Создан новый чат {new_conversation_id} для пользователя {chat_id}")
@@ -244,7 +245,8 @@ async def handle_switch_chat_confirm(
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=make_dialog_markup()
+            reply_markup=make_dialog_markup(),
+            context=conversation_id
         )
 
         logger.info(f"Пользователь {chat_id} переключился на чат {conversation_id}")
@@ -359,7 +361,8 @@ async def handle_rename_chat_input(
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=chats_menu_markup_dynamic(chat_id)
+            reply_markup=chats_menu_markup_dynamic(chat_id),
+            context="system"
         )
 
         logger.info(f"Чат {conversation_id} переименован в '{new_name}' для пользователя {chat_id}")
@@ -460,7 +463,8 @@ async def handle_delete_chat_confirm(
                 chat_id=chat_id,
                 app=app,
                 text=text,
-                reply_markup=chats_menu_markup_dynamic(chat_id)
+                reply_markup=chats_menu_markup_dynamic(chat_id),
+                context="system"
             )
 
             logger.info(f"Удален последний чат {conversation_id}, создан новый {new_conversation_id} для пользователя {chat_id}")
@@ -472,7 +476,8 @@ async def handle_delete_chat_confirm(
                 chat_id=chat_id,
                 app=app,
                 text=text,
-                reply_markup=chats_menu_markup_dynamic(chat_id)
+                reply_markup=chats_menu_markup_dynamic(chat_id),
+                context="system"
             )
 
             logger.info(f"Удален чат {conversation_id} для пользователя {chat_id}")

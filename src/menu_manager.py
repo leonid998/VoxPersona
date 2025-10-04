@@ -13,6 +13,8 @@ from pyrogram import Client
 from pyrogram.types import InlineKeyboardMarkup, Message
 from pyrogram.errors import MessageIdInvalid
 import logging
+from typing import Optional
+from visual_context_manager import VisualContextManager
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,8 @@ class MenuManager:
         chat_id: int,
         app: Client,
         text: str,
-        reply_markup: InlineKeyboardMarkup
+        reply_markup: InlineKeyboardMarkup,
+        context: Optional[str] = None
     ) -> Message:
         """
         Основной метод для отправки меню.
@@ -44,6 +47,7 @@ class MenuManager:
         1. ПОЛНОСТЬЮ удаляет предыдущее меню (текст + кнопки)
         2. Отправляет новое меню внизу чата
         3. Запоминает ID нового меню
+        4. Трекает сообщение для визуальной минимизации (если передан context)
 
         Это предотвращает захламление чата текстовыми артефактами.
 
@@ -52,6 +56,7 @@ class MenuManager:
             app: Pyrogram Client
             text: Текст сообщения
             reply_markup: Клавиатура меню
+            context: Контекст для трекинга (conversation_id или "system")
 
         Returns:
             Message: Отправленное сообщение с меню
@@ -68,6 +73,10 @@ class MenuManager:
 
         # 3. Запоминаем ID нового меню
         cls._last_menu_ids[chat_id] = new_message.id
+
+        # 4. Трекаем для визуальной минимизации (если передан context)
+        if context:
+            VisualContextManager.track_message(chat_id, context, new_message.id)
 
         logger.info(
             f"Меню отправлено для chat_id={chat_id}, "
@@ -142,7 +151,8 @@ async def send_menu_and_remove_old(
     chat_id: int,
     app: Client,
     text: str,
-    reply_markup: InlineKeyboardMarkup
+    reply_markup: InlineKeyboardMarkup,
+    context: Optional[str] = None
 ) -> Message:
     """
     Shortcut для MenuManager.send_menu_with_cleanup().
@@ -153,7 +163,8 @@ async def send_menu_and_remove_old(
         chat_id=message.chat.id,
         app=app,
         text="Выберите действие:",
-        reply_markup=get_main_menu()
+        reply_markup=get_main_menu(),
+        context=conversation_id  # Опционально для трекинга
     )
     ```
     """
@@ -161,7 +172,8 @@ async def send_menu_and_remove_old(
         chat_id=chat_id,
         app=app,
         text=text,
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        context=context
     )
 
 
