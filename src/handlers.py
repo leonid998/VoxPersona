@@ -65,6 +65,7 @@ from conversation_manager import conversation_manager
 from conversation_handlers import (
     ensure_active_conversation,
     handle_new_chat,
+    handle_chat_actions,
     handle_switch_chat_request,
     handle_switch_chat_confirm,
     handle_rename_chat_request,
@@ -1176,6 +1177,11 @@ def register_handlers(app: Client):
             # === МУЛЬТИЧАТЫ: Обработчики callback ===
             if data == "new_chat":
                 await handle_new_chat(c_id, app)
+                return
+
+            elif data.startswith("chat_actions||"):
+                conversation_id = data.split("||")[1]
+                await handle_chat_actions(c_id, conversation_id, app)
                 return
 
             elif data.startswith("switch_chat||"):

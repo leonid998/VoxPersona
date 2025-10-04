@@ -30,12 +30,9 @@ def system_menu_markup():
 
 def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_number: int = None) -> list:
     """
-    Создает кнопку чата с ТОЧНЫМИ пропорциями 50%/25%/25% через расчет длины текстов.
+    Создает ОДНУ кнопку с названием чата на всю ширину.
 
-    Пропорции достигаются за счет:
-    - Название чата: ~24 символа (включая эмодзи и номер) = 50%
-    - Переименовать: ~12 символов = 25%
-    - Удалить: ~12 символов = 25%
+    При клике открывается меню действий с чатом (переключение, переименование, удаление).
 
     Args:
         conv: Метаданные чата
@@ -43,23 +40,20 @@ def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_num
         chat_number: Номер чата по порядку создания (опционально)
 
     Returns:
-        List из 3 InlineKeyboardButton
+        List из одной InlineKeyboardButton
     """
     emoji = "📝" if is_active else "💬"
 
-    # ТОЧНЫЙ РАСЧЕТ для пропорций 50%/25%/25%:
-    # Целевая длина кнопки названия: 24 символа (включая эмодзи, номер, пробелы)
-    # Формат: "📝 1. Название..." = 2 (эмодзи+пробел) + 2-3 (номер) + 2 (". ") + текст
-
-    # Показываем номер если он больше 0 (старые чаты с chat_number=0 показываются без номера)
+    # Увеличиваем максимальную длину названия до ~40 символов
+    # так как теперь кнопка одна и занимает всю ширину
     if chat_number and chat_number > 0:
-        # "📝 1. " занимает ~6 символов, остается 18 для названия
+        # "📝 1. " занимает ~6 символов, остается ~34 для названия
         prefix_length = len(f"{emoji} {chat_number}. ")
-        name_max_length = 24 - prefix_length
+        name_max_length = 40 - prefix_length
     else:
-        # "📝 " занимает ~2 символа, остается 22 для названия
+        # "📝 " занимает ~2 символа, остается ~38 для названия
         prefix_length = len(f"{emoji} ")
-        name_max_length = 24 - prefix_length
+        name_max_length = 40 - prefix_length
 
     name = conv.title
     if len(name) > name_max_length:
@@ -67,12 +61,9 @@ def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_num
 
     display_name = f"{chat_number}. {name}" if (chat_number and chat_number > 0) else name
 
-    # Кнопки фиксированной длины для точных пропорций 25%/25%
-    # Каждая кнопка ~12 символов
+    # Возвращаем ОДНУ кнопку с callback на меню действий
     return [
-        InlineKeyboardButton(f"{emoji} {display_name}", callback_data=f"switch_chat||{conv.conversation_id}"),
-        InlineKeyboardButton("✏️ Изменить", callback_data=f"rename_chat||{conv.conversation_id}"),  # 10 символов
-        InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_chat||{conv.conversation_id}")    # 9 символов
+        InlineKeyboardButton(f"{emoji} {display_name}", callback_data=f"chat_actions||{conv.conversation_id}")
     ]
 
 def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
@@ -82,10 +73,10 @@ def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
     Структура:
     - Строка 1: [🆕 Новый чат] [« Назад]
     - Строка 2: [📊 Статистика] [📄 Мои отчеты]
-    - Строка 3: Активный чат (📝 эмодзи) с номером
-    - Строка 4+: Остальные чаты (💬 эмодзи) с номерами по updated_at DESC
+    - Строка 3: Активный чат (📝 эмодзи) с номером - ОДНА кнопка
+    - Строка 4+: Остальные чаты (💬 эмодзи) с номерами по updated_at DESC - каждый ОДНА кнопка
 
-    Формат кнопки чата: [60% номер+название] [20% ✏️] [20% 🗑️]
+    Формат кнопки чата: на всю ширину с названием
     Нумерация: по порядку создания (created_at ASC)
     """
     # Статичные строки
@@ -126,17 +117,45 @@ def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
     # Сортируем остальные чаты по updated_at DESC
     other_chats.sort(key=lambda x: x.updated_at, reverse=True)
 
-    # Добавляем активный чат (если есть) с номером
+    # Добавляем активный чат (если есть) с номером - ОДНА кнопка на строку
     if active_chat:
         chat_num = chat_numbers[active_chat.conversation_id]
         buttons.append(create_chat_button_row(active_chat, True, chat_num))
 
-    # Добавляем остальные чаты с номерами
+    # Добавляем остальные чаты с номерами - ОДНА кнопка на строку
     for conv in other_chats:
         chat_num = chat_numbers[conv.conversation_id]
         buttons.append(create_chat_button_row(conv, False, chat_num))
 
     return InlineKeyboardMarkup(buttons)
+
+def chat_actions_menu_markup(conversation_id: str, chat_name: str) -> InlineKeyboardMarkup:
+    """
+    Меню действий с чатом.
+
+    Показывается после клика на название чата.
+
+    Структура:
+    - Строка 1: [✅ Да, перейти] [❌ Нет]
+    - Строка 2: [✏️ Изменить] [🗑️ Удалить]
+
+    Args:
+        conversation_id: ID чата
+        chat_name: Название чата для отображения
+
+    Returns:
+        InlineKeyboardMarkup с кнопками действий
+    """
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Да, перейти", callback_data=f"confirm_switch||{conversation_id}"),
+            InlineKeyboardButton("❌ Нет", callback_data="menu_chats")
+        ],
+        [
+            InlineKeyboardButton("✏️ Изменить", callback_data=f"rename_chat||{conversation_id}"),
+            InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_chat||{conversation_id}")
+        ]
+    ])
 
 def switch_chat_confirmation_markup(conversation_id: str, chat_name: str) -> InlineKeyboardMarkup:
     """Меню подтверждения переключения чата."""

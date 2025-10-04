@@ -24,7 +24,8 @@ from markups import (
     make_dialog_markup,
     switch_chat_confirmation_markup,
     delete_chat_confirmation_markup,
-    chats_menu_markup_dynamic
+    chats_menu_markup_dynamic,
+    chat_actions_menu_markup
 )
 from menu_manager import send_menu, clear_menus
 
@@ -136,6 +137,52 @@ async def handle_new_chat(chat_id: int, app: Client):
         )
 
 
+async def handle_chat_actions(chat_id: int, conversation_id: str, app: Client):
+    """
+    Показывает меню действий с чатом.
+    Callback: "chat_actions||{conversation_id}"
+
+    Отображает:
+    - Название чата
+    - Кнопки: [Да, перейти] [Нет]
+    - Кнопки: [Изменить] [Удалить]
+
+    Args:
+        chat_id: ID чата Telegram
+        conversation_id: ID чата для действий
+        app: Pyrogram Client
+    """
+    try:
+        # Загружаем метаданные чата
+        conversation = conversation_manager.load_conversation(chat_id, conversation_id)
+
+        if not conversation:
+            await app.send_message(
+                chat_id=chat_id,
+                text="❌ Чат не найден"
+            )
+            return
+
+        chat_name = conversation.metadata.title
+
+        # Отправляем меню действий
+        await send_menu(
+            chat_id=chat_id,
+            app=app,
+            text=f"🔄 Чат: *{chat_name}*\n\nВыберите действие:",
+            reply_markup=chat_actions_menu_markup(conversation_id, chat_name)
+        )
+
+        logger.info(f"Показано меню действий для чата {conversation_id} пользователя {chat_id}")
+
+    except Exception as e:
+        logger.error(f"Ошибка при показе меню действий чата {conversation_id} для пользователя {chat_id}: {e}")
+        await app.send_message(
+            chat_id=chat_id,
+            text="❌ Произошла ошибка. Попробуйте еще раз."
+        )
+
+
 async def handle_switch_chat_request(
     chat_id: int,
     conversation_id: str,
@@ -145,6 +192,9 @@ async def handle_switch_chat_request(
     """
     Запрашивает подтверждение переключения чата.
     Callback: "switch_chat||{conversation_id}"
+
+    УСТАРЕЛ: Теперь используется chat_actions||
+    Оставлен для обратной совместимости.
 
     Args:
         chat_id: ID чата Telegram
