@@ -129,16 +129,14 @@ class TestChatActionsUI:
         """Проверка структуры меню chat_actions."""
         markup = chat_actions_menu_markup("test-uuid", "Тестовый чат")
 
-        # Проверяем количество строк
-        assert len(markup.inline_keyboard) == 2
+        # Проверяем количество строк - теперь 3 строки
+        assert len(markup.inline_keyboard) == 3
 
-        # Строка 1: [Да, перейти] [Нет]
+        # Строка 1: [Перейти]
         row1 = markup.inline_keyboard[0]
-        assert len(row1) == 2
+        assert len(row1) == 1
         assert row1[0].callback_data == "confirm_switch||test-uuid"
-        assert row1[1].callback_data == "menu_chats"
-        assert "Да, перейти" in row1[0].text
-        assert "Нет" in row1[1].text
+        assert "Перейти" in row1[0].text
 
         # Строка 2: [Изменить] [Удалить]
         row2 = markup.inline_keyboard[1]
@@ -147,6 +145,12 @@ class TestChatActionsUI:
         assert row2[1].callback_data == "delete_chat||test-uuid"
         assert "Изменить" in row2[0].text
         assert "Удалить" in row2[1].text
+
+        # Строка 3: [Назад]
+        row3 = markup.inline_keyboard[2]
+        assert len(row3) == 1
+        assert row3[0].callback_data == "menu_chats"
+        assert "Назад" in row3[0].text
 
     @patch('conversation_handlers.conversation_manager')
     @patch('conversation_handlers.send_menu')
