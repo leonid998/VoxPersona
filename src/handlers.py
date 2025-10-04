@@ -383,6 +383,7 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
         username = await get_username_from_chat(c_id, app)
         conversation_id = ensure_active_conversation(c_id, username, text_)
         st["conversation_id"] = conversation_id
+        user_states[c_id] = st  # ✅ Сохраняем изменения обратно
     # === КОНЕЦ МУЛЬТИЧАТЫ ===
 
     if st.get("step") == "dialog_mode":
@@ -876,6 +877,15 @@ async def handle_mode_fast(callback: CallbackQuery, app: Client):
     await callback.answer("⚡ Выбран быстрый поиск")
     logging.info(f"Пользователь {chat_id} выбрал быстрый поиск")
 
+    # Удаляем старое меню и показываем инструкцию
+    await send_menu_and_remove_old(
+        chat_id,
+        app,
+        "✅ Режим установлен: **Быстрый поиск**\n\n"
+        "Теперь задайте ваш вопрос 👇",
+        make_dialog_markup()
+    )
+
 
 async def handle_mode_deep(callback: CallbackQuery, app: Client):
     """Обработчик выбора глубокого исследования."""
@@ -885,6 +895,15 @@ async def handle_mode_deep(callback: CallbackQuery, app: Client):
     user_states[chat_id] = st  # ✅ Сохраняем изменения в глобальный словарь
     await callback.answer("🔬 Выбрано глубокое исследование")
     logging.info(f"Пользователь {chat_id} выбрал глубокое исследование")
+
+    # Удаляем старое меню и показываем инструкцию
+    await send_menu_and_remove_old(
+        chat_id,
+        app,
+        "✅ Режим установлен: **Глубокое исследование**\n\n"
+        "Теперь задайте ваш вопрос 👇",
+        make_dialog_markup()
+    )
 
 async def handle_menu_dialog(chat_id: int, app: Client):
     # Получаем текущее состояние или создаем новое
