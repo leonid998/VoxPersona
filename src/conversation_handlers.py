@@ -93,6 +93,9 @@ async def handle_new_chat(chat_id: int, app: Client):
         # Получаем username пользователя
         username = await get_username_from_chat(chat_id, app)
 
+        # Получаем старый conversation_id ДО создания нового
+        old_conversation_id = conversation_manager.get_active_conversation_id(chat_id)
+
         # Создаем новый чат
         new_conversation_id = conversation_manager.create_conversation(
             user_id=chat_id,
@@ -110,8 +113,9 @@ async def handle_new_chat(chat_id: int, app: Client):
         # Очищаем историю меню (новый контекст)
         clear_menus(chat_id)
 
-        # Минимизируем старые системные сообщения для визуальной очистки
-        await VisualContextManager.minimize_messages(chat_id, app, "system")
+        # Минимизируем сообщения СТАРОГО чата (если был)
+        if old_conversation_id:
+            await VisualContextManager.minimize_messages(chat_id, app, old_conversation_id)
 
         # Объединяем текст и отправляем меню внизу
         text = (
@@ -191,6 +195,9 @@ async def handle_switch_chat_confirm(
         app: Pyrogram Client
     """
     try:
+        # Получаем старый conversation_id ДО переключения для минимизации его сообщений
+        old_conversation_id = conversation_manager.get_active_conversation_id(chat_id)
+
         # Устанавливаем чат как активный
         conversation_manager.set_active_conversation(chat_id, conversation_id)
 
@@ -201,8 +208,9 @@ async def handle_switch_chat_confirm(
             "deep_search": False
         }
 
-        # Минимизируем старые системные сообщения для визуальной очистки
-        await VisualContextManager.minimize_messages(chat_id, app, "system")
+        # Минимизируем сообщения СТАРОГО чата (если был)
+        if old_conversation_id:
+            await VisualContextManager.minimize_messages(chat_id, app, old_conversation_id)
 
         # Загружаем чат и последние 5 сообщений
         conversation = conversation_manager.load_conversation(chat_id, conversation_id)
