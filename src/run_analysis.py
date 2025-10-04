@@ -211,16 +211,11 @@ def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_searc
         logging.error(f"Произошла ошибка: {e}", exc_info=True)
         app.send_message(chat_id, error_message) #TODO: не забыть удалить в продакшене
     finally:
-        app.send_message(
-        chat_id,
-        "Какую информацию вы хотели бы получить?",
-        reply_markup=make_dialog_markup(deep_search)
-        )
-
+        # После ответа показываем меню выбора режима
         app.send_message(
             chat_id,
-            "Задайте ещё вопрос или выберите «Главное меню».",
-            reply_markup=main_menu_markup()
+            "Какую информацию вы хотели бы получить?",
+            reply_markup=make_dialog_markup()
         )
 
 def run_analysis_pass(

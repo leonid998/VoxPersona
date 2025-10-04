@@ -848,11 +848,22 @@ def handle_choose_building(chat_id: int, data: str, app: Client):
 
     st["pending_report"] = None
 
-async def handle_toggle_deep(callback: CallbackQuery, app: Client):
+async def handle_mode_fast(callback: CallbackQuery, app: Client):
+    """Обработчик выбора быстрого поиска."""
     chat_id = callback.message.chat.id
     st = user_states.get(chat_id, {})
-    st["deep_search"] = not st.get("deep_search", False)
-    await callback.message.edit_reply_markup(make_dialog_markup(st["deep_search"]))
+    st["deep_search"] = False
+    await callback.answer("⚡ Выбран быстрый поиск")
+    logging.info(f"Пользователь {chat_id} выбрал быстрый поиск")
+
+
+async def handle_mode_deep(callback: CallbackQuery, app: Client):
+    """Обработчик выбора глубокого исследования."""
+    chat_id = callback.message.chat.id
+    st = user_states.get(chat_id, {})
+    st["deep_search"] = True
+    await callback.answer("🔬 Выбрано глубокое исследование")
+    logging.info(f"Пользователь {chat_id} выбрал глубокое исследование")
 
 async def handle_menu_dialog(chat_id: int, app: Client):
     # Получаем текущее состояние или создаем новое
@@ -875,7 +886,7 @@ async def handle_menu_dialog(chat_id: int, app: Client):
         chat_id,
         app,
         "Какую информацию вы хотели бы получить?",
-        make_dialog_markup(st.get("deep_search", False))
+        make_dialog_markup()
     )
 
 def register_handlers(app: Client):
@@ -1149,8 +1160,12 @@ def register_handlers(app: Client):
             elif data.startswith("upload||"):
                 await file_upload_handler(c_id, data, app)
 
-            elif data == "toggle_deep":
-                await handle_toggle_deep(callback, app)
+            elif data == "mode_fast":
+                await handle_mode_fast(callback, app)
+                return
+
+            elif data == "mode_deep":
+                await handle_mode_deep(callback, app)
                 return
 
             # Выбор сценария

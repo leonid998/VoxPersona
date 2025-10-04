@@ -185,11 +185,20 @@ def edit_menu_markup(mode: str):
     kb = InlineKeyboardMarkup(markups)
     return kb
 
-def make_dialog_markup(enabled: bool) -> InlineKeyboardMarkup:
-    label = "✅ Глубокое исследование" if enabled else "🔍 Глубокое исследование"
+def make_dialog_markup() -> InlineKeyboardMarkup:
+    """
+    Меню выбора режима поиска.
+
+    Структура:
+    - Строка 1: [Быстрый поиск] [Глубокое исследование]
+    - Строка 2: [Главное меню]
+    """
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(label, callback_data="toggle_deep")],
-        [InlineKeyboardButton("Главное меню", callback_data="menu_main")]
+        [
+            InlineKeyboardButton("⚡ Быстрый поиск", callback_data="mode_fast"),
+            InlineKeyboardButton("🔬 Глубокое исследование", callback_data="mode_deep")
+        ],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="menu_main")]
     ])
 
 def help_menu_markup():

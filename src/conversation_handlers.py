@@ -120,7 +120,7 @@ async def handle_new_chat(chat_id: int, app: Client):
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=make_dialog_markup(False)
+            reply_markup=make_dialog_markup()
         )
 
         logger.info(f"Создан новый чат {new_conversation_id} для пользователя {chat_id}")
@@ -229,7 +229,7 @@ async def handle_switch_chat_confirm(
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=make_dialog_markup(False)
+            reply_markup=make_dialog_markup()
         )
 
         logger.info(f"Пользователь {chat_id} переключился на чат {conversation_id}")
