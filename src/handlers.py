@@ -359,11 +359,12 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
 
     # Проверяем, есть ли у пользователя активное состояние
     st = user_states.get(c_id)
+    logging.info(f"Пользователь {c_id} отправил текст '{text_[:50]}...'. Состояние: {st}")
 
     # === ПРОВЕРКА РЕЖИМА ДИАЛОГА ===
     # Пользователь должен сначала выбрать чат и режим поиска
     if not st or st.get("step") != "dialog_mode":
-        logging.info(f"Пользователь {c_id} пытается задать вопрос без выбора чата/режима")
+        logging.warning(f"Пользователь {c_id} не прошёл проверку режима. st={st}")
         await app.send_message(
             c_id,
             "📌 Для начала работы:\n\n"
@@ -871,11 +872,29 @@ async def handle_choose_building(chat_id: int, data: str, app: Client):
 async def handle_mode_fast(callback: CallbackQuery, app: Client):
     """Обработчик выбора быстрого поиска."""
     chat_id = callback.message.chat.id
+
+    # Сохраняем существующее состояние
     st = user_states.get(chat_id, {})
-    st["deep_search"] = False
-    user_states[chat_id] = st  # ✅ Сохраняем изменения в глобальный словарь
+
+    # Проверяем наличие необходимых полей
+    if "step" not in st or "conversation_id" not in st:
+        # Если состояние было сброшено - переинициализируем
+        username = await get_username_from_chat(chat_id, app)
+        conversation_id = ensure_active_conversation(chat_id, username)
+        st = {
+            "conversation_id": conversation_id,
+            "step": "dialog_mode",
+            "deep_search": False
+        }
+    else:
+        # Если состояние корректное - просто обновляем deep_search
+        st["deep_search"] = False
+
+    # Сохраняем обновлённое состояние
+    user_states[chat_id] = st
+
     await callback.answer("⚡ Выбран быстрый поиск")
-    logging.info(f"Пользователь {chat_id} выбрал быстрый поиск")
+    logging.info(f"Пользователь {chat_id} выбрал быстрый поиск. Состояние: {st}")
 
     # Удаляем старое меню и показываем инструкцию
     await send_menu_and_remove_old(
@@ -890,11 +909,29 @@ async def handle_mode_fast(callback: CallbackQuery, app: Client):
 async def handle_mode_deep(callback: CallbackQuery, app: Client):
     """Обработчик выбора глубокого исследования."""
     chat_id = callback.message.chat.id
+
+    # Сохраняем существующее состояние
     st = user_states.get(chat_id, {})
-    st["deep_search"] = True
-    user_states[chat_id] = st  # ✅ Сохраняем изменения в глобальный словарь
+
+    # Проверяем наличие необходимых полей
+    if "step" not in st or "conversation_id" not in st:
+        # Если состояние было сброшено - переинициализируем
+        username = await get_username_from_chat(chat_id, app)
+        conversation_id = ensure_active_conversation(chat_id, username)
+        st = {
+            "conversation_id": conversation_id,
+            "step": "dialog_mode",
+            "deep_search": True
+        }
+    else:
+        # Если состояние корректное - просто обновляем deep_search
+        st["deep_search"] = True
+
+    # Сохраняем обновлённое состояние
+    user_states[chat_id] = st
+
     await callback.answer("🔬 Выбрано глубокое исследование")
-    logging.info(f"Пользователь {chat_id} выбрал глубокое исследование")
+    logging.info(f"Пользователь {chat_id} выбрал глубокое исследование. Состояние: {st}")
 
     # Удаляем старое меню и показываем инструкцию
     await send_menu_and_remove_old(
