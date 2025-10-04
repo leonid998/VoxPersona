@@ -5,27 +5,28 @@ from conversation_manager import conversation_manager
 from conversations import ConversationMetadata
 
 def main_menu_markup():
+    """Главное меню с расширенными кнопками."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📱 Чаты/Диалоги", callback_data="menu_chats")
+            InlineKeyboardButton("        📱 Чаты/Диалоги        ", callback_data="menu_chats")
         ],
         [
-            InlineKeyboardButton("⚙️ Системная", callback_data="menu_system"),
-            InlineKeyboardButton("❓ Помощь", callback_data="menu_help")
+            InlineKeyboardButton("    ⚙️ Системная    ", callback_data="menu_system"),
+            InlineKeyboardButton("    ❓ Помощь    ", callback_data="menu_help")
         ]
     ])
 
 def storage_menu_markup():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Аудио файлы", callback_data="view||audio")],
-        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_system")]
+        [InlineKeyboardButton("        📁 Аудио файлы        ", callback_data="view||audio")],
+        [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_system")]
     ])
 
 def system_menu_markup():
     """Меню системных настроек"""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📁 Хранилище", callback_data="menu_storage")],
-        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
+        [InlineKeyboardButton("        📁 Хранилище        ", callback_data="menu_storage")],
+        [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_main")]
     ])
 
 def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_number: int = None) -> list:
@@ -79,15 +80,15 @@ def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
     Формат кнопки чата: на всю ширину с названием
     Нумерация: по порядку создания (created_at ASC)
     """
-    # Статичные строки
+    # Статичные строки с расширенными кнопками
     buttons = [
         [
-            InlineKeyboardButton("🆕 Новый чат", callback_data="new_chat"),
-            InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")
+            InlineKeyboardButton("    🆕 Новый чат    ", callback_data="new_chat"),
+            InlineKeyboardButton(f"    {BUTTON_BACK}    ", callback_data="menu_main")
         ],
         [
-            InlineKeyboardButton("📊 Статистика", callback_data="show_stats"),
-            InlineKeyboardButton("📄 Мои отчеты", callback_data="show_my_reports")
+            InlineKeyboardButton("    📊 Статистика    ", callback_data="show_stats"),
+            InlineKeyboardButton("    📄 Мои отчеты    ", callback_data="show_my_reports")
         ]
     ]
 
@@ -147,10 +148,10 @@ def chat_actions_menu_markup(conversation_id: str, chat_name: str) -> InlineKeyb
     """
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("В Чат", callback_data=f"confirm_switch||{conversation_id}"),
-            InlineKeyboardButton("✏️", callback_data=f"rename_chat||{conversation_id}"),
-            InlineKeyboardButton("🗑️", callback_data=f"delete_chat||{conversation_id}"),
-            InlineKeyboardButton("Назад", callback_data="menu_chats")
+            InlineKeyboardButton("  В Чат  ", callback_data=f"confirm_switch||{conversation_id}"),
+            InlineKeyboardButton("  ✏️  ", callback_data=f"rename_chat||{conversation_id}"),
+            InlineKeyboardButton("  🗑️  ", callback_data=f"delete_chat||{conversation_id}"),
+            InlineKeyboardButton("  Назад  ", callback_data="menu_chats")
         ]
     ])
 
@@ -158,8 +159,8 @@ def switch_chat_confirmation_markup(conversation_id: str, chat_name: str) -> Inl
     """Меню подтверждения переключения чата."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Да, перейти", callback_data=f"confirm_switch||{conversation_id}"),
-            InlineKeyboardButton("❌ Отмена", callback_data="menu_chats")
+            InlineKeyboardButton("    ✅ Да, перейти    ", callback_data=f"confirm_switch||{conversation_id}"),
+            InlineKeyboardButton("    ❌ Отмена    ", callback_data="menu_chats")
         ]
     ])
 
@@ -167,8 +168,8 @@ def delete_chat_confirmation_markup(conversation_id: str, chat_name: str) -> Inl
     """Меню подтверждения удаления чата."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🗑️ Да, удалить", callback_data=f"confirm_delete||{conversation_id}"),
-            InlineKeyboardButton("❌ Отмена", callback_data="menu_chats")
+            InlineKeyboardButton("    🗑️ Да, удалить    ", callback_data=f"confirm_delete||{conversation_id}"),
+            InlineKeyboardButton("    ❌ Отмена    ", callback_data="menu_chats")
         ]
     ])
 
@@ -176,12 +177,12 @@ def chats_menu_markup():
     """Меню истории чатов"""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🆕 Новый чат", callback_data="new_chat"),
-            InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")
+            InlineKeyboardButton("    🆕 Новый чат    ", callback_data="new_chat"),
+            InlineKeyboardButton(f"    {BUTTON_BACK}    ", callback_data="menu_main")
         ],
         [
-            InlineKeyboardButton("📊 Статистика", callback_data="show_stats"),
-            InlineKeyboardButton("📄 Мои отчеты", callback_data="show_my_reports")
+            InlineKeyboardButton("    📊 Статистика    ", callback_data="show_stats"),
+            InlineKeyboardButton("    📄 Мои отчеты    ", callback_data="show_my_reports")
         ]
     ])
 
@@ -207,8 +208,8 @@ def confirm_menu_markup(mode: str, file_number: int,  employee: str, building_ty
 
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Подтвердить", callback_data="confirm_data"),
-            InlineKeyboardButton("✏️ Изменить", callback_data="edit_data")
+            InlineKeyboardButton("    ✅ Подтвердить    ", callback_data="confirm_data"),
+            InlineKeyboardButton("    ✏️ Изменить    ", callback_data="edit_data")
         ]
     ])
 
@@ -218,20 +219,20 @@ def edit_menu_markup(mode: str):
     "Меню редактирования данных"
 
     markups = [
-        [InlineKeyboardButton("Номер файла", callback_data="edit_audio_number")],
-        [InlineKeyboardButton("Дата", callback_data="edit_date")],
-        [InlineKeyboardButton("ФИО Сотрудника", callback_data="edit_employee")],
-        [InlineKeyboardButton("Заведение", callback_data="edit_place_name")],
-        [InlineKeyboardButton("Тип заведения", callback_data="edit_building_type")],
-        [InlineKeyboardButton("Зона", callback_data="edit_zone_name")],
+        [InlineKeyboardButton("        Номер файла        ", callback_data="edit_audio_number")],
+        [InlineKeyboardButton("        Дата        ", callback_data="edit_date")],
+        [InlineKeyboardButton("        ФИО Сотрудника        ", callback_data="edit_employee")],
+        [InlineKeyboardButton("        Заведение        ", callback_data="edit_place_name")],
+        [InlineKeyboardButton("        Тип заведения        ", callback_data="edit_building_type")],
+        [InlineKeyboardButton("        Зона        ", callback_data="edit_zone_name")],
     ]
 
     if mode == "design":
-        markups.append([InlineKeyboardButton("Город", callback_data="edit_city")])
+        markups.append([InlineKeyboardButton("        Город        ", callback_data="edit_city")])
     else:
-        markups.append([InlineKeyboardButton("ФИО Клиента", callback_data="edit_client")],)
+        markups.append([InlineKeyboardButton("        ФИО Клиента        ", callback_data="edit_client")],)
 
-    markups.append([InlineKeyboardButton(BUTTON_BACK_WITH_ARROW, callback_data="back_to_confirm")])
+    markups.append([InlineKeyboardButton(f"        {BUTTON_BACK_WITH_ARROW}        ", callback_data="back_to_confirm")])
 
     kb = InlineKeyboardMarkup(markups)
     return kb
@@ -246,10 +247,10 @@ def make_dialog_markup() -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⚡ Быстрый поиск", callback_data="mode_fast"),
-            InlineKeyboardButton("🔬 Глубокое исследование", callback_data="mode_deep")
+            InlineKeyboardButton("  ⚡ Быстрый поиск  ", callback_data="mode_fast"),
+            InlineKeyboardButton("  🔬 Глубокое исследование  ", callback_data="mode_deep")
         ],
-        [InlineKeyboardButton("📱 Чаты/Диалоги", callback_data="menu_chats")]
+        [InlineKeyboardButton("        📱 Чаты/Диалоги        ", callback_data="menu_chats")]
     ])
 
 def help_menu_markup():
@@ -270,16 +271,16 @@ def help_menu_markup():
         "3) Структурированный отчёт (авто)\n\n"
         "Макс 2 ГБ, без ffmpeg."
     )
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]])
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_main")]])
     return kb, text_
 
 def interview_or_design_menu():
     """Меню выбора: ИНТЕРВЬЮ / ДИЗАЙН."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("ИНТЕРВЬЮ", callback_data="mode_interview"),
-            InlineKeyboardButton("ДИЗАЙН", callback_data="mode_design"),
-            InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")
+            InlineKeyboardButton("  ИНТЕРВЬЮ  ", callback_data="mode_interview"),
+            InlineKeyboardButton("  ДИЗАЙН  ", callback_data="mode_design"),
+            InlineKeyboardButton(f"  {BUTTON_BACK}  ", callback_data="menu_main")
         ]
     ])
 
@@ -287,25 +288,25 @@ def building_type_menu_markup():
     """Выбор типа здания"""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Отель", callback_data="choose_building||hotel"),
-            InlineKeyboardButton("Ресторан", callback_data="choose_building||restaurant"),
-            InlineKeyboardButton("Центр здоровья", callback_data="choose_building||spa"),
+            InlineKeyboardButton("  Отель  ", callback_data="choose_building||hotel"),
+            InlineKeyboardButton("  Ресторан  ", callback_data="choose_building||restaurant"),
+            InlineKeyboardButton("  Центр здоровья  ", callback_data="choose_building||spa"),
         ]
     ])
 
 def interview_menu_markup():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("1) Оценка методологии интервью", callback_data="report_int_methodology")],
-        [InlineKeyboardButton("2) Отчет о связках", callback_data="report_int_links")],
-        [InlineKeyboardButton("3) Общие факторы", callback_data="report_int_general")],
-        [InlineKeyboardButton("4) Факторы в этом заведении", callback_data="report_int_specific")],
-        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
+        [InlineKeyboardButton("    1) Оценка методологии интервью    ", callback_data="report_int_methodology")],
+        [InlineKeyboardButton("    2) Отчет о связках    ", callback_data="report_int_links")],
+        [InlineKeyboardButton("    3) Общие факторы    ", callback_data="report_int_general")],
+        [InlineKeyboardButton("    4) Факторы в этом заведении    ", callback_data="report_int_specific")],
+        [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_main")]
     ])
 
 def design_menu_markup():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("1) Оценка методологии аудита", callback_data="report_design_audit_methodology")],
-        [InlineKeyboardButton("2) Соответствие программе аудита", callback_data="report_design_compliance")],
-        [InlineKeyboardButton("3) Структурированный отчет аудита", callback_data="report_design_structured")],
-        [InlineKeyboardButton(BUTTON_BACK, callback_data="menu_main")]
+        [InlineKeyboardButton("    1) Оценка методологии аудита    ", callback_data="report_design_audit_methodology")],
+        [InlineKeyboardButton("    2) Соответствие программе аудита    ", callback_data="report_design_compliance")],
+        [InlineKeyboardButton("    3) Структурированный отчет аудита    ", callback_data="report_design_structured")],
+        [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_main")]
     ])
