@@ -515,10 +515,22 @@ async def handle_show_stats(chat_id: int, app: Client):
     """Показывает статистику чатов"""
     try:
         stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
-        await app.send_message(chat_id, stats_text, )
+
+        # Показываем статистику с меню чатов внизу
+        await send_menu_and_remove_old(
+            chat_id=chat_id,
+            app=app,
+            text=stats_text,
+            reply_markup=chats_menu_markup_dynamic(chat_id)
+        )
     except Exception as e:
         logging.error(f"Error showing stats: {e}")
-        await app.send_message(chat_id, "❌ Произошла ошибка при получении статистики.")
+        await send_menu_and_remove_old(
+            chat_id=chat_id,
+            app=app,
+            text="❌ Произошла ошибка при получении статистики.",
+            reply_markup=chats_menu_markup_dynamic(chat_id)
+        )
 
 async def handle_show_my_reports(chat_id: int, app: Client):
     """Показывает список отчетов пользователя"""
@@ -526,10 +538,12 @@ async def handle_show_my_reports(chat_id: int, app: Client):
         reports = md_storage_manager.get_user_reports(chat_id, limit=10)
 
         if not reports:
-            await app.send_message(
-                chat_id,
-                "📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
-
+            # Показываем сообщение об отсутствии отчетов с меню чатов внизу
+            await send_menu_and_remove_old(
+                chat_id=chat_id,
+                app=app,
+                text="📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
+                reply_markup=chats_menu_markup_dynamic(chat_id)
             )
             return
 
@@ -556,7 +570,12 @@ async def handle_show_my_reports(chat_id: int, app: Client):
         )
     except Exception as e:
         logging.error(f"Error showing reports: {e}")
-        await app.send_message(chat_id, "❌ Произошла ошибка при получении отчетов.")
+        await send_menu_and_remove_old(
+            chat_id=chat_id,
+            app=app,
+            text="❌ Произошла ошибка при получении отчетов.",
+            reply_markup=chats_menu_markup_dynamic(chat_id)
+        )
 
 async def handle_view_files(chat_id: int, data, app: Client):
     parts = data.split("||")
