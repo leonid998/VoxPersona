@@ -105,12 +105,12 @@ def split_markdown_text(markdown_text, chunk_size=800, chunk_overlap=100):
     )
     return text_splitter.split_text(markdown_text)
 
-def split_and_send_long_text(text: str, chat_id: int, app: Client, chunk_size: int = 4096, parse_mode: str | None = None):
+async def split_and_send_long_text(text: str, chat_id: int, app: Client, chunk_size: int = 4096, parse_mode: str | None = None):
     """
     Для отправки длинных результатов, разбитых на части по 4096 символов.
     """
     for i in range(0, len(text), chunk_size):
-        app.send_message(chat_id, text[i:i+chunk_size], parse_mode=parse_mode)
+        await app.send_message(chat_id, text[i:i+chunk_size], parse_mode=parse_mode)
 
 def clean_text(text: str) -> str:
     """Удаляет ведущие # внутри текста, чтобы не мешали разделению чанков."""
@@ -282,7 +282,7 @@ async def smart_send_text_unified(
         if len(text) <= TELEGRAM_MESSAGE_THRESHOLD:
             # Короткое сообщение - отправляем как обычное сообщение
             try:
-                sent_message = app.send_message(chat_id, text, parse_mode=parse_mode)
+                sent_message = await app.send_message(chat_id, text, parse_mode=parse_mode)
 
                 # Синхронно сохраняем в историю
                 _save_to_history_sync(
@@ -312,7 +312,7 @@ async def smart_send_text_unified(
                 preview_message = f"📄 **Ваш отчет готов!**\n\n{preview}\n\n📎 Полный отчет отправлен файлом."
 
                 try:
-                    app.send_message(chat_id, preview_message, parse_mode=parse_mode)
+                    await app.send_message(chat_id, preview_message, parse_mode=parse_mode)
                 except Exception as e:
                     logging.error(f"Failed to send preview: {e}")
                     # Продолжаем без превью
@@ -330,12 +330,12 @@ async def smart_send_text_unified(
                 if not file_path:
                     logging.error("Failed to save MD report, falling back to split send")
                     # Fallback к обычной отправке
-                    split_and_send_long_text(text, chat_id, app, parse_mode=parse_mode)
+                    await split_and_send_long_text(text, chat_id, app, parse_mode=parse_mode)
                     return True
 
                 # Отправляем файл
                 try:
-                    sent_file_msg = app.send_document(
+                    sent_file_msg = await app.send_document(
                         chat_id,
                         file_path,
                         caption=f"🔍 Результат {search_type} поиска\n📝 Токенов: {count_tokens(text):,}"
@@ -362,25 +362,25 @@ async def smart_send_text_unified(
 
                     # Отправляем сообщение об ошибке
                     try:
-                        app.send_message(chat_id, ERROR_FILE_SEND_FAILED)
+                        await app.send_message(chat_id, ERROR_FILE_SEND_FAILED)
                     except:
                         pass
 
                     # Fallback к обычной отправке
-                    split_and_send_long_text(text, chat_id, app, parse_mode=parse_mode)
+                    await split_and_send_long_text(text, chat_id, app, parse_mode=parse_mode)
                     return True
 
             except Exception as e:
                 logging.error(f"Failed to send as file: {e}")
                 # Fallback к обычной отправке
-                split_and_send_long_text(text, chat_id, app, parse_mode=parse_mode)
+                await split_and_send_long_text(text, chat_id, app, parse_mode=parse_mode)
                 return True
 
     except Exception as e:
         logging.error(f"Smart send unified failed: {e}")
         # Последний fallback
         try:
-            split_and_send_long_text(text, chat_id, app, parse_mode=parse_mode)
+            await split_and_send_long_text(text, chat_id, app, parse_mode=parse_mode)
             return True
         except:
             return False
