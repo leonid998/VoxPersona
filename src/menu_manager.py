@@ -3,14 +3,15 @@
 Решает проблему дублирования меню через правильное управление жизненным циклом.
 
 КЛЮЧЕВОЙ ПРИНЦИП:
-- Старое меню удаляется (кнопки убираются)
+- Старое меню ПОЛНОСТЬЮ удаляется (текст + кнопки)
 - Новое меню ВСЕГДА появляется внизу чата
 - Пользователь НИКОГДА не остается без активного меню
+- Чат НЕ захламляется текстовыми артефактами меню
 """
 
 from pyrogram import Client
-from pyrogram.types import InlineKeyboardMarkup, Message, CallbackQuery
-from pyrogram.errors import MessageNotModified, MessageIdInvalid
+from pyrogram.types import InlineKeyboardMarkup, Message
+from pyrogram.errors import MessageIdInvalid
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,9 +41,11 @@ class MenuManager:
         Основной метод для отправки меню.
 
         Алгоритм:
-        1. Удаляет кнопки у предыдущего меню (если есть)
+        1. ПОЛНОСТЬЮ удаляет предыдущее меню (текст + кнопки)
         2. Отправляет новое меню внизу чата
         3. Запоминает ID нового меню
+
+        Это предотвращает захламление чата текстовыми артефактами.
 
         Args:
             chat_id: ID чата
@@ -53,7 +56,7 @@ class MenuManager:
         Returns:
             Message: Отправленное сообщение с меню
         """
-        # 1. Удаляем кнопки у старого меню
+        # 1. Полностью удаляем старое меню (текст + кнопки)
         await cls._remove_old_menu_buttons(chat_id, app)
 
         # 2. Отправляем новое меню ВНИЗУ чата
@@ -76,7 +79,9 @@ class MenuManager:
     @classmethod
     async def _remove_old_menu_buttons(cls, chat_id: int, app: Client) -> None:
         """
-        Удаляет кнопки у предыдущего меню.
+        Полностью удаляет предыдущее меню (сообщение + кнопки).
+
+        Это предотвращает захламление чата текстовыми артефактами меню.
 
         Args:
             chat_id: ID чата
@@ -89,31 +94,27 @@ class MenuManager:
             return
 
         try:
-            # Удаляем кнопки, оставляя текст сообщения
-            await app.edit_message_reply_markup(
+            # Полностью удаляем старое сообщение (текст + кнопки)
+            await app.delete_messages(
                 chat_id=chat_id,
-                message_id=last_menu_id,
-                reply_markup=None
+                message_ids=last_menu_id
             )
 
             logger.debug(
-                f"Удалены кнопки у сообщения {last_menu_id} "
-                f"в чате {chat_id}"
+                f"Удалено меню (message_id={last_menu_id}) "
+                f"из чата {chat_id}"
             )
 
-        except MessageNotModified:
-            # Кнопки уже удалены - это нормально
-            logger.debug(f"Кнопки уже удалены у сообщения {last_menu_id}")
-
         except MessageIdInvalid:
-            # Сообщение не найдено - возможно удалено
-            logger.warning(
-                f"Сообщение {last_menu_id} не найдено в чате {chat_id}"
+            # Сообщение не найдено - возможно уже удалено
+            logger.debug(
+                f"Сообщение {last_menu_id} не найдено в чате {chat_id} "
+                f"(возможно уже удалено)"
             )
 
         except Exception as e:
             logger.error(
-                f"Ошибка при удалении кнопок у сообщения {last_menu_id}: {e}"
+                f"Ошибка при удалении меню {last_menu_id} из чата {chat_id}: {e}"
             )
 
     @classmethod

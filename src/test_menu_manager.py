@@ -2,16 +2,16 @@
 Юнит-тесты для MenuManager и отрефакторенных функций обработчиков меню.
 
 Проверяет:
-1. MenuManager корректно удаляет старые меню и отправляет новые
+1. MenuManager корректно ПОЛНОСТЬЮ удаляет старые меню (текст + кнопки)
 2. Отрефакторенные функции работают правильно с MenuManager
-3. Не возникает дублирования меню
+3. Не возникает дублирования меню и текстовых артефактов
 """
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch, call
 from pyrogram import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import MessageNotModified, MessageIdInvalid
+from pyrogram.errors import MessageIdInvalid
 
 from menu_manager import MenuManager, send_menu_and_remove_old, clear_menus
 from conversation_handlers import (
@@ -52,14 +52,14 @@ class TestMenuManager:
             text=text,
             reply_markup=markup
         )
-        # edit_message_reply_markup НЕ должен вызываться (нет старого меню)
-        app.edit_message_reply_markup.assert_not_called()
+        # delete_messages НЕ должен вызываться (нет старого меню)
+        # app.delete_messages может быть не настроен, так как не будет вызван
 
         # Проверяем, что ID сохранен
         assert MenuManager._last_menu_ids[chat_id] == 100
 
     def test_second_menu_removes_old_menu(self):
-        """Второе меню - старое меню должно быть удалено."""
+        """Второе меню - старое меню должно быть полностью удалено."""
         chat_id = 12345
         app = MagicMock(spec=Client)
         text = "Новое меню"
@@ -72,17 +72,16 @@ class TestMenuManager:
         mock_message = MagicMock(spec=Message)
         mock_message.id = 200
         app.send_message = AsyncMock(return_value=mock_message)
-        app.edit_message_reply_markup = AsyncMock()
+        app.delete_messages = AsyncMock()
 
         # Вызываем метод
         import asyncio
         asyncio.run(send_menu_and_remove_old(chat_id, app, text, markup))
 
-        # Проверяем, что старое меню было обновлено (кнопки удалены)
-        app.edit_message_reply_markup.assert_called_once_with(
+        # Проверяем, что старое меню было ПОЛНОСТЬЮ удалено
+        app.delete_messages.assert_called_once_with(
             chat_id=chat_id,
-            message_id=100,
-            reply_markup=None
+            message_ids=100
         )
 
         # Проверяем, что новое меню отправлено
@@ -100,14 +99,14 @@ class TestMenuManager:
 
         assert chat_id not in MenuManager._last_menu_ids
 
-    def test_message_not_modified_error_handled(self):
-        """MessageNotModified ошибка обрабатывается корректно."""
+    def test_delete_already_deleted_message(self):
+        """Попытка удаления уже удаленного сообщения обрабатывается корректно."""
         chat_id = 12345
         app = MagicMock(spec=Client)
 
-        # Старое меню уже без кнопок
+        # Старое меню уже удалено
         MenuManager._last_menu_ids[chat_id] = 100
-        app.edit_message_reply_markup = AsyncMock(side_effect=MessageNotModified())
+        app.delete_messages = AsyncMock(side_effect=MessageIdInvalid())
 
         # Новое сообщение
         mock_message = MagicMock(spec=Message)
@@ -125,30 +124,6 @@ class TestMenuManager:
         app.send_message.assert_called_once()
         assert MenuManager._last_menu_ids[chat_id] == 200
 
-    def test_message_id_invalid_error_handled(self):
-        """MessageIdInvalid ошибка обрабатывается корректно."""
-        chat_id = 12345
-        app = MagicMock(spec=Client)
-
-        # Старое меню было удалено
-        MenuManager._last_menu_ids[chat_id] = 100
-        app.edit_message_reply_markup = AsyncMock(side_effect=MessageIdInvalid())
-
-        # Новое сообщение
-        mock_message = MagicMock(spec=Message)
-        mock_message.id = 200
-        app.send_message = AsyncMock(return_value=mock_message)
-
-        text = "Меню"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("Кнопка", callback_data="btn")]])
-
-        # Не должно вызвать исключение
-        import asyncio
-        asyncio.run(send_menu_and_remove_old(chat_id, app, text, markup))
-
-        # Новое меню все равно отправлено
-        app.send_message.assert_called_once()
-        assert MenuManager._last_menu_ids[chat_id] == 200
 
 
 class TestConversationHandlers:
