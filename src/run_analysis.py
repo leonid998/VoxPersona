@@ -217,8 +217,7 @@ async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep
             chat_id=chat_id,
             app=app,
             text="Какую информацию вы хотели бы получить?",
-            reply_markup=make_dialog_markup(),
-            context=conversation_id
+            reply_markup=make_dialog_markup()
         )
 
 async def run_analysis_pass(
