@@ -14,6 +14,7 @@ from datamodels import mapping_report_type_names, mapping_building_names, REPORT
 from menus import send_main_menu
 from markups import interview_menu_markup, design_menu_markup, main_menu_markup, make_dialog_markup
 from menu_manager import send_menu
+from message_tracker import track_and_send
 from analysis import analyze_methodology, classify_query, extract_from_chunk_parallel, aggregate_citations, classify_report_type, generate_db_answer, extract_from_chunk_parallel_async
 from storage import save_user_input_to_db, build_reports_grouped, create_db_in_memory
 
@@ -172,7 +173,13 @@ async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep
             )
 
         if deep_search:
-            await app.send_message(chat_id, "Запущено Глубокое Исследование")
+            # Отправляем системное сообщение-статус через MessageTracker
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="Запущено Глубокое Исследование",
+                message_type="status_message"
+            )
             logging.info("Запущено Глубокое исследование")
 
             # report_type_code = classify_report_type(text, prompt_name=prompt_name)
@@ -181,7 +188,13 @@ async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep
             # logging.info(f"Тип отчета: {report_type}")
             answer = run_deep_search(content, text=text, chat_id=chat_id, app=app, category=category)
         else:
-            await app.send_message(chat_id, "Запущен быстрый поиск")
+            # Отправляем системное сообщение-статус через MessageTracker
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="Запущен быстрый поиск",
+                message_type="status_message"
+            )
             logging.info("Запущен быстрый поиск")
 
             # content = build_reports_grouped(scenario_name=scenario_name, report_type=None)
@@ -236,7 +249,13 @@ async def run_analysis_pass(
     Один «проход» анализа: крутит спиннер, вызывает analyze_methodology,
     возвращает (и сразу отправляет) результат пользователю.
     """
-    msg_ = app.send_message(chat_id, f"⏳ Анализ: {label}...")
+    # Отправляем системное сообщение-статус через MessageTracker
+    msg_ = await track_and_send(
+        chat_id=chat_id,
+        app=app,
+        text=f"⏳ Анализ: {label}...",
+        message_type="status_message"
+    )
     st_ev = threading.Event()
     sp_th = threading.Thread(target=run_loading_animation, args=(chat_id, msg_.id, st_ev, app))
     sp_th.start()

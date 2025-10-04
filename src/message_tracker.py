@@ -17,12 +17,14 @@ MessageTracker автоматически:
 - menu: Обычное меню с кнопками
 - input_request: Запрос ввода текста от пользователя (например, "Введите название чата")
 - confirmation: Подтверждающий диалог (например, "Удалить чат?")
+- status_message: Системное сообщение о процессе (например, "⏳ Думаю...", "Запущен поиск")
 - info_message: Информационное сообщение без кнопок (автоматически НЕ очищается)
 
 АВТОМАТИЧЕСКАЯ ОЧИСТКА:
-- Новое меню → очищает все предыдущие меню + input_request + confirmation
-- Новый input_request → очищает предыдущие input_request
+- Новое меню → очищает все предыдущие меню + input_request + confirmation + status_message
+- Новый input_request → очищает предыдущие input_request + status_message
 - Новый confirmation → очищает предыдущие confirmation
+- Новый status_message → очищает предыдущие status_message
 - Смена контекста (новый чат) → очищает ВСЁ
 
 ИСПОЛЬЗОВАНИЕ:
@@ -61,7 +63,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # Типы отслеживаемых сообщений
-MessageType = Literal["menu", "input_request", "confirmation", "info_message"]
+MessageType = Literal["menu", "input_request", "confirmation", "info_message", "status_message"]
 
 
 @dataclass
@@ -89,6 +91,7 @@ class MessageTracker:
     - Меню (menu)
     - Запросы ввода (input_request)
     - Подтверждения (confirmation)
+    - Системные статусы (status_message)
     - Информационные сообщения (info_message)
 
     Автоматически очищает устаревшие элементы при появлении новых.
@@ -166,9 +169,10 @@ class MessageTracker:
         Очищает устаревшие элементы в зависимости от типа нового сообщения.
 
         Правила очистки:
-        - menu → очистить ВСЁ (menu + input_request + confirmation)
-        - input_request → очистить предыдущие input_request + confirmation
+        - menu → очистить ВСЁ (menu + input_request + confirmation + status_message)
+        - input_request → очистить предыдущие input_request + status_message
         - confirmation → очистить предыдущие confirmation
+        - status_message → очистить предыдущие status_message
         - info_message → НЕ очищать ничего (информационное сообщение)
 
         Args:
@@ -186,15 +190,19 @@ class MessageTracker:
 
         if new_message_type == "menu":
             # Новое меню → удалить ВСЁ кроме info_message
-            types_to_delete = ["menu", "input_request", "confirmation"]
+            types_to_delete = ["menu", "input_request", "confirmation", "status_message"]
 
         elif new_message_type == "input_request":
-            # Новый запрос ввода → удалить старые запросы и подтверждения
-            types_to_delete = ["input_request", "confirmation"]
+            # Новый запрос ввода → удалить старые запросы, подтверждения и статусы
+            types_to_delete = ["input_request", "confirmation", "status_message"]
 
         elif new_message_type == "confirmation":
             # Новое подтверждение → удалить старые подтверждения
             types_to_delete = ["confirmation"]
+
+        elif new_message_type == "status_message":
+            # Новый статус → удалить старые статусы
+            types_to_delete = ["status_message"]
 
         elif new_message_type == "info_message":
             # Информационное сообщение → НЕ удалять ничего

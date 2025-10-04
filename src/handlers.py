@@ -406,7 +406,13 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
 
     if st.get("step") == "dialog_mode":
         deep = st.get("deep_search", False)
-        msg = await app.send_message(c_id, "⏳ Думаю...")
+        # Отправляем системное сообщение-статус через MessageTracker
+        msg = await track_and_send(
+            chat_id=c_id,
+            app=app,
+            text="⏳ Думаю...",
+            message_type="status_message"
+        )
         st_ev = threading.Event()
         sp_th = threading.Thread(target=run_loading_animation, args=(c_id, msg.id, st_ev, app))
         sp_th.start()
@@ -603,8 +609,14 @@ async def handle_view_files(chat_id: int, data, app: Client):
     cat = parts[1]
     await send_menu(chat_id, app, f"Файлы в '{cat}':", files_menu_markup(cat))
 
-def process_selected_file(chat_id: int, category: str, filename: str, app: Client):
-    msg = app.send_message(chat_id, "⏳ Обрабатываю файл...")
+async def process_selected_file(chat_id: int, category: str, filename: str, app: Client):
+    # Отправляем системное сообщение-статус через MessageTracker
+    msg = await track_and_send(
+        chat_id=chat_id,
+        app=app,
+        text="⏳ Обрабатываю файл...",
+        message_type="status_message"
+    )
     stop_event = threading.Event()
     spinner_thread = threading.Thread(target=run_loading_animation, args=(chat_id, msg.id, stop_event, app))
     spinner_thread.start()
@@ -618,7 +630,7 @@ def process_selected_file(chat_id: int, category: str, filename: str, app: Clien
     finally:
         stop_event.set()
         spinner_thread.join()
-        app.delete_messages(chat_id, msg.id)
+        await app.delete_messages(chat_id, msg.id)
 
     # app.send_message(chat_id, "Что анализируем дальше?", reply_markup=interview_or_design_menu())
     # send_main_menu(chat_id, app)
@@ -642,7 +654,7 @@ async def handle_file_selection(chat_id: int, data: str, app: Client):
     if not check_file_detection(real_name, chat_id, app):
         logging.error(f"Файл {real_name} не найден")
         raise ValueError(f"Файл {real_name} не найден")
-    process_selected_file(chat_id, category, real_name, app)
+    await process_selected_file(chat_id, category, real_name, app)
 
 async def handle_file_deletion(chat_id: int, data: str, app: Client):
     parts = preprocess_parts(data)
