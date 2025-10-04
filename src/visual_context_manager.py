@@ -79,18 +79,20 @@ class VisualContextManager:
 
         for msg_id in message_ids:
             try:
+                logger.debug(f"Attempting to minimize message {msg_id} in chat {chat_id}")
                 await app.edit_message_text(
                     chat_id=chat_id,
                     message_id=msg_id,
-                    text="·"
+                    text="·",
+                    reply_markup=None  # Явно удаляем InlineKeyboardMarkup
                 )
                 minimized_count += 1
-                logger.debug(f"Minimized message {msg_id} in chat {chat_id}")
+                logger.debug(f"Successfully minimized message {msg_id} in chat {chat_id}")
 
             except MessageIdInvalid:
                 logger.debug(f"Message {msg_id} not found (already deleted?)")
             except Exception as e:
-                logger.warning(f"Failed to minimize message {msg_id}: {e}")
+                logger.warning(f"Failed to minimize message {msg_id}: {type(e).__name__}: {e}")
 
         # Очищаем список после минимизации
         if chat_id in cls._tracked_messages and context in cls._tracked_messages[chat_id]:
