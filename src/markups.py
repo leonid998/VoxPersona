@@ -51,7 +51,8 @@ def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_num
     # Целевая длина кнопки названия: 24 символа (включая эмодзи, номер, пробелы)
     # Формат: "📝 1. Название..." = 2 (эмодзи+пробел) + 2-3 (номер) + 2 (". ") + текст
 
-    if chat_number:
+    # Показываем номер если он больше 0 (старые чаты с chat_number=0 показываются без номера)
+    if chat_number and chat_number > 0:
         # "📝 1. " занимает ~6 символов, остается 18 для названия
         prefix_length = len(f"{emoji} {chat_number}. ")
         name_max_length = 24 - prefix_length
@@ -64,7 +65,7 @@ def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_num
     if len(name) > name_max_length:
         name = name[:name_max_length - 3] + "..."
 
-    display_name = f"{chat_number}. {name}" if chat_number else name
+    display_name = f"{chat_number}. {name}" if (chat_number and chat_number > 0) else name
 
     # Кнопки фиксированной длины для точных пропорций 25%/25%
     # Каждая кнопка ~12 символов
