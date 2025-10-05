@@ -7,7 +7,6 @@ from pyrogram.types import Message
 from pyrogram.enums import ParseMode
 from io import StringIO
 from typing import Optional
-from functools import wraps
 from langchain.embeddings.base import Embeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import logging
@@ -29,38 +28,6 @@ except ImportError:
 def has_sentence_transformers() -> bool:
     """Проверяет доступность библиотеки sentence_transformers."""
     return _sentence_transformers_available
-
-
-
-def retry_on_failure(max_attempts=3, backoff_factor=2):
-    """Декоратор для retry с exponential backoff."""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    result = func(*args, **kwargs)
-                    if result:
-                        if attempt > 1:
-                            logging.info(f"Success on attempt {attempt}/{max_attempts}")
-                        return True
-                    
-                    if attempt < max_attempts:
-                        wait_time = backoff_factor ** (attempt - 1)
-                        logging.warning(f"Retry {attempt}/{max_attempts} after {wait_time}s")
-                        time.sleep(wait_time)
-                    else:
-                        logging.error(f"Failed after {max_attempts} attempts")
-                        
-                except Exception as e:
-                    logging.error(f"Attempt {attempt} failed: {e}")
-                    if attempt < max_attempts:
-                        wait_time = backoff_factor ** (attempt - 1)
-                        time.sleep(wait_time)
-            
-            return False
-        return wrapper
-    return decorator
 
 
 def get_embedding_model():
@@ -244,13 +211,8 @@ def _save_to_conversation(
     sent_as: Optional[str] = None,
     file_path: Optional[str] = None,
     search_type: Optional[str] = None
-) -> bool:
-    """
-    Сохраняет сообщение в мультичат с правильным return value.
-
-    Returns:
-        bool: True если сохранение успешно, False в противном случае
-    """
+) -> None:
+    """Сохраняет сообщение в мультичат."""
     try:
         from conversation_manager import conversation_manager
         from conversations import ConversationMessage
@@ -275,49 +237,10 @@ def _save_to_conversation(
         )
 
         if not success:
-            logging.error(
-                f"Failed to save conversation: user_id={user_id}, "
-                f"conversation_id={conversation_id}, message_id={message_id}"
-            )
-            return False
-
-        logging.info(
-            f"Saved to conversation: {conversation_id} "
-            f"(user_id={user_id}, message_id={message_id})"
-        )
-        return True
+            logging.error(f"Failed to save message to conversation: user_id={user_id}, conversation_id={conversation_id}")
 
     except Exception as e:
-        logging.error(
-            f"Exception saving conversation: user_id={user_id}, "
-            f"conversation_id={conversation_id}, error={str(e)}"
-        )
-        return False
-
-
-
-@retry_on_failure(max_attempts=3, backoff_factor=2)
-def _save_to_conversation_with_retry(
-    user_id: int,
-    conversation_id: str,
-    message_id: int,
-    message_type: str,
-    text: str,
-    sent_as: Optional[str] = None,
-    file_path: Optional[str] = None,
-    search_type: Optional[str] = None
-) -> bool:
-    """Обертка с retry для _save_to_conversation."""
-    return _save_to_conversation(
-        user_id=user_id,
-        conversation_id=conversation_id,
-        message_id=message_id,
-        message_type=message_type,
-        text=text,
-        sent_as=sent_as,
-        file_path=file_path,
-        search_type=search_type
-    )
+        logging.error(f"Error saving to conversation: {e}")
 
 
 async def smart_send_text_unified(
@@ -367,23 +290,13 @@ async def smart_send_text_unified(
                     sent_as="message", search_type=search_type
                 )
 
-                # Async сохранение в conversations с retry (если передан conversation_id)
+                # Async сохранение в conversations (если передан conversation_id)
                 if conversation_id:
-                    success = await asyncio.to_thread(
-                        _save_to_conversation_with_retry,
+                    await asyncio.to_thread(
+                        _save_to_conversation,
                         chat_id, conversation_id, sent_message.id, "bot_answer", text,
                         sent_as="message", search_type=search_type
                     )
-                    
-                    if not success:
-                        logging.error(f"CRITICAL: Failed to save conversation: {conversation_id}")
-                        try:
-                            await app.send_message(
-                                chat_id,
-                                "Не удалось сохранить ответ в историю мультичата. Попробуйте позже."
-                            )
-                        except Exception as notify_error:
-                            logging.error(f"Failed to send error notification: {notify_error}")
 
                 logging.info(f"Message sent to {chat_id}, length: {len(text)} chars")
                 return True
@@ -435,23 +348,13 @@ async def smart_send_text_unified(
                         sent_as="file", file_path=file_path, search_type=search_type
                     )
 
-                    # Async сохранение в conversations с retry (если передан conversation_id)
+                    # Async сохранение в conversations (если передан conversation_id)
                     if conversation_id:
-                        success = await asyncio.to_thread(
-                            _save_to_conversation_with_retry,
+                        await asyncio.to_thread(
+                            _save_to_conversation,
                             chat_id, conversation_id, sent_file_msg.id, "bot_answer", text,
                             sent_as="file", file_path=file_path, search_type=search_type
                         )
-                        
-                        if not success:
-                            logging.error(f"CRITICAL: Failed to save conversation: {conversation_id}")
-                            try:
-                                await app.send_message(
-                                    chat_id,
-                                    "Не удалось сохранить ответ в историю мультичата. Попробуйте позже."
-                                )
-                            except Exception as notify_error:
-                                logging.error(f"Failed to send error notification: {notify_error}")
 
                     logging.info(f"File sent to {chat_id}, path: {file_path}")
                     return True

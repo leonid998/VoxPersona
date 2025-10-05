@@ -1,16 +1,15 @@
 """
 Модели данных для системы мультичатов в Telegram боте.
 Принцип KISS - максимальная простота.
-
-Миграция с dataclass на Pydantic BaseModel для валидации данных.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from dataclasses import dataclass
 from typing import List, Optional
 from datetime import datetime
 
 
-class ConversationMessage(BaseModel):
+@dataclass
+class ConversationMessage:
     """
     Модель одного сообщения в чате.
 
@@ -24,30 +23,18 @@ class ConversationMessage(BaseModel):
         file_path: Путь к файлу если sent_as="file"
         search_type: Тип поиска - "fast" или "deep"
     """
-    timestamp: str = Field(..., description="ISO timestamp сообщения")
-    message_id: int = Field(..., gt=0, description="Telegram message ID")
-    type: str = Field(..., pattern="^(user_question|bot_answer)$", description="Тип сообщения")
-    text: str = Field(..., min_length=1, description="Текст сообщения")
-    tokens: int = Field(..., ge=0, description="Количество токенов")
-    sent_as: Optional[str] = Field(None, pattern="^(message|file)$", description="Способ отправки")
-    file_path: Optional[str] = Field(None, description="Путь к файлу")
-    search_type: Optional[str] = Field(None, pattern="^(fast|deep)$", description="Тип поиска")
-
-    @field_validator('timestamp')
-    @classmethod
-    def validate_timestamp(cls, v: str) -> str:
-        """Валидирует ISO timestamp формат."""
-        try:
-            datetime.fromisoformat(v)
-            return v
-        except ValueError:
-            raise ValueError('Invalid ISO timestamp format')
-
-    class Config:
-        extra = 'ignore'
+    timestamp: str
+    message_id: int
+    type: str
+    text: str
+    tokens: int
+    sent_as: Optional[str] = None
+    file_path: Optional[str] = None
+    search_type: Optional[str] = None
 
 
-class ConversationMetadata(BaseModel):
+@dataclass
+class ConversationMetadata:
     """
     Метаданные чата.
 
@@ -63,40 +50,20 @@ class ConversationMetadata(BaseModel):
         total_tokens: Сумма токенов всех сообщений
         chat_number: Уникальный постоянный номер чата (не пересчитывается при удалении других чатов)
     """
-    conversation_id: str = Field(..., description="UUID чата")
-    user_id: int = Field(..., gt=0, description="Telegram user ID")
-    username: str = Field(..., min_length=1, description="Telegram username")
-    title: str = Field(..., min_length=1, max_length=50, description="Название чата")
-    created_at: str = Field(..., description="ISO timestamp создания")
-    updated_at: str = Field(..., description="ISO timestamp обновления")
-    is_active: bool = Field(..., description="Активный чат или нет")
-    message_count: int = Field(..., ge=0, description="Количество сообщений")
-    total_tokens: int = Field(..., ge=0, description="Сумма токенов")
-    chat_number: int = Field(default=0, ge=0, description="Постоянный номер чата")
-
-    @field_validator('created_at', 'updated_at')
-    @classmethod
-    def validate_timestamps(cls, v: str) -> str:
-        """Валидирует ISO timestamp формат для дат."""
-        try:
-            datetime.fromisoformat(v)
-            return v
-        except ValueError:
-            raise ValueError('Invalid ISO timestamp format')
-
-    @field_validator('conversation_id')
-    @classmethod
-    def validate_conversation_id(cls, v: str) -> str:
-        """Валидирует формат UUID."""
-        if len(v) != 36:
-            raise ValueError('conversation_id must be a valid UUID')
-        return v
-
-    class Config:
-        extra = 'ignore'
+    conversation_id: str
+    user_id: int
+    username: str
+    title: str
+    created_at: str
+    updated_at: str
+    is_active: bool
+    message_count: int
+    total_tokens: int
+    chat_number: int = 0  # По умолчанию 0 для обратной совместимости со старыми чатами
 
 
-class Conversation(BaseModel):
+@dataclass
+class Conversation:
     """
     Полная структура чата.
 
@@ -104,11 +71,8 @@ class Conversation(BaseModel):
         metadata: Метаданные чата
         messages: Список всех сообщений в чате
     """
-    metadata: ConversationMetadata = Field(..., description="Метаданные чата")
-    messages: List[ConversationMessage] = Field(default_factory=list, description="Список сообщений")
-
-    class Config:
-        extra = 'ignore'
+    metadata: ConversationMetadata
+    messages: List[ConversationMessage]
 
 
 def generate_chat_name(text: str, max_length: int = 30) -> str:

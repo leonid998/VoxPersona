@@ -26,7 +26,7 @@ from conversations import (
     generate_chat_name
 )
 from conversation_manager import ConversationManager
-from utils import _save_to_conversation_sync
+from utils import _save_to_conversation
 
 
 # ============================================================
@@ -84,8 +84,9 @@ class TestConversationMetadata:
     def test_create_metadata(self):
         """Создание метаданных чата."""
         now = datetime.now().isoformat()
+        test_uuid = str(uuid.uuid4())
         metadata = ConversationMetadata(
-            conversation_id="test-uuid-123",
+            conversation_id=test_uuid,
             user_id=12345,
             username="test_user",
             title="Тестовый чат",
@@ -97,7 +98,7 @@ class TestConversationMetadata:
             chat_number=1
         )
 
-        assert metadata.conversation_id == "test-uuid-123"
+        assert metadata.conversation_id == test_uuid
         assert metadata.user_id == 12345
         assert metadata.username == "test_user"
         assert metadata.title == "Тестовый чат"
@@ -318,7 +319,7 @@ class TestConversationManager:
         for i in range(5):
             message = ConversationMessage(
                 timestamp=datetime.now().isoformat(),
-                message_id=i,
+                message_id=i + 1,  # message_id должен быть > 0
                 type="user_question",
                 text=f"Сообщение {i}",
                 tokens=5
@@ -352,7 +353,7 @@ class TestConversationManager:
 # ============================================================
 
 class TestSaveToConversationSync:
-    """Тесты для _save_to_conversation_sync."""
+    """Тесты для _save_to_conversation."""
 
     @patch('conversation_manager.conversation_manager')
     @patch('utils.count_tokens')
@@ -361,7 +362,7 @@ class TestSaveToConversationSync:
         mock_count_tokens.return_value = 100
         mock_conv_manager.add_message.return_value = True
 
-        _save_to_conversation_sync(
+        _save_to_conversation(
             user_id=12345,
             conversation_id="test-uuid",
             message_id=999,
@@ -390,7 +391,7 @@ class TestSaveToConversationSync:
         mock_conv_manager.add_message.side_effect = Exception("Test error")
 
         # Не должно падать
-        _save_to_conversation_sync(
+        _save_to_conversation(
             user_id=12345,
             conversation_id="test-uuid",
             message_id=999,

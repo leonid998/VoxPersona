@@ -118,7 +118,11 @@ def run_deep_search(content: str, text: str, chat_id: int, app: Client, category
 
     return aggregated_answer
 
-async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None):
+async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None):
+    # Извлекаем данные из message
+    text = message.text
+    chat_id = message.chat.id
+
     try:
         category = classify_query(text)
         logging.info(f"Сценарий: {category}")
@@ -157,7 +161,7 @@ async def run_dialog_mode(text: str, chat_id: int, app: Client, rags: dict, deep
 
             user_message = ConversationMessage(
                 timestamp=datetime.now().isoformat(),
-                message_id=0,  # Временный ID для пользовательского сообщения
+                message_id=message.id,  # Используем реальный Telegram message ID
                 type="user_question",
                 text=text,
                 tokens=0,  # Токены вопроса не считаем

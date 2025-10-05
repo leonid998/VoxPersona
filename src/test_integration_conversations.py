@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 from conversations import ConversationMessage
 from conversation_manager import ConversationManager
-from utils import _save_to_conversation_sync
+from utils import _save_to_conversation
 
 
 class TestFullWorkflow:
@@ -62,7 +62,7 @@ class TestFullWorkflow:
         for i in range(3):
             msg = ConversationMessage(
                 timestamp=datetime.now().isoformat(),
-                message_id=i,
+                message_id=i + 1,  # message_id должен быть > 0
                 type="user_question" if i % 2 == 0 else "bot_answer",
                 text=f"Сообщение {i}",
                 tokens=10
@@ -173,7 +173,7 @@ class TestFullWorkflow:
         for i in range(5):
             msg = ConversationMessage(
                 timestamp=datetime.now().isoformat(),
-                message_id=i,
+                message_id=i + 1,  # message_id должен быть > 0
                 type="user_question",
                 text=f"Msg {i}",
                 tokens=5
@@ -238,7 +238,7 @@ class TestFullWorkflow:
         for i in range(10):
             msg = ConversationMessage(
                 timestamp=datetime.now().isoformat(),
-                message_id=i,
+                message_id=i + 1,  # message_id должен быть > 0
                 type="user_question" if i % 2 == 0 else "bot_answer",
                 text=f"Message {i}",
                 tokens=10 + i
@@ -252,7 +252,7 @@ class TestFullWorkflow:
 
         for i, msg in enumerate(conv.messages):
             assert msg.text == f"Message {i}"
-            assert msg.message_id == i
+            assert msg.message_id == i + 1  # После исправления message_id=i+1
 
         # Проверяем счетчики
         assert conv.metadata.message_count == 10
@@ -276,9 +276,9 @@ class TestUtilsIntegration:
         return ConversationManager(temp_dir)
 
     @patch('utils.count_tokens')
-    def test_save_to_conversation_sync_integration(self, mock_count_tokens, manager):
+    def test_save_to_conversation_integration(self, mock_count_tokens, manager):
         """
-        Интеграционный тест _save_to_conversation_sync:
+        Интеграционный тест _save_to_conversation:
         - Создаем реальный чат
         - Сохраняем сообщение через utils
         - Проверяем, что оно попало в conversation_manager
@@ -294,7 +294,7 @@ class TestUtilsIntegration:
         # Подменяем глобальный conversation_manager на уровне модуля conversation_manager
         with patch('conversation_manager.conversation_manager', manager):
             # Сохраняем через utils
-            _save_to_conversation_sync(
+            _save_to_conversation(
                 user_id=user_id,
                 conversation_id=conv_id,
                 message_id=999,

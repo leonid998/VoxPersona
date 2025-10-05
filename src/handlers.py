@@ -421,9 +421,8 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
                 await app.send_message(c_id, "🔄 База знаний ещё загружается, попробуйте позже.")
             else:
                 await run_dialog_mode(
-                    chat_id=c_id,
+                    message=message,
                     app=app,
-                    text=text_,
                     deep_search=deep,
                     rags=rags,
                     conversation_id=conversation_id

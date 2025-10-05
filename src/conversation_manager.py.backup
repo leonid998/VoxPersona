@@ -335,7 +335,7 @@ class ConversationManager:
 
     def delete_conversation(self, user_id: int, conversation_id: str) -> bool:
         """
-        Удаляет чат и все связанные MD файлы.
+        Удаляет чат.
 
         Args:
             user_id: ID пользователя
@@ -348,48 +348,23 @@ class ConversationManager:
         conversation_file = user_dir / f"{conversation_id}.json"
 
         try:
-            # 1. СНАЧАЛА загружаем чат чтобы получить file_path для MD файлов
-            conversation = self.load_conversation(user_id, conversation_id)
-
-            md_files_deleted = 0
-            if conversation:
-                # 2. Собираем все MD файлы из сообщений
-                md_files_to_delete = [
-                    msg.file_path
-                    for msg in conversation.messages
-                    if msg.file_path and msg.sent_as == "file"
-                ]
-
-                # 3. Удаляем MD файлы
-                for file_path in md_files_to_delete:
-                    try:
-                        full_path = Path(file_path)
-                        if full_path.exists():
-                            full_path.unlink()
-                            md_files_deleted += 1
-                            logger.info(f"Deleted MD file: {file_path}")
-                    except Exception as e:
-                        logger.warning(f"Failed to delete MD file {file_path}: {e}")
-
-                if md_files_deleted > 0:
-                    logger.info(f"Deleted {md_files_deleted} MD files for conversation {conversation_id}")
-
-            # 4. Удаляем файл чата
+            # 1. Удаляем файл чата
             if conversation_file.exists():
                 conversation_file.unlink()
 
-            # 5. Удаляем из index.json
+            # 2. Удаляем из index.json
             index_data = self.load_index(user_id)
             index_data["conversations"] = [
                 c for c in index_data["conversations"]
                 if c["conversation_id"] != conversation_id
             ]
 
-            # 6. Если это был активный чат - находим другой или создаем новый
+            # 3. Если это был активный чат - находим другой или создаем новый
             if index_data["last_active_conversation_id"] == conversation_id:
                 if index_data["conversations"]:
                     # Берем первый доступный чат
-                    index_data["last_active_conversation_id"] =                         index_data["conversations"][0]["conversation_id"]
+                    index_data["last_active_conversation_id"] = \
+                        index_data["conversations"][0]["conversation_id"]
                     index_data["conversations"][0]["is_active"] = True
                     # Сохраняем индекс только если есть другие чаты
                     self.save_index(user_id, index_data)

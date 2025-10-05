@@ -166,7 +166,7 @@ class MDStorageManager:
             logging.error(f"Failed to update reports index: {e}")
             return False
 
-    def get_user_reports(self, user_id: int, limit: int = 10) -> List[ReportMetadata]:
+    def get_user_reports(self, user_id: int, limit: Optional[int] = 10) -> List[ReportMetadata]:
         """Возвращает отчеты пользователя, отсортированные по дате (новые сначала)."""
         try:
             all_reports = self.load_reports_index()
@@ -175,7 +175,7 @@ class MDStorageManager:
             # Сортируем по времени создания (новые сначала)
             user_reports.sort(key=lambda x: x.timestamp, reverse=True)
             
-            return user_reports[:limit]
+            return user_reports if limit is None else user_reports[:limit]
         except Exception as e:
             logging.error(f"Failed to get user reports: {e}")
             return []
@@ -320,6 +320,101 @@ class MDStorageManager:
         except Exception as e:
             logging.error(f"Failed to validate integrity: {e}")
             return {"error": str(e)}
+
+
+
+    def find_orphaned_reports(self, user_id: int) -> List[str]:
+        """
+        Находит MD отчеты не связанные ни с одним чатом.
+        
+        Args:
+            user_id: ID пользователя
+            
+        Returns:
+            Список путей к осиротевшим MD файлам
+        """
+        from conversation_manager import conversation_manager
+        
+        # Получаем все MD файлы пользователя
+        all_reports = self.get_user_reports(user_id, limit=None)
+        
+        # Получаем все чаты пользователя
+        conversations = conversation_manager.list_conversations(user_id)
+        
+        # Собираем все file_path из всех чатов
+        linked_files = set()
+        for conv_meta in conversations:
+            conv = conversation_manager.load_conversation(user_id, conv_meta.conversation_id)
+            if conv:
+                for msg in conv.messages:
+                    if msg.file_path:
+                        linked_files.add(msg.file_path)
+        
+        # Находим осиротевшие
+        orphaned = [
+            report.file_path
+            for report in all_reports
+            if report.file_path not in linked_files
+        ]
+        
+        return orphaned
+
+    def cleanup_orphaned_reports(self, user_id: int) -> int:
+        """
+        Удаляет осиротевшие MD отчеты.
+        
+        Args:
+            user_id: ID пользователя
+            
+        Returns:
+            Количество удаленных файлов
+        """
+        orphaned = self.find_orphaned_reports(user_id)
+        deleted_count = 0
+        
+        for file_path in orphaned:
+            try:
+                full_path = self.get_report_file_path(file_path)
+                if full_path and full_path.exists():
+                    full_path.unlink()
+                    deleted_count += 1
+                    logging.info(f"Cleaned up orphaned MD file: {file_path}")
+            except Exception as e:
+                logging.warning(f"Failed to delete orphaned file {file_path}: {e}")
+        
+        # Обновляем index.json - удаляем записи об удаленных файлах
+        if deleted_count > 0:
+            self._remove_from_index(orphaned)
+        
+        logging.info(f"Cleaned up {deleted_count} orphaned reports for user {user_id}")
+        return deleted_count
+
+    def _remove_from_index(self, file_paths: List[str]):
+        """Удаляет записи об удаленных файлах из index.json."""
+        try:
+            index_file = self.reports_dir / INDEX_FILE_NAME
+            if not index_file.exists():
+                return
+            
+            with open(index_file, 'r', encoding='utf-8') as f:
+                reports = json.load(f)
+            
+            # Фильтруем удаленные файлы
+            file_paths_set = set(file_paths)
+            updated_reports = [
+                report for report in reports
+                if report.get('file_path') not in file_paths_set
+            ]
+            
+            # Сохраняем обновленный индекс
+            with open(index_file, 'w', encoding='utf-8') as f:
+                json.dump(updated_reports, f, ensure_ascii=False, indent=2)
+            
+            logging.info(f"Removed {len(reports) - len(updated_reports)} entries from MD index")
+            
+        except Exception as e:
+            logging.error(f"Failed to update MD index: {e}")
+
 
 
 # Создаем глобальный экземпляр менеджера
