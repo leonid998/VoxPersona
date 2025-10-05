@@ -19,7 +19,7 @@ from config import (
 )
 from utils import run_loading_animation, openai_audio_filter, get_username_from_chat
 from constants import COMMAND_HISTORY, COMMAND_STATS, COMMAND_REPORTS
-from chat_history import chat_history_manager
+from conversation_manager import conversation_manager
 from md_storage import md_storage_manager
 from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, check_authorized, validate_building_type
 from parser import parse_message_text, parse_building_type, parse_zone, parse_file_number, parse_place_name, parse_city, parse_name
@@ -232,9 +232,33 @@ async def handle_history_command(message: Message, app: Client) -> None:
                 )
                 return
 
-        # Получаем и отправляем историю
-        history_text = chat_history_manager.format_day_history_for_display(chat_id, target_date)
-        app.send_message(chat_id, history_text, )
+        # Получаем активный чат и показываем его историю
+        active_conversation_id = conversation_manager.get_active_conversation_id(chat_id)
+        if not active_conversation_id:
+            app.send_message(chat_id, "📭 У вас еще нет активных чатов.")
+            return
+
+        # Получаем последние 20 сообщений
+        messages = conversation_manager.get_messages(chat_id, active_conversation_id, limit=20)
+        if not messages:
+            app.send_message(chat_id, "📭 В этом чате еще нет сообщений.")
+            return
+
+        # Форматируем историю для отображения
+        conversation = conversation_manager.load_conversation(chat_id, active_conversation_id)
+        result = f"📜 История чата \"{conversation.metadata.title}\"\n\n"
+
+        for msg in messages:
+            timestamp = msg.timestamp[:16].replace('T', ' ')  # 2025-10-05 12:30
+            role = "👤 Вы" if msg.type == "user_question" else "🤖 Ассистент"
+            preview = msg.text[:100] + "..." if len(msg.text) > 100 else msg.text
+            file_marker = " 📎" if msg.sent_as == "file" else ""
+            result += f"**{role}** ({timestamp}){file_marker}\n{preview}\n\n"
+
+        result += f"📊 Всего сообщений: {conversation.metadata.message_count}\n"
+        result += f"📝 Токенов: {conversation.metadata.total_tokens:,}"
+
+        app.send_message(chat_id, result, )
 
     except Exception as e:
         logging.error(f"Error handling history command: {e}")
@@ -246,7 +270,7 @@ async def handle_stats_command(message: Message, app: Client) -> None:
     chat_id = message.chat.id
 
     try:
-        stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
+        stats_text = conversation_manager.format_user_stats_for_display(chat_id)
         await app.send_message(chat_id, stats_text, )
 
     except Exception as e:
@@ -538,7 +562,7 @@ async def handle_main_menu(chat_id: int, app: Client):
 async def handle_show_stats(chat_id: int, app: Client):
     """Показывает статистику чатов"""
     try:
-        stats_text = chat_history_manager.format_user_stats_for_display(chat_id)
+        stats_text = conversation_manager.format_user_stats_for_display(chat_id)
 
         # Показываем статистику с меню чатов внизу
         await send_menu(

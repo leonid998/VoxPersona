@@ -143,16 +143,6 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
         # Получаем username
         username = await get_username_from_chat(chat_id, app)
 
-        # Сохраняем вопрос пользователя в историю ПЕРЕД поиском
-        from chat_history import chat_history_manager
-        chat_history_manager.save_message_to_history(
-            user_id=chat_id,
-            username=username,
-            message_id=0,  # Временный ID для пользовательского сообщения
-            message_type="user_question",
-            text=text
-        )
-
         # Сохраняем вопрос пользователя в conversations (если передан conversation_id)
         if conversation_id:
             from conversation_manager import conversation_manager

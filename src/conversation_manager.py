@@ -568,6 +568,103 @@ class ConversationManager:
         return conversation.messages[-limit:] if len(conversation.messages) > limit \
             else conversation.messages
 
+    # ========== Статистические функции ==========
+
+    def get_user_stats(self, user_id: int, days_back: int = 30) -> dict:
+        """
+        Возвращает агрегированную статистику пользователя.
+
+        Args:
+            user_id: ID пользователя
+            days_back: Количество дней для анализа (не используется, сохранен для совместимости)
+
+        Returns:
+            dict: Словарь со статистикой
+        """
+        stats = {
+            "total_questions": 0,
+            "total_answers": 0,
+            "fast_searches": 0,
+            "deep_searches": 0,
+            "total_tokens": 0,
+            "files_sent": 0,
+            "conversations_count": 0,
+            "total_messages": 0
+        }
+
+        # Получаем все чаты пользователя
+        conversations = self.list_conversations(user_id)
+        stats["conversations_count"] = len(conversations)
+
+        if not conversations:
+            return stats
+
+        # Фильтруем по дате если нужно (опционально)
+        from datetime import datetime, timedelta
+        cutoff_date = (datetime.now() - timedelta(days=days_back)).isoformat()
+
+        # Загружаем каждый чат и считаем статистику
+        for conv_metadata in conversations:
+            conversation = self.load_conversation(user_id, conv_metadata.conversation_id)
+            if not conversation:
+                continue
+
+            for message in conversation.messages:
+                # Проверяем дату сообщения (опционально)
+                if message.timestamp < cutoff_date:
+                    continue
+
+                stats["total_messages"] += 1
+                stats["total_tokens"] += message.tokens
+
+                if message.type == "user_question":
+                    stats["total_questions"] += 1
+                elif message.type == "bot_answer":
+                    stats["total_answers"] += 1
+
+                    if message.sent_as == "file":
+                        stats["files_sent"] += 1
+
+                    if message.search_type == "fast":
+                        stats["fast_searches"] += 1
+                    elif message.search_type == "deep":
+                        stats["deep_searches"] += 1
+
+        return stats
+
+    def format_user_stats_for_display(self, user_id: int) -> str:
+        """
+        Форматирует статистику пользователя для отображения.
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            str: Отформатированная строка со статистикой
+        """
+        stats = self.get_user_stats(user_id)
+
+        result = "📈 **Ваша статистика (за 30 дней):**\n\n"
+        result += f"💬 Всего чатов: {stats['conversations_count']}\n"
+        result += f"📝 Всего сообщений: {stats['total_messages']:,}\n"
+        result += f"🤔 Всего вопросов: {stats['total_questions']:,}\n"
+        result += f"🤖 Всего ответов: {stats['total_answers']:,}\n"
+        result += f"⚡ Быстрых поисков: {stats['fast_searches']:,}\n"
+        result += f"🔍 Глубоких поисков: {stats['deep_searches']:,}\n"
+        result += f"📝 Всего токенов: {stats['total_tokens']:,}\n"
+        result += f"📎 Сохраненных файлов: {stats['files_sent']:,}\n\n"
+
+        # Добавляем аналитику
+        if stats['total_questions'] > 0:
+            avg_tokens_per_question = stats['total_tokens'] / stats['total_questions']
+            result += f"💡 Средняя длина вопроса: {avg_tokens_per_question:.1f} токенов\n"
+
+        if stats['total_answers'] > 0:
+            deep_search_ratio = (stats['deep_searches'] / stats['total_answers']) * 100
+            result += f"🎯 Глубоких поисков: {deep_search_ratio:.1f}%\n"
+
+        return result
+
 
 # Singleton instance
 conversation_manager = ConversationManager(CONVERSATIONS_DIR)

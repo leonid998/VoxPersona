@@ -204,37 +204,6 @@ def create_preview_text(text: str, length: int = PREVIEW_TEXT_LENGTH) -> str:
 
 
 
-def _save_to_history_sync(
-    user_id: int,
-    username: str,
-    message_id: int,
-    message_type: str,
-    text: str,
-    sent_as: Optional[str] = None,
-    file_path: Optional[str] = None,
-    search_type: Optional[str] = None
-) -> None:
-    """Синхронно сохраняет сообщение в историю."""
-    try:
-        from chat_history import chat_history_manager
-        success = chat_history_manager.save_message_to_history(
-            user_id=user_id,
-            username=username,
-            message_id=message_id,
-            message_type=message_type,
-            text=text,
-            sent_as=sent_as,
-            file_path=file_path,
-            search_type=search_type
-        )
-
-        if not success:
-            logging.error(f"Failed to save message to history: user_id={user_id}")
-
-    except Exception as e:
-        logging.error(f"Error saving to history: {e}")
-
-
 def _save_to_conversation(
     user_id: int,
     conversation_id: str,
@@ -361,12 +330,6 @@ async def smart_send_text_unified(
             try:
                 sent_message = await app.send_message(chat_id, text, parse_mode=parse_mode)
 
-                # Синхронно сохраняем в историю
-                _save_to_history_sync(
-                    chat_id, username, sent_message.id, "bot_answer", text,
-                    sent_as="message", search_type=search_type
-                )
-
                 # Async сохранение в conversations с retry (если передан conversation_id)
                 if conversation_id:
                     success = await asyncio.to_thread(
@@ -427,12 +390,6 @@ async def smart_send_text_unified(
                         chat_id,
                         file_path,
                         caption=f"🔍 Результат {search_type} поиска\n📝 Токенов: {count_tokens(text):,}"
-                    )
-
-                    # Синхронно сохраняем в историю
-                    _save_to_history_sync(
-                        chat_id, username, sent_file_msg.id, "bot_answer", text,
-                        sent_as="file", file_path=file_path, search_type=search_type
                     )
 
                     # Async сохранение в conversations с retry (если передан conversation_id)

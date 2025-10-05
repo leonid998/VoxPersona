@@ -2,7 +2,7 @@
 
 **Дата создания:** 5 октября 2025
 **Последнее обновление:** 5 октября 2025
-**Версия:** 2.0
+**Версия:** 3.0
 **Статус:** Актуально
 
 ---
@@ -28,9 +28,8 @@
 
 ### Ключевые компоненты системы:
 
-- **ConversationManager** - менеджер мультичатов (файловое хранилище JSON) - **ОСНОВНАЯ СИСТЕМА**
+- **ConversationManager** - менеджер мультичатов (файловое хранилище JSON) - **ЕДИНСТВЕННАЯ СИСТЕМА**
 - **MDStorageManager** - менеджер MD отчетов
-- **ChatHistoryManager** - ~~устаревший менеджер~~ **УДАЛЕН** (больше не используется)
 - **Handlers** - обработчики событий Telegram
 - **Utils** - вспомогательные функции сохранения
 
@@ -40,6 +39,11 @@
 2. **Исправлен message_id** - используется реальный Telegram message.id вместо 0
 3. **Асинхронное сохранение** - все операции I/O обернуты в asyncio.to_thread()
 4. **Транзакционность подтверждена** - two-phase commit уже реализован
+5. **✅ УДАЛЕН ChatHistoryManager** - полностью удален legacy класс и все зависимости:
+   - Удалены файлы: `chat_history.py`, `utils_original.py`, `test_data_persistence.py`
+   - Мигрированы зависимости: `handlers.py` (3 места), `utils.py` (функция + 2 вызова), `run_analysis.py` (1 место)
+   - Добавлена статистика в ConversationManager: `get_user_stats()`, `format_user_stats_for_display()`
+   - Все тесты прошли успешно (34 passed)
 
 ---
 
@@ -57,13 +61,10 @@
 │       ├── {conversation_id}.json   # Файл чата 1
 │       └── {conversation_id}.json   # Файл чата 2
 │
-├── md_reports/                      # Архив MD отчетов
-│   ├── index.json                   # Глобальный индекс отчетов
-│   └── user_{user_id}/
-│       └── report_YYYYMMDD_HHMMSS.md
-│
-└── chat_history/                    # Legacy хранилище (устаревшее)
-    └── user_{user_id}.json
+└── md_reports/                      # Архив MD отчетов
+    ├── index.json                   # Глобальный индекс отчетов
+    └── user_{user_id}/
+        └── report_YYYYMMDD_HHMMSS.md
 ```
 
 ### Принципы хранения
