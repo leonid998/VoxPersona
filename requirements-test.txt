@@ -1,0 +1,16 @@
+# Зависимости для тестирования VoxPersona
+# Задача ID: 00001_20251007_T3H8K9
+
+# Core testing frameworks
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# Дополнительные инструменты
+coverage==7.3.2
+pytest-html==4.1.1
+pytest-xdist==3.5.0  # Параллельный запуск тестов
+
+# Для mock Pyrogram (если нужно)
+# pyrogram уже должен быть в основных requirements.txt

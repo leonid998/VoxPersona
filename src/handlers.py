@@ -77,6 +77,10 @@ from conversation_handlers import (
 )
 # === КОНЕЦ МУЛЬТИЧАТЫ ===
 
+# === АВТООТПРАВКА ФАЙЛОВ ===
+from file_sender import auto_send_history_file, auto_send_reports_file
+# === КОНЕЦ АВТООТПРАВКА ФАЙЛОВ ===
+
 # Initialize MinIO manager
 minio_manager = get_minio_manager()
 
@@ -398,6 +402,7 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
         return
     # === КОНЕЦ МУЛЬТИЧАТЫ ===
 
+
     # Проверяем, есть ли у пользователя активное состояние
     st = user_states.get(c_id)
     logging.info(f"Пользователь {c_id} отправил текст '{text_[:50]}...'. Состояние: {st}")
@@ -427,6 +432,7 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
         st["conversation_id"] = conversation_id
         user_states[c_id] = st  # ✅ Сохраняем изменения обратно
     # === КОНЕЦ МУЛЬТИЧАТЫ ===
+
 
     if st.get("step") == "dialog_mode":
         deep = st.get("deep_search", False)
@@ -1029,6 +1035,10 @@ def register_handlers(app: Client):
         if c_id not in authorized_users:
             await app.send_message(c_id, "Вы не авторизованы. Введите пароль:")
         else:
+            # Автоотправка истории и отчетов
+            await auto_send_history_file(c_id, app)
+            await auto_send_reports_file(c_id, app)
+
             await send_main_menu(c_id, app)
 
     @app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
@@ -1261,6 +1271,7 @@ def register_handlers(app: Client):
                 await handle_delete_chat_confirm(c_id, conversation_id, username, app)
                 return
             # === КОНЕЦ МУЛЬТИЧАТЫ ===
+
 
             # Главное меню
             if data == "menu_main":
