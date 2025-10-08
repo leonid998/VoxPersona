@@ -30,6 +30,7 @@ from markups import (
 from menu_manager import send_menu
 from message_tracker import track_and_send
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from file_sender import auto_send_history_file, auto_send_reports_file
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +288,10 @@ async def handle_switch_chat_confirm(
             text=text,
             reply_markup=make_dialog_markup()
         )
+
+        # Автоотправка файлов истории и отчетов
+        await auto_send_history_file(chat_id, app)
+        await auto_send_reports_file(chat_id, app)
 
         logger.info(f"Пользователь {chat_id} переключился на чат {conversation_id}")
 
