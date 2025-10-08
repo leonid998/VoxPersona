@@ -264,22 +264,8 @@ async def handle_switch_chat_confirm(
             )
             return
 
-        messages = conversation_manager.get_messages(chat_id, conversation_id, limit=5)
-
         # Формируем единое сообщение
-        text = f"✅ Переключено на чат: {conversation.metadata.title}\n\n"
-
-        if messages:
-            text += "📜 Последние 5 сообщений:\n\n"
-            for msg in messages:
-                role_emoji = "👤" if msg.type == "user_question" else "🤖"
-                # Обрезаем длинные сообщения
-                msg_preview = msg.text[:100] + "..." if len(msg.text) > 100 else msg.text
-                text += f"{role_emoji} {msg_preview}\n\n"
-        else:
-            text += "💬 История пуста.\n\n"
-
-        text += "Выберите действие:"
+        text = f"✅ Переключено на чат: {conversation.metadata.title}\n\nВыберите действие:"
 
         # Отправляем объединенное сообщение с меню внизу
         await send_menu(
@@ -289,9 +275,8 @@ async def handle_switch_chat_confirm(
             reply_markup=make_dialog_markup()
         )
 
-        # Автоотправка файлов истории и отчетов
+        # Автоотправка файла истории
         await auto_send_history_file(chat_id, app)
-        await auto_send_reports_file(chat_id, app)
 
         logger.info(f"Пользователь {chat_id} переключился на чат {conversation_id}")
 

@@ -1035,10 +1035,6 @@ def register_handlers(app: Client):
         if c_id not in authorized_users:
             await app.send_message(c_id, "Вы не авторизованы. Введите пароль:")
         else:
-            # Автоотправка истории и отчетов
-            await auto_send_history_file(c_id, app)
-            await auto_send_reports_file(c_id, app)
-
             await send_main_menu(c_id, app)
 
     @app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
