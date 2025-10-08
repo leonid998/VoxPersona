@@ -30,6 +30,7 @@ from md_storage import md_storage_manager, ReportMetadata
 from conversations import ConversationMessage
 from config import THROTTLE_DATA_DIR
 from pyrogram import Client
+from markups import make_dialog_markup
 
 logger = logging.getLogger(__name__)
 
@@ -428,7 +429,8 @@ async def auto_send_history_file(user_id: int, app: Client) -> bool:
         await app.send_document(
             chat_id=user_id,
             document=file_obj,
-            caption=caption
+            caption=caption,
+            reply_markup=make_dialog_markup()
         )
 
         # 10. Обновление throttling
