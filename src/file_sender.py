@@ -28,6 +28,7 @@ from typing import List, Optional
 from conversation_manager import conversation_manager
 from md_storage import md_storage_manager, ReportMetadata
 from conversations import ConversationMessage
+from config import THROTTLE_DATA_DIR
 from pyrogram import Client
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,17 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 THROTTLE_HOURS = 24  # Интервал между автоотправками (настраиваемый параметр)
-THROTTLE_FILE = Path("data/throttle_history.json")
+THROTTLE_FILE = Path(THROTTLE_DATA_DIR) / "throttle_history.json"
+
+# Создаём директорию при импорте модуля (graceful degradation)
+try:
+    THROTTLE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    logger.debug(f"Throttle directory verified: {THROTTLE_FILE.parent}")
+except (PermissionError, OSError) as e:
+    logger.warning(
+        f"Failed to create throttle directory {THROTTLE_FILE.parent}: {e}. "
+        "Throttling functionality may not work correctly."
+    )
 MAX_MESSAGES = 200  # Максимальное количество сообщений для экспорта
 MAX_REPORTS = 200   # Максимальное количество отчетов для экспорта
 

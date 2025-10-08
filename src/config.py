@@ -172,6 +172,12 @@ MD_REPORTS_DIR = os.getenv("MD_REPORTS_DIR", "/home/voxpersona_user/VoxPersona/m
 # Conversations Configuration
 CONVERSATIONS_DIR = os.getenv("CONVERSATIONS_DIR", "/home/voxpersona_user/VoxPersona/conversations")
 
+# Throttle data directory (for file_sender module)
+THROTTLE_DATA_DIR = os.getenv(
+    "THROTTLE_DATA_DIR",
+    "/home/voxpersona_user/VoxPersona/data"
+)
+
 # Preview text configuration
 PREVIEW_TEXT_LENGTH = int(os.getenv("PREVIEW_TEXT_LENGTH", "300"))
 
