@@ -31,6 +31,7 @@ from conversations import ConversationMessage
 from config import THROTTLE_DATA_DIR
 from pyrogram import Client
 from markups import make_dialog_markup
+from menu_manager import send_menu
 
 logger = logging.getLogger(__name__)
 
@@ -425,15 +426,22 @@ async def auto_send_history_file(user_id: int, app: Client) -> bool:
             f"📅 Экспортировано: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
 
-        # 9. Отправка файла
+        # 9. Отправка файла БЕЗ меню
         await app.send_document(
             chat_id=user_id,
             document=file_obj,
-            caption=caption,
+            caption=caption
+        )
+
+        # 10. Отправка меню ОТДЕЛЬНО через MessageTracker
+        await send_menu(
+            chat_id=user_id,
+            app=app,
+            text="Какую информацию вы хотели бы получить?",
             reply_markup=make_dialog_markup()
         )
 
-        # 10. Обновление throttling
+        # 11. Обновление throttling
         update_last_sent(user_id, "history")
 
         logger.info(
@@ -520,7 +528,15 @@ async def auto_send_reports_file(user_id: int, app: Client) -> bool:
             caption=caption
         )
 
-        # 7. Обновление throttling
+        # 7. Отправка меню ОТДЕЛЬНО через MessageTracker
+        await send_menu(
+            chat_id=user_id,
+            app=app,
+            text="Какую информацию вы хотели бы получить?",
+            reply_markup=make_dialog_markup()
+        )
+
+        # 8. Обновление throttling
         update_last_sent(user_id, "reports")
 
         logger.info(

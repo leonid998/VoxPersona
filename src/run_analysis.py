@@ -424,8 +424,8 @@ async def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str
         logging.info("Проведён количественный анализ")
 
     if scenario_name == "Интервью":
-        app.send_message(chat_id, "Какой отчёт хотите посмотреть дальше?", reply_markup=interview_menu_markup())
+        await send_menu(chat_id, app, "Какой отчёт хотите посмотреть дальше?", interview_menu_markup())
     elif scenario_name == "Дизайн":
-        app.send_message(chat_id, "Какой отчёт хотите посмотреть дальше?", reply_markup=design_menu_markup())
+        await send_menu(chat_id, app, "Какой отчёт хотите посмотреть дальше?", design_menu_markup())
 
     send_main_menu(chat_id, app)

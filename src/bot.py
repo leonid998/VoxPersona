@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from analysis import send_msg_to_model
 from openai import PermissionDeniedError as OpenAIPermissionError
 from constants import BUTTON_BACK, CLAUDE_ERROR_MESSAGE
+from menu_manager import send_menu
 
 warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
 logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] %(levelname)s: %(message)s')
@@ -37,7 +38,7 @@ if not all([OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH]):
 # ================== Глобальные ==================
 processed_texts: dict[int, str] = {}
 user_states: dict[int, dict[str, str]] = {}
-authorized_users = set()  
+authorized_users = set()
 active_menus: dict[int, list[int]] = {}
 
 STORAGE_DIRS = {
@@ -135,9 +136,9 @@ def main_menu_markup():
         ]
     ])
 
-def send_main_menu(chat_id: int):
+async def send_main_menu(chat_id: int):
     clear_active_menus(chat_id)
-    mm=app.send_message(chat_id,"🏠 Главное меню:", reply_markup=main_menu_markup())
+    mm = await send_menu(chat_id, app, "🏠 Главное меню:", main_menu_markup())
     if mm:
         register_menu_message(chat_id, mm.id)
 
@@ -216,7 +217,7 @@ def transcribe_audio_raw(file_path: str)->str:
     old_key=openai.api_key
     openai.api_base="https://api.openai.com/v1"
     openai.api_key=OPENAI_API_KEY
-    
+
     CHUNK_SIZE=24*1024*1024  # 24 MB, чтобы избежать 413
 
     try:
@@ -385,21 +386,21 @@ def process_stored_file(category: str, filename: str, chat_id: int)->str|None:
         return None
 
 # ========== /start и авторизация ==========
-def cmd_start(_: Client, message: Message) -> None:
+async def cmd_start(_: Client, message: Message) -> None:
     """Обработчик команды /start с явной типизацией"""
     c_id=message.chat.id
     if c_id not in authorized_users:
         app.send_message(c_id,"Вы не авторизованы. Введите пароль:")
     else:
-        send_main_menu(c_id)
+        await send_main_menu(c_id)
 
 # Регистрируем декорированный обработчик
 @app.on_message(filters.command("start"))  # type: ignore[misc]
-def _cmd_start_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
+async def _cmd_start_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
     """Декорированная реализация для cmd_start"""
-    return cmd_start(client, message)
+    return await cmd_start(client, message)
 
-def handle_auth_text(_: Client, message: Message) -> None:
+async def handle_auth_text(_: Client, message: Message) -> None:
     """Обработчик авторизации по тексту с явной типизацией"""
     c_id=message.chat.id
     if c_id in authorized_users:
@@ -407,18 +408,18 @@ def handle_auth_text(_: Client, message: Message) -> None:
     if message.text.strip()=="1243":
         authorized_users.add(c_id)
         app.send_message(c_id,"✅ Авторизация успешна!")
-        send_main_menu(c_id)
+        await send_main_menu(c_id)
     else:
         app.send_message(c_id,"❌ Неверный пароль. Попробуйте снова:")
 
 # Регистрируем декорированный обработчик
 @app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc]
-def _handle_auth_text_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
+async def _handle_auth_text_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
     """Декорированная реализация для handle_auth_text"""
-    return handle_auth_text(client, message)
+    return await handle_auth_text(client, message)
 
 # ========== Приём аудио ==========
-def handle_audio_msg(_: Client, message: Message) -> None:
+async def handle_audio_msg(_: Client, message: Message) -> None:
     """Обработчик аудио сообщений с явной типизацией"""
     c_id=message.chat.id
     if c_id not in authorized_users:
@@ -475,17 +476,17 @@ def handle_audio_msg(_: Client, message: Message) -> None:
             pass
 
     # Подменю: ИНТЕРВЬЮ / ДИЗАЙН
-    app.send_message(c_id,"Что анализируем дальше?", reply_markup=interview_or_design_menu())
-    send_main_menu(c_id)
+    await send_menu(c_id, app, "Что анализируем дальше?", interview_or_design_menu())
+    await send_main_menu(c_id)
 
 # Регистрируем декорированный обработчик
 @app.on_message(filters.voice | filters.audio)  # type: ignore[misc]
-def _handle_audio_msg_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
+async def _handle_audio_msg_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
     """Декорированная реализация для handle_audio_msg"""
-    return handle_audio_msg(client, message)
+    return await handle_audio_msg(client, message)
 
 # ========== Приём документов (для хранилища) ==========
-def handle_document_msg(_: Client, message: Message) -> None:
+async def handle_document_msg(_: Client, message: Message) -> None:
     """Обработчик документов с явной типизацией"""
     c_id=message.chat.id
     if c_id not in authorized_users:
@@ -511,38 +512,38 @@ def handle_document_msg(_: Client, message: Message) -> None:
     else:
         app.send_message(c_id,"Сначала выберите действие (Загрузить файл) в меню.")
 
-    send_main_menu(c_id)
+    await send_main_menu(c_id)
 
 # Регистрируем декорированный обработчик
 @app.on_message(filters.document)  # type: ignore[misc]
-def _handle_document_msg_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
+async def _handle_document_msg_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
     """Декорированная реализация для handle_document_msg"""
-    return handle_document_msg(client, message)
+    return await handle_document_msg(client, message)
 
 # ========== CALLBACK QUERY (меню) ==========
 
-def handle_menu_navigation(c_id: int, data: str) -> bool:
+async def handle_menu_navigation(c_id: int, data: str) -> bool:
     """Обработка навигации по меню"""
     if data == "menu_main":
-        send_main_menu(c_id)
+        await send_main_menu(c_id)
         return True
-    
+
     if data == "menu_help":
         clear_active_menus(c_id)
         mk, txt = help_menu_markup()
-        mm = app.send_message(c_id, txt, reply_markup=mk)
+        mm = await send_menu(c_id, app, txt, mk)
         register_menu_message(c_id, mm.id)
         return True
-    
+
     if data == "menu_storage":
         clear_active_menus(c_id)
-        mm = app.send_message(c_id, "📦 Меню хранилища:", reply_markup=storage_menu_markup())
+        mm = await send_menu(c_id, app, "📦 Меню хранилища:", storage_menu_markup())
         register_menu_message(c_id, mm.id)
         return True
-    
+
     return False
 
-def handle_file_operations(c_id: int, data: str) -> bool:
+async def handle_file_operations(c_id: int, data: str) -> bool:
     """Обработка операций с файлами"""
     if data.startswith("view||"):
         parts = data.split("||")
@@ -550,18 +551,18 @@ def handle_file_operations(c_id: int, data: str) -> bool:
             return True
         cat = parts[1]
         clear_active_menus(c_id)
-        mm = app.send_message(c_id, f"Файлы в '{cat}':", reply_markup=files_menu_markup(cat))
+        mm = await send_menu(c_id, app, f"Файлы в '{cat}':", files_menu_markup(cat))
         register_menu_message(c_id, mm.id)
         return True
-    
+
     if data.startswith("select||"):
-        _handle_file_selection(c_id, data)
+        await _handle_file_selection(c_id, data)
         return True
-    
+
     if data.startswith("delete||"):
-        _handle_file_deletion(c_id, data)
+        await _handle_file_deletion(c_id, data)
         return True
-    
+
     if data.startswith("upload||"):
         parts = data.split("||")
         if len(parts) < 2:
@@ -570,28 +571,28 @@ def handle_file_operations(c_id: int, data: str) -> bool:
         user_states[c_id] = {"upload_category": cat}
         app.send_message(c_id, f"Отправьте документ, который хотите сохранить в '{cat}'.")
         return True
-    
+
     return False
 
-def _handle_file_selection(c_id: int, data: str) -> None:
+async def _handle_file_selection(c_id: int, data: str) -> None:
     """Обработка выбора файла"""
     parts = data.split("||")
     if len(parts) < 3:
         return
-    
+
     cat, sfn = parts[1], parts[2]
     fold = STORAGE_DIRS.get(cat, "")
     real_name = _find_real_filename(fold, sfn)
-    
+
     if not real_name:
         app.send_message(c_id, "Файл не найден.")
         return
-    
+
     msg_ = app.send_message(c_id, "⏳ Обрабатываю файл...")
     st_ev = threading.Event()
     sp_th = threading.Thread(target=run_loading_animation, args=(c_id, msg_.id, st_ev))
     sp_th.start()
-    
+
     try:
         res = process_stored_file(cat, real_name, c_id)
         if res is not None:
@@ -601,31 +602,31 @@ def _handle_file_selection(c_id: int, data: str) -> None:
         st_ev.set()
         sp_th.join()
         app.delete_messages(c_id, msg_.id)
-    
-    app.send_message(c_id, "Что анализируем дальше?", reply_markup=interview_or_design_menu())
-    send_main_menu(c_id)
 
-def _handle_file_deletion(c_id: int, data: str) -> None:
+    await send_menu(c_id, app, "Что анализируем дальше?", interview_or_design_menu())
+    await send_main_menu(c_id)
+
+async def _handle_file_deletion(c_id: int, data: str) -> None:
     """Обработка удаления файла"""
     parts = data.split("||")
     if len(parts) < 3:
         return
-    
+
     cat, sfn = parts[1], parts[2]
     fold = STORAGE_DIRS.get(cat, "")
     real_name = _find_real_filename(fold, sfn)
-    
+
     if not real_name:
         app.send_message(c_id, "Файл не найден.")
         return
-    
+
     try:
         os.remove(os.path.join(fold, real_name))
         app.send_message(c_id, "Файл удалён.")
     except Exception as e:
         app.send_message(c_id, f"Ошибка удаления: {e}")
-    
-    mm = app.send_message(c_id, f"Список файлов в '{cat}':", reply_markup=files_menu_markup(cat))
+
+    mm = await send_menu(c_id, app, f"Список файлов в '{cat}':", files_menu_markup(cat))
     register_menu_message(c_id, mm.id)
 
 def _find_real_filename(fold: str, sfn: str) -> str | None:
@@ -638,20 +639,20 @@ def _find_real_filename(fold: str, sfn: str) -> str | None:
         pass
     return None
 
-def handle_mode_selection(c_id: int, data: str) -> bool:
+async def handle_mode_selection(c_id: int, data: str) -> bool:
     """Обработка выбора режима анализа"""
     if data == "mode_interview":
         clear_active_menus(c_id)
-        mm = app.send_message(c_id, "ИНТЕРВЬЮ:", reply_markup=interview_menu_markup())
+        mm = await send_menu(c_id, app, "ИНТЕРВЬЮ:", interview_menu_markup())
         register_menu_message(c_id, mm.id)
         return True
-    
+
     if data == "mode_design":
         clear_active_menus(c_id)
-        mm = app.send_message(c_id, "ДИЗАЙН:", reply_markup=design_menu_markup())
+        mm = await send_menu(c_id, app, "ДИЗАЙН:", design_menu_markup())
         register_menu_message(c_id, mm.id)
         return True
-    
+
     return False
 
 async def handle_interview_reports(c_id: int, data: str) -> bool:
@@ -698,35 +699,28 @@ async def callback_query_handler(_: Client, callback: CallbackQuery) -> None:
 
     try:
         # Делегируем обработку специализированным функциям
-        # Синхронные хендлеры (старый код)
-        sync_handlers = [
+        # Все хендлеры теперь async
+        async_handlers = [
             handle_menu_navigation,
             handle_file_operations,
-            handle_mode_selection
-        ]
-        for handler in sync_handlers:
-            if handler(c_id, data):
-                return
-
-        # Async хендлеры
-        async_handlers = [
+            handle_mode_selection,
             handle_interview_reports,
             handle_design_reports
         ]
         for handler in async_handlers:
             if await handler(c_id, data):
                 return
-                
+
     except Exception:
         logging.exception("Ошибка обработки callback_data")
 
 # Регистрируем декорированный обработчик
 @app.on_callback_query()  # type: ignore[misc]
-def _callback_query_handler_impl(client: Client, callback: CallbackQuery) -> None:  # pyright: ignore[reportUnusedFunction]
+async def _callback_query_handler_impl(client: Client, callback: CallbackQuery) -> None:  # pyright: ignore[reportUnusedFunction]
     """Декорированная реализация для callback_query_handler"""
-    return callback_query_handler(client, callback)
+    return await callback_query_handler(client, callback)
 
-def run_analysis_with_spinner(chat_id: int, func: Callable[[str], str], label: str):
+async def run_analysis_with_spinner(chat_id: int, func: Callable[[str], str], label: str):
     txt_=processed_texts.get(chat_id,"")
     if not txt_:
         app.send_message(chat_id,"Нет текста для анализа. Сначала загрузите/обработайте аудио/текст.")
@@ -757,7 +751,7 @@ def run_analysis_with_spinner(chat_id: int, func: Callable[[str], str], label: s
         except Exception:
             pass
 
-    send_main_menu(chat_id)
+    await send_main_menu(chat_id)
 
 # ========== Запуск ==========
 if __name__=="__main__":
