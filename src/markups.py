@@ -242,17 +242,18 @@ def make_dialog_markup() -> InlineKeyboardMarkup:
     Меню выбора режима поиска.
 
     Структура:
-    - Строка 1: [Быстрый поиск] [Глубокое исследование]
-    - Строка 2: [📜 Получить историю]
-    - Строка 3: [Главное меню]
+    - Строка 1: [⚡ Быстрый поиск] [🔬 Глубокое исследование]
+    - Строка 2: [📜 Получить историю] [📱 Чаты/Диалоги]
     """
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("  ⚡ Быстрый поиск  ", callback_data="mode_fast"),
-            InlineKeyboardButton("  🔬 Глубокое исследование  ", callback_data="mode_deep")
+            InlineKeyboardButton("⚡ Быстрый поиск", callback_data="mode_fast"),
+            InlineKeyboardButton("🔬 Глубокое исследование", callback_data="mode_deep")
         ],
-        [InlineKeyboardButton("        📜 Получить историю        ", callback_data="send_history_manual")],
-        [InlineKeyboardButton("        📱 Чаты/Диалоги        ", callback_data="menu_chats")]
+        [
+            InlineKeyboardButton("📜 Получить историю", callback_data="send_history_manual"),
+            InlineKeyboardButton("📱 Чаты/Диалоги", callback_data="menu_chats")
+        ]
     ])
 
 def help_menu_markup():
