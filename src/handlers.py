@@ -78,7 +78,7 @@ from conversation_handlers import (
 # === КОНЕЦ МУЛЬТИЧАТЫ ===
 
 # === АВТООТПРАВКА ФАЙЛОВ ===
-from file_sender import auto_send_history_file, auto_send_reports_file
+from file_sender import auto_send_history_file, auto_send_reports_file, send_history_on_demand
 # === КОНЕЦ АВТООТПРАВКА ФАЙЛОВ ===
 
 # Initialize MinIO manager
@@ -1339,6 +1339,33 @@ def register_handlers(app: Client):
             # Обработка отчетов
             elif data.startswith("send_report||") or data == "show_all_reports":
                 handle_report_callback(callback, app)
+
+            # Ручная отправка истории
+            elif data == "send_history_manual":
+                # Получаем conversation_id из состояния пользователя
+                st = user_states.get(c_id, {})
+                conversation_id = st.get("conversation_id")
+
+                if not conversation_id:
+                    # Fallback: берем активный чат
+                    conversation_id = conversation_manager.get_active_conversation_id(c_id)
+
+                if conversation_id:
+                    # Отправляем системное сообщение
+                    await track_and_send(
+                        chat_id=c_id,
+                        app=app,
+                        text="⏳ Экспортирую историю...",
+                        message_type="status_message"
+                    )
+
+                    # Отправляем историю БЕЗ throttling
+                    await send_history_on_demand(c_id, conversation_id, app)
+                else:
+                    await app.send_message(c_id, "❌ Нет активного чата.")
+
+                return
+
 
         except ValueError as ve:
             logging.exception(ve)

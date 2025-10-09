@@ -243,13 +243,15 @@ def make_dialog_markup() -> InlineKeyboardMarkup:
 
     Структура:
     - Строка 1: [Быстрый поиск] [Глубокое исследование]
-    - Строка 2: [Главное меню]
+    - Строка 2: [📜 Получить историю]
+    - Строка 3: [Главное меню]
     """
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("  ⚡ Быстрый поиск  ", callback_data="mode_fast"),
             InlineKeyboardButton("  🔬 Глубокое исследование  ", callback_data="mode_deep")
         ],
+        [InlineKeyboardButton("        📜 Получить историю        ", callback_data="send_history_manual")],
         [InlineKeyboardButton("        📱 Чаты/Диалоги        ", callback_data="menu_chats")]
     ])
 

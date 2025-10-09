@@ -556,6 +556,100 @@ async def auto_send_reports_file(user_id: int, app: Client) -> bool:
             file_obj.close()
 
 
+async def send_history_on_demand(user_id: int, conversation_id: str, app: Client) -> bool:
+    """
+    Отправляет историю чата пользователю БЕЗ throttling (по запросу).
+
+    Аналог auto_send_history_file(), но:
+    - НЕ проверяет throttling (пользователь нажал кнопку явно)
+    - НЕ обновляет throttling timestamp
+    - Работает с конкретным conversation_id
+
+    Args:
+        user_id: ID пользователя Telegram.
+        conversation_id: ID чата для экспорта истории.
+        app: Pyrogram клиент для отправки сообщений.
+
+    Returns:
+        bool: True если файл успешно отправлен, False в противном случае.
+
+    Example:
+        >>> await send_history_on_demand(123456, "conv_abc123", app)
+        True  # Файл отправлен без проверки throttling
+
+    Note:
+        Используется для ручной отправки через кнопку "📜 Получить историю".
+    """
+    file_obj = None
+
+    try:
+        # 1. Загрузка чата (без throttling проверки)
+        conversation = conversation_manager.load_conversation(user_id, conversation_id)
+        if not conversation or not conversation.messages:
+            logger.info(f"Empty conversation {conversation_id} for user {user_id}")
+            await app.send_message(
+                user_id,
+                "📭 В этом чате пока нет сообщений."
+            )
+            return False
+
+        # 2. Ограничение сообщений (последние 200)
+        messages = conversation.messages[-MAX_MESSAGES:]
+
+        # 3. Реверс (последнее сообщение первым)
+        reversed_messages = messages[::-1]
+
+        # 4. Форматирование
+        content = format_history_for_file(reversed_messages, conversation.metadata.title)
+
+        # 5. Создание BytesIO объекта
+        content_bytes = content.encode('utf-8')
+        file_obj = BytesIO(content_bytes)
+        file_obj.name = f"history_{user_id}.txt"
+
+        # 6. Формирование caption
+        caption = (
+            f"📜 История чата '{conversation.metadata.title}'\n"
+            f"📊 Сообщений: {len(messages)} (последние первыми)\n"
+            f"📅 Экспортировано: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+
+        # 7. Отправка файла БЕЗ меню
+        await app.send_document(
+            chat_id=user_id,
+            document=file_obj,
+            caption=caption
+        )
+
+        # 8. Отправка меню ОТДЕЛЬНО через MessageTracker
+        await send_menu(
+            chat_id=user_id,
+            app=app,
+            text="Какую информацию вы хотели бы получить?",
+            reply_markup=make_dialog_markup()
+        )
+
+        logger.info(
+            f"History file sent ON DEMAND to user {user_id}: "
+            f"{len(messages)} messages, {len(content_bytes)} bytes"
+        )
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error sending history on demand to user {user_id}: {e}", exc_info=True)
+        await app.send_message(
+            user_id,
+            "❌ Произошла ошибка при экспорте истории."
+        )
+        return False
+
+    finally:
+        # Закрываем BytesIO объект
+        if file_obj:
+            file_obj.close()
+
+
 # ============================================================================
 #                           ПУБЛИЧНЫЙ API МОДУЛЯ
 # ============================================================================
@@ -563,6 +657,7 @@ async def auto_send_reports_file(user_id: int, app: Client) -> bool:
 __all__ = [
     'auto_send_history_file',
     'auto_send_reports_file',
+    'send_history_on_demand',
     'format_history_for_file',
     'format_reports_for_file',
     'should_send_file',
