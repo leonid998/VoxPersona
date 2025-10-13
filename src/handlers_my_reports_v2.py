@@ -457,17 +457,20 @@ async def handle_report_view_input(chat_id: int, user_input: str, app: Client) -
             if file_obj:
                 file_obj.close()
 
-        # Очищаем FSM состояние
-        user_states[chat_id] = {}
+        # Очищаем только FSM состояние операции
+        user_states[chat_id].pop("step", None)
+        user_states[chat_id].pop("total_reports", None)
 
-        # Показываем меню чатов
+        # Показываем статус
         await track_and_send(
             chat_id=chat_id,
             app=app,
             text="✅ Отчет отправлен!",
-            reply_markup=chats_menu_markup_dynamic(chat_id),
-            message_type="menu"
+            message_type="status_message"
         )
+
+        # Возвращаем в меню "Мои отчеты"
+        await handle_my_reports_v2(chat_id, app)
 
 
 # ============================================================================
@@ -703,17 +706,21 @@ async def handle_report_rename_name_input(chat_id: int, user_input: str, app: Cl
             result_text = "❌ **Не удалось переименовать отчет.**\n\nПопробуйте позже."
             logger.error(f"[ReportRename] Failed to rename report #{index} for user {chat_id}")
 
-        # Очищаем FSM состояние
-        user_states[chat_id] = {}
+        # Очищаем только FSM состояние операции
+        user_states[chat_id].pop("step", None)
+        user_states[chat_id].pop("report_index", None)
+        user_states[chat_id].pop("old_name", None)
 
         # Показываем результат
         await track_and_send(
             chat_id=chat_id,
             app=app,
             text=result_text,
-            reply_markup=chats_menu_markup_dynamic(chat_id),
-            message_type="menu"
+            message_type="status_message"
         )
+
+        # Возвращаем в меню "Мои отчеты" с обновленным списком
+        await handle_my_reports_v2(chat_id, app)
 
 
 # ============================================================================
@@ -942,14 +949,18 @@ async def handle_report_delete_confirm(chat_id: int, app: Client) -> None:
             result_text = "❌ **Не удалось удалить отчет.**\n\nПопробуйте позже."
             logger.error(f"[ReportDelete] Failed to delete report #{index} for user {chat_id}")
 
-        # Очищаем FSM состояние
-        user_states[chat_id] = {}
+        # Очищаем только FSM состояние операции
+        user_states[chat_id].pop("step", None)
+        user_states[chat_id].pop("report_index", None)
+        user_states[chat_id].pop("report_name", None)
 
         # Показываем результат
         await track_and_send(
             chat_id=chat_id,
             app=app,
             text=result_text,
-            reply_markup=chats_menu_markup_dynamic(chat_id),
-            message_type="menu"
+            message_type="status_message"
         )
+
+        # Возвращаем в меню "Мои отчеты" с обновленным списком
+        await handle_my_reports_v2(chat_id, app)
