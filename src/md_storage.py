@@ -61,16 +61,16 @@ class MDStorageManager:
         return f"{MD_FILE_PREFIX}_{timestamp}{MD_FILE_EXTENSION}"
 
     def create_md_content(
-        self, 
-        content: str, 
-        username: str, 
-        user_id: int, 
-        question: str, 
+        self,
+        content: str,
+        username: str,
+        user_id: int,
+        question: str,
         search_type: str
     ) -> str:
         """Создает содержимое MD файла согласно шаблону."""
         timestamp = datetime.now().strftime("%d.%m.%Y %H:%M")
-        
+
         md_content = f"""# Отчет VoxPersona
 **Дата:** {timestamp}
 **Пользователь:** @{username} (ID: {user_id})
@@ -84,11 +84,11 @@ class MDStorageManager:
         return md_content
 
     def save_md_report(
-        self, 
-        content: str, 
-        user_id: int, 
-        username: str, 
-        question: str, 
+        self,
+        content: str,
+        user_id: int,
+        username: str,
+        question: str,
         search_type: str
     ) -> Optional[str]:
         """Сохраняет MD отчет и возвращает путь к файлу."""
@@ -96,14 +96,14 @@ class MDStorageManager:
             user_dir = self.ensure_user_directory(user_id)
             filename = self.generate_filename()
             file_path = user_dir / filename
-            
+
             # Создаем содержимое MD файла
             md_content = self.create_md_content(content, username, user_id, question, search_type)
-            
+
             # Сохраняем файл
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(md_content)
-            
+
             # Обновляем индекс
             metadata = ReportMetadata(
                 file_path=str(file_path.relative_to(self.reports_dir)),
@@ -115,12 +115,12 @@ class MDStorageManager:
                 tokens=count_tokens(content),
                 search_type=search_type
             )
-            
+
             self.update_reports_index(metadata)
-            
+
             logging.info(f"Saved MD report: {file_path}")
             return str(file_path)
-            
+
         except Exception as e:
             logging.error(f"Failed to save MD report: {e}")
             return None
@@ -128,14 +128,14 @@ class MDStorageManager:
     def load_reports_index(self) -> List[ReportMetadata]:
         """Загружает индекс отчетов."""
         index_path = self.reports_dir / INDEX_FILE_NAME
-        
+
         if not index_path.exists():
             return []
-        
+
         try:
             with open(index_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             return [ReportMetadata(**item) for item in data]
         except Exception as e:
             logging.error(f"Failed to load reports index: {e}")
@@ -144,13 +144,13 @@ class MDStorageManager:
     def save_reports_index(self, reports: List[ReportMetadata]) -> bool:
         """Сохраняет индекс отчетов."""
         index_path = self.reports_dir / INDEX_FILE_NAME
-        
+
         try:
             data = [asdict(report) for report in reports]
-            
+
             with open(index_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            
+
             return True
         except Exception as e:
             logging.error(f"Failed to save reports index: {e}")
@@ -171,10 +171,10 @@ class MDStorageManager:
         try:
             all_reports = self.load_reports_index()
             user_reports = [r for r in all_reports if r.user_id == user_id]
-            
+
             # Сортируем по времени создания (новые сначала)
             user_reports.sort(key=lambda x: x.timestamp, reverse=True)
-            
+
             return user_reports if limit is None else user_reports[:limit]
         except Exception as e:
             logging.error(f"Failed to get user reports: {e}")
@@ -184,7 +184,7 @@ class MDStorageManager:
         """Возвращает статистику отчетов."""
         try:
             all_reports = self.load_reports_index()
-            
+
             if user_id is not None:
                 reports = [r for r in all_reports if r.user_id == user_id]
             else:
@@ -197,7 +197,7 @@ class MDStorageManager:
                 "fast_searches": len([r for r in reports if r.search_type == "fast"]),
                 "deep_searches": len([r for r in reports if r.search_type == "deep"]),
             }
-            
+
             if reports:
                 stats["avg_size_bytes"] = stats["total_size_bytes"] / len(reports)
                 stats["avg_tokens"] = stats["total_tokens"] / len(reports)
@@ -224,18 +224,18 @@ class MDStorageManager:
     def format_user_reports_for_display(self, user_id: int) -> str:
         """Форматирует список отчетов пользователя для отображения."""
         reports = self.get_user_reports(user_id, limit=10)
-        
+
         if not reports:
             return "📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов."
 
         result = f"📁 **Ваши отчеты (последние {len(reports)}):**\n\n"
-        
+
         for i, report in enumerate(reports, 1):
             timestamp = datetime.fromisoformat(report.timestamp).strftime("%d.%m.%Y %H:%M")
             question_preview = report.question[:60] + "..." if len(report.question) > 60 else report.question
             search_icon = "⚡" if report.search_type == "fast" else "🔍"
             size_kb = report.size_bytes / 1024
-            
+
             result += f"{i}. {search_icon} **{timestamp}**\n"
             result += f"   📝 {question_preview}\n"
             result += f"   📊 {report.tokens:,} токенов, {size_kb:.1f} KB\n\n"
@@ -254,13 +254,13 @@ class MDStorageManager:
         try:
             cutoff_date = datetime.now().timestamp() - (days_old * 24 * 3600)
             reports = self.load_reports_index()
-            
+
             reports_to_keep = []
             deleted_count = 0
-            
+
             for report in reports:
                 report_date = datetime.fromisoformat(report.timestamp).timestamp()
-                
+
                 if report_date >= cutoff_date:
                     reports_to_keep.append(report)
                 else:
@@ -273,10 +273,10 @@ class MDStorageManager:
 
             # Обновляем индекс
             self.save_reports_index(reports_to_keep)
-            
+
             logging.info(f"Cleanup completed: {deleted_count} old reports deleted")
             return deleted_count
-            
+
         except Exception as e:
             logging.error(f"Failed to cleanup old reports: {e}")
             return 0
@@ -285,7 +285,7 @@ class MDStorageManager:
         """Проверяет целостность архива отчетов."""
         try:
             reports = self.load_reports_index()
-            
+
             result = {
                 "total_reports": len(reports),
                 "existing_files": 0,
@@ -294,7 +294,7 @@ class MDStorageManager:
                 "missing_file_paths": [],
                 "orphaned_file_paths": []
             }
-            
+
             # Проверяем существование файлов из индекса
             for report in reports:
                 file_path = self.get_report_file_path(report.file_path)
@@ -303,10 +303,10 @@ class MDStorageManager:
                 else:
                     result["missing_files"] += 1
                     result["missing_file_paths"].append(report.file_path)
-            
+
             # Ищем файлы без записей в индексе
             indexed_paths = {report.file_path for report in reports}
-            
+
             for user_dir in self.reports_dir.glob("user_*"):
                 if user_dir.is_dir():
                     for md_file in user_dir.glob(f"*{MD_FILE_EXTENSION}"):
@@ -314,33 +314,234 @@ class MDStorageManager:
                         if relative_path not in indexed_paths:
                             result["orphaned_files"] += 1
                             result["orphaned_file_paths"].append(relative_path)
-            
+
             return result
-            
+
         except Exception as e:
             logging.error(f"Failed to validate integrity: {e}")
             return {"error": str(e)}
 
 
+    # ============================================================================
+    #       ✅ НОВЫЕ МЕТОДЫ для "Мои отчеты v2" (backend-developer)
+    # ============================================================================
+
+    def export_reports_list_to_txt(self, user_id: int) -> Optional[str]:
+        """
+        Создает TXT файл со списком отчетов пользователя.
+
+        Формат файла:
+        ============================================================
+        СПИСОК ОТЧЕТОВ
+        Экспортировано: 10.10.2025 16:00
+        Количество отчетов: 5
+        ============================================================
+
+        [1] 10.10.2025 15:30 - voxpersona_20251010_153000.txt
+            Вопрос: Анализ рынка недвижимости
+            Путь: user_12345/voxpersona_20251010_153000.txt
+            Размер: 45.2 KB | Токены: 12,345 | Тип: ⚡ Быстрый
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            Путь к созданному TXT файлу или None если нет отчетов
+        """
+        try:
+            # 1. Получаем отчеты пользователя
+            reports = self.get_user_reports(user_id, limit=None)
+
+            if not reports:
+                return None
+
+            # 2. Форматируем в текст
+            lines = []
+
+            # Заголовок
+            separator = "=" * 60
+            current_time = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+            lines.append(separator)
+            lines.append("СПИСОК ОТЧЕТОВ")
+            lines.append(f"Экспортировано: {current_time}")
+            lines.append(f"Количество отчетов: {len(reports)}")
+            lines.append(separator)
+            lines.append("")
+
+            # Отчеты
+            for i, report in enumerate(reports, 1):
+                timestamp = datetime.fromisoformat(report.timestamp).strftime("%d.%m.%Y %H:%M")
+                filename = Path(report.file_path).name
+                search_icon = "⚡ Быстрый" if report.search_type == "fast" else "🔍 Глубокий"
+                size_kb = report.size_bytes / 1024
+
+                lines.append(f"[{i}] {timestamp} - {filename}")
+                lines.append(f"    Вопрос: {report.question}")
+                lines.append(f"    Путь: {report.file_path}")
+                lines.append(f"    Размер: {size_kb:.1f} KB | Токены: {report.tokens:,} | Тип: {search_icon}")
+                lines.append("")
+
+            content = "\n".join(lines)
+
+            # 3. Создаем файл
+            user_dir = self.ensure_user_directory(user_id)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"reports_list_{timestamp}.txt"
+            file_path = user_dir / filename
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+
+            logging.info(f"[MDStorage] Exported reports list to {file_path}")
+            return str(file_path)
+
+        except Exception as e:
+            logging.error(f"[MDStorage] Failed to export reports list: {e}")
+            return None
+
+    def get_report_by_index(self, user_id: int, index: int) -> Optional[ReportMetadata]:
+        """
+        Возвращает отчет пользователя по 1-based индексу.
+
+        Args:
+            user_id: ID пользователя
+            index: 1-based индекс (1 = последний отчет, N = первый отчет)
+
+        Returns:
+            ReportMetadata или None если индекс вне диапазона
+        """
+        try:
+            # Получаем все отчеты пользователя (сортированные новые первые)
+            reports = self.get_user_reports(user_id, limit=None)
+
+            # Проверяем диапазон (1-based)
+            if index < 1 or index > len(reports):
+                logging.warning(f"[MDStorage] Report index {index} out of range for user {user_id}")
+                return None
+
+            # Возвращаем отчет (index - 1 для 0-based списка)
+            return reports[index - 1]
+
+        except Exception as e:
+            logging.error(f"[MDStorage] Failed to get report by index: {e}")
+            return None
+
+    def rename_report(self, user_id: int, index: int, new_name: str) -> bool:
+        """
+        Переименовывает question отчета.
+
+        Args:
+            user_id: ID пользователя
+            index: 1-based индекс отчета
+            new_name: Новое название (question)
+
+        Returns:
+            True если успешно, False если ошибка
+        """
+        try:
+            # 1. Получаем отчет по индексу
+            report = self.get_report_by_index(user_id, index)
+
+            if not report:
+                logging.error(f"[MDStorage] Report index {index} not found for user {user_id}")
+                return False
+
+            # 2. Загружаем весь индекс
+            all_reports = self.load_reports_index()
+
+            # 3. Находим и обновляем нужный отчет
+            updated = False
+            for r in all_reports:
+                if r.user_id == user_id and r.file_path == report.file_path:
+                    r.question = new_name.strip()
+                    updated = True
+                    break
+
+            if not updated:
+                logging.error(f"[MDStorage] Failed to find report in index: {report.file_path}")
+                return False
+
+            # 4. Сохраняем обновленный индекс
+            success = self.save_reports_index(all_reports)
+
+            if success:
+                logging.info(f"[MDStorage] Renamed report #{index} for user {user_id}: '{report.question}' -> '{new_name}'")
+
+            return success
+
+        except Exception as e:
+            logging.error(f"[MDStorage] Failed to rename report: {e}")
+            return False
+
+    def delete_report(self, user_id: int, index: int) -> bool:
+        """
+        Удаляет отчет (файл + запись из index.json).
+
+        Args:
+            user_id: ID пользователя
+            index: 1-based индекс отчета
+
+        Returns:
+            True если успешно, False если ошибка
+        """
+        try:
+            # 1. Получаем отчет по индексу
+            report = self.get_report_by_index(user_id, index)
+
+            if not report:
+                logging.error(f"[MDStorage] Report index {index} not found for user {user_id}")
+                return False
+
+            # 2. Удаляем файл
+            file_path = self.get_report_file_path(report.file_path)
+
+            if file_path and file_path.exists():
+                file_path.unlink()
+                logging.info(f"[MDStorage] Deleted report file: {file_path}")
+            else:
+                logging.warning(f"[MDStorage] Report file not found: {report.file_path}")
+
+            # 3. Загружаем индекс
+            all_reports = self.load_reports_index()
+
+            # 4. Удаляем запись из индекса
+            updated_reports = [
+                r for r in all_reports
+                if not (r.user_id == user_id and r.file_path == report.file_path)
+            ]
+
+            # 5. Сохраняем обновленный индекс
+            success = self.save_reports_index(updated_reports)
+
+            if success:
+                logging.info(f"[MDStorage] Deleted report #{index} for user {user_id}")
+
+            return success
+
+        except Exception as e:
+            logging.error(f"[MDStorage] Failed to delete report: {e}")
+            return False
+
 
     def find_orphaned_reports(self, user_id: int) -> List[str]:
         """
         Находит MD отчеты не связанные ни с одним чатом.
-        
+
         Args:
             user_id: ID пользователя
-            
+
         Returns:
             Список путей к осиротевшим MD файлам
         """
         from conversation_manager import conversation_manager
-        
+
         # Получаем все MD файлы пользователя
         all_reports = self.get_user_reports(user_id, limit=None)
-        
+
         # Получаем все чаты пользователя
         conversations = conversation_manager.list_conversations(user_id)
-        
+
         # Собираем все file_path из всех чатов
         linked_files = set()
         for conv_meta in conversations:
@@ -349,29 +550,29 @@ class MDStorageManager:
                 for msg in conv.messages:
                     if msg.file_path:
                         linked_files.add(msg.file_path)
-        
+
         # Находим осиротевшие
         orphaned = [
             report.file_path
             for report in all_reports
             if report.file_path not in linked_files
         ]
-        
+
         return orphaned
 
     def cleanup_orphaned_reports(self, user_id: int) -> int:
         """
         Удаляет осиротевшие MD отчеты.
-        
+
         Args:
             user_id: ID пользователя
-            
+
         Returns:
             Количество удаленных файлов
         """
         orphaned = self.find_orphaned_reports(user_id)
         deleted_count = 0
-        
+
         for file_path in orphaned:
             try:
                 full_path = self.get_report_file_path(file_path)
@@ -381,11 +582,11 @@ class MDStorageManager:
                     logging.info(f"Cleaned up orphaned MD file: {file_path}")
             except Exception as e:
                 logging.warning(f"Failed to delete orphaned file {file_path}: {e}")
-        
+
         # Обновляем index.json - удаляем записи об удаленных файлах
         if deleted_count > 0:
             self._remove_from_index(orphaned)
-        
+
         logging.info(f"Cleaned up {deleted_count} orphaned reports for user {user_id}")
         return deleted_count
 
@@ -395,23 +596,23 @@ class MDStorageManager:
             index_file = self.reports_dir / INDEX_FILE_NAME
             if not index_file.exists():
                 return
-            
+
             with open(index_file, 'r', encoding='utf-8') as f:
                 reports = json.load(f)
-            
+
             # Фильтруем удаленные файлы
             file_paths_set = set(file_paths)
             updated_reports = [
                 report for report in reports
                 if report.get('file_path') not in file_paths_set
             ]
-            
+
             # Сохраняем обновленный индекс
             with open(index_file, 'w', encoding='utf-8') as f:
                 json.dump(updated_reports, f, ensure_ascii=False, indent=2)
-            
+
             logging.info(f"Removed {len(reports) - len(updated_reports)} entries from MD index")
-            
+
         except Exception as e:
             logging.error(f"Failed to update MD index: {e}")
 
