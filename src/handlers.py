@@ -81,6 +81,20 @@ from conversation_handlers import (
 from file_sender import auto_send_history_file, auto_send_reports_file, send_history_on_demand
 # === КОНЕЦ АВТООТПРАВКА ФАЙЛОВ ===
 
+# === МОИ ОТЧЕТЫ V2 ===
+from handlers_my_reports_v2 import (
+    handle_my_reports_v2,
+    handle_report_view_request,
+    handle_report_view_input,
+    handle_report_rename_request,
+    handle_report_rename_number_input,
+    handle_report_rename_name_input,
+    handle_report_delete_request,
+    handle_report_delete_input,
+    handle_report_delete_confirm
+)
+# === КОНЕЦ МОИ ОТЧЕТЫ V2 ===
+
 # Initialize MinIO manager
 minio_manager = get_minio_manager()
 
@@ -326,8 +340,12 @@ async def handle_reports_command(message: Message, app: Client) -> None:
         app.send_message(chat_id, "❌ Произошла ошибка при получении отчетов.")
 
 
-def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
-    """Обработчик callback для отправки отчетов."""
+async def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
+    """
+    🆕 ASYNC: Обработчик callback для отправки отчетов.
+
+    Теперь полностью async для совместимости с handlers_my_reports_v2.
+    """
     chat_id = callback_query.message.chat.id
     data = callback_query.data
 
@@ -339,14 +357,14 @@ def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
             file_path = md_storage_manager.get_report_file_path(relative_path)
 
             if file_path and file_path.exists():
-                app.send_document(
+                await app.send_document(
                     chat_id,
                     str(file_path),
                     caption="📄 Ваш отчет"
                 )
-                app.answer_callback_query(callback_query.id, "✅ Отчет отправлен")
+                await app.answer_callback_query(callback_query.id, "✅ Отчет отправлен")
             else:
-                app.answer_callback_query(
+                await app.answer_callback_query(
                     callback_query.id,
                     "❌ Файл не найден",
                     show_alert=True
@@ -361,17 +379,17 @@ def handle_report_callback(callback_query: CallbackQuery, app: Client) -> None:
                 [InlineKeyboardButton("« Назад к отчетам", callback_data="show_my_reports")]
             ])
 
-            app.edit_message_text(
+            await app.edit_message_text(
                 chat_id,
                 callback_query.message.id,
                 reports_text,
                 reply_markup=back_keyboard
             )
-            app.answer_callback_query(callback_query.id)
+            await app.answer_callback_query(callback_query.id)
 
     except Exception as e:
         logging.error(f"Error handling report callback: {e}")
-        app.answer_callback_query(
+        await app.answer_callback_query(
             callback_query.id,
             "❌ Произошла ошибка",
             show_alert=True
@@ -401,6 +419,29 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
         await handle_rename_chat_input(c_id, text_, app)
         return
     # === КОНЕЦ МУЛЬТИЧАТЫ ===
+
+    # === МОИ ОТЧЕТЫ V2: FSM обработка ===
+    if c_id in user_states:
+        step = user_states[c_id].get("step")
+
+        # View workflow
+        if step == "report_view_ask_number":
+            await handle_report_view_input(c_id, text_, app)
+            return
+
+        # Rename workflow
+        elif step == "report_rename_ask_number":
+            await handle_report_rename_number_input(c_id, text_, app)
+            return
+        elif step == "report_rename_ask_new_name":
+            await handle_report_rename_name_input(c_id, text_, app)
+            return
+
+        # Delete workflow
+        elif step == "report_delete_ask_number":
+            await handle_report_delete_input(c_id, text_, app)
+            return
+    # === КОНЕЦ МОИ ОТЧЕТЫ V2 ===
 
 
     # Проверяем, есть ли у пользователя активное состояние
@@ -587,49 +628,12 @@ async def handle_show_stats(chat_id: int, app: Client):
         )
 
 async def handle_show_my_reports(chat_id: int, app: Client):
-    """Показывает список отчетов пользователя"""
-    try:
-        reports = md_storage_manager.get_user_reports(chat_id, limit=10)
+    """
+    🆕 V2: Показывает список отчетов через TXT файл + меню операций.
 
-        if not reports:
-            # Показываем сообщение об отсутствии отчетов с меню чатов внизу
-            await send_menu(
-                chat_id=chat_id,
-                app=app,
-                text="📁 **Ваши отчеты:**\n\nУ вас пока нет сохраненных отчетов.",
-                reply_markup=chats_menu_markup_dynamic(chat_id)
-            )
-            return
-
-        keyboard = []
-        for i, report in enumerate(reports[:5], 1):
-            timestamp = datetime.fromisoformat(report.timestamp).strftime("%d.%m %H:%M")
-            question_preview = report.question[:40] + "..." if len(report.question) > 40 else report.question
-            search_icon = "⚡" if report.search_type == "fast" else "🔍"
-
-            button_text = f"{search_icon} {timestamp}: {question_preview}"
-            callback_data = f"send_report||{report.file_path}"
-
-            keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
-
-        keyboard.append([InlineKeyboardButton("📊 Показать все отчеты", callback_data="show_all_reports")])
-
-        reports_text = md_storage_manager.format_user_reports_for_display(chat_id)
-
-        await send_menu(
-            chat_id=chat_id,
-            app=app,
-            text=reports_text,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    except Exception as e:
-        logging.error(f"Error showing reports: {e}")
-        await send_menu(
-            chat_id=chat_id,
-            app=app,
-            text="❌ Произошла ошибка при получении отчетов.",
-            reply_markup=chats_menu_markup_dynamic(chat_id)
-        )
+    Делегирует всю логику handlers_my_reports_v2.handle_my_reports_v2()
+    """
+    await handle_my_reports_v2(chat_id, app)
 
 async def handle_view_files(chat_id: int, data, app: Client):
     parts = data.split("||")
@@ -1336,9 +1340,32 @@ def register_handlers(app: Client):
             elif data.startswith("choose_building||"):
                 await handle_choose_building(c_id, data, app)
 
-            # Обработка отчетов
+            # === МОИ ОТЧЕТЫ V2: Callback обработка ===
+            # View workflow
+            elif data == "report_view":
+                await handle_report_view_request(c_id, app)
+                return
+
+            # Rename workflow
+            elif data == "report_rename":
+                await handle_report_rename_request(c_id, app)
+                return
+
+            # Delete workflow
+            elif data == "report_delete":
+                await handle_report_delete_request(c_id, app)
+                return
+
+            elif data.startswith("report_delete_confirm||"):
+                # Извлекаем index из callback (report_delete_confirm||5)
+                # Но нужно просто вызвать handler - index уже сохранен в FSM
+                await handle_report_delete_confirm(c_id, app)
+                return
+            # === КОНЕЦ МОИ ОТЧЕТЫ V2 ===
+
+            # Обработка отчетов (старая система)
             elif data.startswith("send_report||") or data == "show_all_reports":
-                handle_report_callback(callback, app)
+                await handle_report_callback(callback, app)
 
             # Ручная отправка истории
             elif data == "send_history_manual":
