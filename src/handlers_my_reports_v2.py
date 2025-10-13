@@ -305,10 +305,12 @@ async def handle_report_view_request(chat_id: int, app: Client) -> None:
             return
 
         # Устанавливаем FSM состояние
-        user_states[chat_id] = {
+        if chat_id not in user_states:
+            user_states[chat_id] = {}
+        user_states[chat_id].update({
             "step": "report_view_ask_number",
             "total_reports": total_reports
-        }
+        })
 
         # Кнопка отмены
         cancel_markup = InlineKeyboardMarkup([
@@ -509,10 +511,12 @@ async def handle_report_rename_request(chat_id: int, app: Client) -> None:
             return
 
         # Устанавливаем FSM состояние
-        user_states[chat_id] = {
+        if chat_id not in user_states:
+            user_states[chat_id] = {}
+        user_states[chat_id].update({
             "step": "report_rename_ask_number",
             "total_reports": total_reports
-        }
+        })
 
         # Кнопка отмены
         cancel_markup = InlineKeyboardMarkup([
@@ -603,11 +607,13 @@ async def handle_report_rename_number_input(chat_id: int, user_input: str, app: 
         return
 
     # Сохраняем в FSM состояние
-    user_states[chat_id] = {
+    if chat_id not in user_states:
+        user_states[chat_id] = {}
+    user_states[chat_id].update({
         "step": "report_rename_ask_new_name",
         "report_index": index,
         "old_name": report.question
-    }
+    })
 
     # Кнопка отмены
     cancel_markup = InlineKeyboardMarkup([
@@ -751,10 +757,12 @@ async def handle_report_delete_request(chat_id: int, app: Client) -> None:
             return
 
         # Устанавливаем FSM состояние
-        user_states[chat_id] = {
+        if chat_id not in user_states:
+            user_states[chat_id] = {}
+        user_states[chat_id].update({
             "step": "report_delete_ask_number",
             "total_reports": total_reports
-        }
+        })
 
         # Кнопка отмены
         cancel_markup = InlineKeyboardMarkup([
@@ -844,11 +852,13 @@ async def handle_report_delete_input(chat_id: int, user_input: str, app: Client)
         return
 
     # Сохраняем в FSM состояние
-    user_states[chat_id] = {
+    if chat_id not in user_states:
+        user_states[chat_id] = {}
+    user_states[chat_id].update({
         "step": "report_delete_confirm",
         "report_index": index,
         "report_name": report.question
-    }
+    })
 
     # Показываем подтверждение
     confirm_markup = InlineKeyboardMarkup([
