@@ -2,7 +2,8 @@ import os
 import sys
 import logging
 import warnings
-from typing import List, Set
+import asyncio
+from typing import List, Set, Dict
 from dotenv import load_dotenv
 from typing import TYPE_CHECKING
 
@@ -203,6 +204,28 @@ processed_texts: dict[int, str] = {}
 user_states: dict[int, dict[str, object]] = {}
 authorized_users: Set[int] = set()
 active_menus: dict[int, list[int]] = {}
+
+# 🆕 ФАЗА 1.5: Concurrent control для защиты от race condition
+user_locks: Dict[int, asyncio.Lock] = {}
+
+def get_user_lock(chat_id: int) -> asyncio.Lock:
+    """
+    Получить или создать Lock для пользователя.
+
+    Используется для защиты критических секций от одновременных операций:
+    - Просмотр отчета (отправка файла)
+    - Переименование отчета (изменение index.json)
+    - Удаление отчета (удаление файла + запись из индекса)
+
+    Args:
+        chat_id: ID чата пользователя
+
+    Returns:
+        asyncio.Lock: Блокировка для данного пользователя
+    """
+    if chat_id not in user_locks:
+        user_locks[chat_id] = asyncio.Lock()
+    return user_locks[chat_id]
 
 # Директории хранения (deferred creation pattern)
 STORAGE_DIRS = {
