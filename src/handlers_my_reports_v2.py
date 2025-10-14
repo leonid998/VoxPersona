@@ -23,6 +23,10 @@ Task ID: 00001_20251010_144500
 Исправления: python-pro (2025-10-14)
 - Принудительное удаление старого TXT через delete_messages ✅
 - Обновления для Rename и Delete workflows ✅
+
+Исправление: python-pro (2025-10-14)
+- Валидация диапазона отчетов: убрана проверка верхней границы ✅
+- Проверка существования делегирована get_report_by_index() ✅
 """
 
 import logging
@@ -67,19 +71,30 @@ def validate_report_index(user_input: str, total_reports: int) -> Optional[int]:
     """
     Валидация номера отчета.
 
+    ✅ ИСПРАВЛЕНИЕ (2025-10-14): Убрана проверка верхней границы диапазона.
+    Теперь проверяем только положительность числа.
+    Проверку существования отчета выполняет get_report_by_index().
+
+    Причина:
+    - В системе могут быть пропуски в нумерации (1, 2, 5-22, 24, 25, 27, 29)
+    - Максимальный номер может быть больше, чем total_reports
+    - Пример: 24 отчета, но максимальный номер 29
+    - Старая проверка (1 <= index <= 24) блокировала отчеты #27 и #29
+
     Args:
         user_input: Строка от пользователя
-        total_reports: Общее количество отчетов
+        total_reports: Общее количество отчетов (используется только для сообщений об ошибках)
 
     Returns:
-        Валидный индекс (1-based) или None
+        Валидный индекс (положительное число) или None
     """
     try:
         # Парсим число
         index = int(user_input.strip())
 
-        # Проверяем диапазон
-        if 1 <= index <= total_reports:
+        # ✅ ИСПРАВЛЕНИЕ: Проверяем только положительность
+        # Проверку существования делегируем get_report_by_index()
+        if index > 0:
             return index
 
         return None
@@ -415,7 +430,7 @@ async def handle_report_view_input(chat_id: int, user_input: str, app: Client) -
             await track_and_send(
                 chat_id=chat_id,
                 app=app,
-                text=f"❌ **Некорректный номер**\n\nВведите число от 1 до {total_reports}.",
+                text=f"❌ **Некорректный номер**\n\nВведите положительное число.",
                 reply_markup=retry_markup,
                 message_type="input_request"
             )
@@ -610,7 +625,7 @@ async def handle_report_rename_number_input(chat_id: int, user_input: str, app: 
         await track_and_send(
             chat_id=chat_id,
             app=app,
-            text=f"❌ **Некорректный номер**\n\nВведите число от 1 до {total_reports}.",
+            text=f"❌ **Некорректный номер**\n\nВведите положительное число.",
             reply_markup=retry_markup,
             message_type="input_request"
         )
@@ -868,7 +883,7 @@ async def handle_report_delete_input(chat_id: int, user_input: str, app: Client)
         await track_and_send(
             chat_id=chat_id,
             app=app,
-            text=f"❌ **Некорректный номер**\n\nВведите число от 1 до {total_reports}.",
+            text=f"❌ **Некорректный номер**\n\nВведите положительное число.",
             reply_markup=retry_markup,
             message_type="input_request"
         )
