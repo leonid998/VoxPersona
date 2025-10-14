@@ -362,7 +362,7 @@ async def handle_report_view_request(chat_id: int, app: Client) -> None:
         await track_and_send(
             chat_id=chat_id,
             app=app,
-            text=f"👁️ **Посмотреть отчет**\n\nВведите номер отчета (1-{total_reports}):",
+            text=f"👁️ **Посмотреть отчет**\n\nВведите номер отчета из списка выше (всего отчетов: {total_reports}):",
             reply_markup=cancel_markup,
             message_type="input_request"  # ✅ Правильный тип для запроса ввода
         )
@@ -571,7 +571,7 @@ async def handle_report_rename_request(chat_id: int, app: Client) -> None:
         await track_and_send(
             chat_id=chat_id,
             app=app,
-            text=f"✏️ **Переименовать отчет**\n\nВведите номер отчета (1-{total_reports}):",
+            text=f"✏️ **Переименовать отчет**\n\nВведите номер отчета из списка выше (всего отчетов: {total_reports}):",
             reply_markup=cancel_markup,
             message_type="input_request"  # ✅ Правильный тип для запроса ввода
         )
@@ -830,7 +830,7 @@ async def handle_report_delete_request(chat_id: int, app: Client) -> None:
         await track_and_send(
             chat_id=chat_id,
             app=app,
-            text=f"🗑️ **Удалить отчет**\n\nВведите номер отчета (1-{total_reports}):",
+            text=f"🗑️ **Удалить отчет**\n\nВведите номер отчета из списка выше (всего отчетов: {total_reports}):",
             reply_markup=cancel_markup,
             message_type="input_request"  # ✅ Правильный тип для запроса ввода
         )
