@@ -6,6 +6,7 @@
 import os
 import json
 import logging
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
@@ -27,6 +28,7 @@ class ReportMetadata:
     size_bytes: int
     tokens: int
     search_type: str
+    report_number: int = 0  # default=0 для обратной совместимости
 
 
 class MDStorageManager:
@@ -35,6 +37,10 @@ class MDStorageManager:
     def __init__(self):
         self.reports_dir = Path(MD_REPORTS_DIR)
         self.ensure_reports_directory()
+
+        # Thread-safe locks для пользователей
+        self._user_locks: Dict[int, threading.Lock] = {}
+        self._lock_manager = threading.Lock()
 
     def ensure_reports_directory(self) -> None:
         """Создает директорию отчетов если она не существует."""
@@ -54,6 +60,28 @@ class MDStorageManager:
         except Exception as e:
             logging.error(f"Failed to create user directory {user_dir}: {e}")
             raise
+
+    def _get_user_lock(self, user_id: int) -> threading.Lock:
+        """Получить или создать lock для пользователя (thread-safe)."""
+        with self._lock_manager:
+            if user_id not in self._user_locks:
+                self._user_locks[user_id] = threading.Lock()
+            return self._user_locks[user_id]
+
+    def _get_next_report_number(self, user_id: int) -> int:
+        """Получить следующий номер отчета для пользователя (thread-safe)."""
+        lock = self._get_user_lock(user_id)
+        with lock:
+            # Атомарное получение max + инкремент
+            user_reports = self.get_user_reports(user_id, limit=None)
+            if not user_reports:
+                return 1
+
+            max_number = max(
+                (r.report_number for r in user_reports if r.report_number > 0),
+                default=0
+            )
+            return max_number + 1
 
     def generate_filename(self) -> str:
         """Генерирует уникальное имя файла."""
@@ -104,6 +132,9 @@ class MDStorageManager:
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(md_content)
 
+            # Получить следующий номер (thread-safe)
+            report_number = self._get_next_report_number(user_id)
+
             # Обновляем индекс
             metadata = ReportMetadata(
                 file_path=str(file_path.relative_to(self.reports_dir)),
@@ -113,7 +144,8 @@ class MDStorageManager:
                 question=question,
                 size_bytes=len(md_content.encode('utf-8')),
                 tokens=count_tokens(content),
-                search_type=search_type
+                search_type=search_type,
+                report_number=report_number
             )
 
             self.update_reports_index(metadata)
@@ -136,7 +168,20 @@ class MDStorageManager:
             with open(index_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            return [ReportMetadata(**item) for item in data]
+            reports = []
+            valid_fields = set(ReportMetadata.__dataclass_fields__.keys())
+
+            for item in data:
+                try:
+                    # Фильтруем только известные поля
+                    filtered = {k: v for k, v in item.items() if k in valid_fields}
+                    report = ReportMetadata(**filtered)
+                    reports.append(report)
+                except Exception as e:
+                    logging.warning(f"Skipped invalid report {item.get('file_path', 'unknown')}: {e}")
+                    continue
+
+            return reports
         except Exception as e:
             logging.error(f"Failed to load reports index: {e}")
             return []
@@ -355,6 +400,16 @@ class MDStorageManager:
             if not reports:
                 return None
 
+            # ПЕРЕД созданием файла - удалить старые
+            user_dir = self.ensure_user_directory(user_id)
+            old_files = list(user_dir.glob("reports_list_*.txt"))
+            for old_file in old_files:
+                try:
+                    old_file.unlink()
+                    logging.info(f"Deleted old reports list: {old_file}")
+                except Exception as e:
+                    logging.warning(f"Failed to delete {old_file}: {e}")
+
             # 2. Форматируем в текст
             lines = []
 
@@ -369,15 +424,17 @@ class MDStorageManager:
             lines.append(separator)
             lines.append("")
 
-            # Отчеты
-            for i, report in enumerate(reports, 1):
+            # Отчеты - используем report_number вместо enumerate
+            for report in reports:
                 timestamp = datetime.fromisoformat(report.timestamp).strftime("%d.%m.%Y %H:%M")
                 filename = Path(report.file_path).name
                 search_icon = "⚡ Быстрый" if report.search_type == "fast" else "🔍 Глубокий"
                 size_kb = report.size_bytes / 1024
+                question_preview = report.question[:50]
 
-                lines.append(f"[{i}] {timestamp} - {filename}")
-                lines.append(f"    Вопрос: {report.question}")
+                # Использовать статический номер
+                lines.append(f"[{report.report_number}] {timestamp} - {filename}")
+                lines.append(f"    Вопрос: {question_preview}")
                 lines.append(f"    Путь: {report.file_path}")
                 lines.append(f"    Размер: {size_kb:.1f} KB | Токены: {report.tokens:,} | Тип: {search_icon}")
                 lines.append("")
@@ -385,7 +442,6 @@ class MDStorageManager:
             content = "\n".join(lines)
 
             # 3. Создаем файл
-            user_dir = self.ensure_user_directory(user_id)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"reports_list_{timestamp}.txt"
             file_path = user_dir / filename

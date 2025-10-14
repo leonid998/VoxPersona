@@ -14,6 +14,11 @@ Task ID: 00001_20251010_144500
 - Edge cases handling ✅
 - Logging ✅
 - Async compatibility ✅
+
+Обновление: fullstack-developer (2025-10-14)
+- Автоматическая очистка TXT из чата ✅
+- Сохранение message_id в user_states ✅
+- Graceful degradation ✅
 """
 
 import logging
@@ -127,10 +132,14 @@ async def handle_my_reports_v2(chat_id: int, app: Client) -> None:
 
     🔴 КРИТИЧНО: Полностью async, все операции с await.
 
+    🆕 ОБНОВЛЕНИЕ (2025-10-14): Автоматическая очистка старых TXT из чата.
+
     Workflow:
     1. Экспортирует список отчетов в TXT файл
-    2. Отправляет файл пользователю
-    3. Показывает меню с операциями: Посмотреть/Переименовать/Удалить
+    2. Удаляет предыдущий TXT из чата (по message_id)
+    3. Отправляет новый файл пользователю
+    4. Сохраняет message_id нового файла в user_states
+    5. Показывает меню с операциями: Посмотреть/Переименовать/Удалить
 
     Args:
         chat_id: ID чата пользователя
@@ -174,6 +183,15 @@ async def handle_my_reports_v2(chat_id: int, app: Client) -> None:
             logger.error(f"[MyReportsV2] Failed to export reports list for user {chat_id}")
             return
 
+        # 🆕 УДАЛИТЬ ПРЕДЫДУЩИЙ TXT ИЗ ЧАТА (Phase 1)
+        old_message_id = user_states.get(chat_id, {}).get("last_reports_list_message_id")
+        if old_message_id:
+            try:
+                await app.delete_messages(chat_id, old_message_id)
+                logger.info(f"[MyReportsV2] Deleted old reports list message: {old_message_id}")
+            except Exception as e:
+                logger.warning(f"[MyReportsV2] Failed to delete old reports list: {e}")
+
         file_obj = None
         try:
             # Читаем файл асинхронно
@@ -214,11 +232,17 @@ async def handle_my_reports_v2(chat_id: int, app: Client) -> None:
             file_obj.name = f"reports_{chat_id}.txt"
 
             # Отправляем файл БЕЗ меню
-            await app.send_document(
+            new_message = await app.send_document(
                 chat_id=chat_id,
                 document=file_obj,
                 caption="📋 **Список ваших отчетов**"
             )
+
+            # 🆕 СОХРАНИТЬ message_id НОВОГО TXT (Phase 1)
+            if chat_id not in user_states:
+                user_states[chat_id] = {}
+            user_states[chat_id]["last_reports_list_message_id"] = new_message.id
+            logger.info(f"[MyReportsV2] Saved new reports list message_id: {new_message.id}")
 
             logger.info(f"[MyReportsV2] TXT file sent to user {chat_id} ({len(reports)} reports)")
 
@@ -228,10 +252,8 @@ async def handle_my_reports_v2(chat_id: int, app: Client) -> None:
                 file_obj.close()
 
         # 🆕 ФАЗА 1.5: Сохранение snapshot с timestamp
-        user_states[chat_id] = {
-            "reports_snapshot": reports,
-            "reports_timestamp": datetime.now()
-        }
+        user_states[chat_id]["reports_snapshot"] = reports
+        user_states[chat_id]["reports_timestamp"] = datetime.now()
         logger.info(f"[MyReportsV2] Snapshot saved for user {chat_id} ({len(reports)} reports)")
 
         # Меню с кнопками операций
