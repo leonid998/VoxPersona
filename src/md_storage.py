@@ -458,26 +458,26 @@ class MDStorageManager:
 
     def get_report_by_index(self, user_id: int, index: int) -> Optional[ReportMetadata]:
         """
-        Возвращает отчет пользователя по 1-based индексу.
+        Возвращает отчет по report_number (НЕ по позиции!).
 
         Args:
             user_id: ID пользователя
-            index: 1-based индекс (1 = последний отчет, N = первый отчет)
+            index: report_number отчета (1-based)
 
         Returns:
-            ReportMetadata или None если индекс вне диапазона
+            ReportMetadata или None
         """
         try:
-            # Получаем все отчеты пользователя (сортированные новые первые)
+            # Получаем все отчеты пользователя
             reports = self.get_user_reports(user_id, limit=None)
 
-            # Проверяем диапазон (1-based)
-            if index < 1 or index > len(reports):
-                logging.warning(f"[MDStorage] Report index {index} out of range for user {user_id}")
-                return None
+            # ✅ ИСПРАВЛЕНИЕ: Поиск по report_number вместо позиции в массиве
+            for report in reports:
+                if report.report_number == index:
+                    return report
 
-            # Возвращаем отчет (index - 1 для 0-based списка)
-            return reports[index - 1]
+            logging.warning(f"[MDStorage] Report #{index} not found for user {user_id}")
+            return None
 
         except Exception as e:
             logging.error(f"[MDStorage] Failed to get report by index: {e}")

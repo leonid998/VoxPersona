@@ -19,6 +19,10 @@ Task ID: 00001_20251010_144500
 - Автоматическая очистка TXT из чата ✅
 - Сохранение message_id в user_states ✅
 - Graceful degradation ✅
+
+Исправления: python-pro (2025-10-14)
+- Принудительное удаление старого TXT через delete_messages ✅
+- Обновления для Rename и Delete workflows ✅
 """
 
 import logging
@@ -741,8 +745,14 @@ async def handle_report_rename_name_input(chat_id: int, user_input: str, app: Cl
             message_type="status_message"
         )
 
-        # Очистить кеш списка отчетов для принудительного обновления
-        user_states[chat_id].pop("last_reports_list_message_id", None)
+        # ✅ ИСПРАВЛЕНИЕ: Принудительное удаление старого TXT из чата
+        old_message_id = user_states[chat_id].pop("last_reports_list_message_id", None)
+        if old_message_id:
+            try:
+                await app.delete_messages(chat_id, old_message_id)
+                logger.info(f"[ReportRename] Deleted old TXT message: {old_message_id}")
+            except Exception as e:
+                logger.warning(f"[ReportRename] Failed to delete old TXT: {e}")
 
         # Возвращаем в меню "Мои отчеты" с обновленным списком
         await handle_my_reports_v2(chat_id, app)
@@ -987,8 +997,14 @@ async def handle_report_delete_confirm(chat_id: int, app: Client) -> None:
             message_type="status_message"
         )
 
-        # Очистить кеш списка отчетов для принудительного обновления
-        user_states[chat_id].pop("last_reports_list_message_id", None)
+        # ✅ ИСПРАВЛЕНИЕ: Принудительное удаление старого TXT из чата
+        old_message_id = user_states[chat_id].pop("last_reports_list_message_id", None)
+        if old_message_id:
+            try:
+                await app.delete_messages(chat_id, old_message_id)
+                logger.info(f"[ReportDelete] Deleted old TXT message: {old_message_id}")
+            except Exception as e:
+                logger.warning(f"[ReportDelete] Failed to delete old TXT: {e}")
 
         # Возвращаем в меню "Мои отчеты" с обновленным списком
         await handle_my_reports_v2(chat_id, app)

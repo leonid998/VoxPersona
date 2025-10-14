@@ -11,6 +11,12 @@ import nest_asyncio
 
 nest_asyncio.apply()
 
+# ✅ ИСПРАВЛЕНИЕ: Установка уровня логирования INFO
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s'
+)
+
 
 async def periodic_save_rags():
     while True:
