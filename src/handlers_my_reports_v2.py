@@ -741,6 +741,9 @@ async def handle_report_rename_name_input(chat_id: int, user_input: str, app: Cl
             message_type="status_message"
         )
 
+        # Очистить кеш списка отчетов для принудительного обновления
+        user_states[chat_id].pop("last_reports_list_message_id", None)
+
         # Возвращаем в меню "Мои отчеты" с обновленным списком
         await handle_my_reports_v2(chat_id, app)
 
@@ -983,6 +986,9 @@ async def handle_report_delete_confirm(chat_id: int, app: Client) -> None:
             text=result_text,
             message_type="status_message"
         )
+
+        # Очистить кеш списка отчетов для принудительного обновления
+        user_states[chat_id].pop("last_reports_list_message_id", None)
 
         # Возвращаем в меню "Мои отчеты" с обновленным списком
         await handle_my_reports_v2(chat_id, app)

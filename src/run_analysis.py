@@ -267,7 +267,7 @@ async def run_analysis_pass(
                 chat_id=chat_id,
                 app=app,
                 username=username,
-                question="",  # Для анализа нет исходного вопроса
+                question=f"Анализ методологии: {label}",
                 search_type="analysis",
                 parse_mode=None,
                 conversation_id=conversation_id
