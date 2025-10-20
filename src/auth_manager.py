@@ -325,9 +325,8 @@ class AuthManager:
 
             return None
 
-        # Проверка пароля
-        # TODO (T09): Заменить на AuthSecurityManager.verify_password()
-        if not self._temp_verify_password(password, user.password_hash):
+        # Проверка пароля через bcrypt
+        if not self.security.verify_password(password, user.password_hash):
             # Увеличить счетчик неудачных попыток
             user.failed_login_attempts += 1
             user.last_failed_login = datetime.now()
@@ -868,9 +867,8 @@ class AuthManager:
             logger.warning(f"Change password failed: user not found (user_id={user_id})")
             return False
 
-        # 2. Проверить старый пароль
-        # TODO (T09): Заменить на AuthSecurityManager.verify_password()
-        if not self._temp_verify_password(old_password, user.password_hash):
+        # 2. Проверить старый пароль через bcrypt
+        if not self.security.verify_password(old_password, user.password_hash):
             logger.warning(f"Change password failed: invalid old password (user_id={user_id})")
             raise ValueError("Неверный старый пароль")
 
