@@ -652,7 +652,17 @@ async def handle_menu_storage(chat_id: int, app: Client):
     await send_menu(chat_id, app, "Что анализируем?:", interview_or_design_menu())
 
 async def handle_menu_system(chat_id: int, app: Client):
-    await send_menu(chat_id, app, "⚙️ Системные настройки:", system_menu_markup())
+    # Получить роль пользователя для отображения меню по правам
+    from config import get_auth_manager
+
+    auth = get_auth_manager()
+    user_role = "user"  # По умолчанию
+    if auth:
+        user = auth.storage.get_user_by_telegram_id(chat_id)
+        if user:
+            user_role = user.role
+
+    await send_menu(chat_id, app, "⚙️ Системные настройки:", system_menu_markup(user_role=user_role))
 
 async def handle_menu_chats(chat_id: int, app: Client):
     """Показывает меню чатов с динамическим списком."""
