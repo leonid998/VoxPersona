@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Callable
+    from auth_manager import AuthManager
     load_dotenv: Callable[..., bool]
 import tiktoken
 
