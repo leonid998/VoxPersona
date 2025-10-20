@@ -112,12 +112,13 @@ async def main():
         bot_token=TELEGRAM_BOT_TOKEN
     )
 
+    # КРИТИЧНО: Инициализация AuthManager ДО регистрации handlers
+    # auth_filter требует get_auth_manager() != None
+    await init_auth_manager()
+
     handlers.register_handlers(app)
 
     await app.start()
-
-    # Инициализация AuthManager перед загрузкой RAG моделей
-    await init_auth_manager()
 
     asyncio.create_task(load_rags())
     logging.info("Бот запущен. Ожидаю сообщений...")
