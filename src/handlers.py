@@ -21,7 +21,7 @@ from utils import run_loading_animation, openai_audio_filter, get_username_from_
 from constants import COMMAND_HISTORY, COMMAND_STATS, COMMAND_REPORTS
 from conversation_manager import conversation_manager
 from md_storage import md_storage_manager
-from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, check_authorized, validate_building_type
+from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, validate_building_type
 from parser import parse_message_text, parse_building_type, parse_zone, parse_file_number, parse_place_name, parse_city, parse_name
 
 from storage import delete_tmp_params, safe_filename, find_real_filename
