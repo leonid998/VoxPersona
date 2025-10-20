@@ -1,12 +1,12 @@
 from typing import Any, cast
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import os
 import re
 import threading
 import logging
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import CallbackQuery, Message, Document, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import CallbackQuery, Message, Document, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from minio.error import S3Error
 
 from minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, MinIOUploadError
@@ -14,7 +14,8 @@ from minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, M
 from config import (
     processed_texts,
     user_states,
-    STORAGE_DIRS
+    STORAGE_DIRS,
+    get_auth_manager
 )
 from utils import run_loading_animation, openai_audio_filter, get_username_from_chat
 from constants import COMMAND_HISTORY, COMMAND_STATS, COMMAND_REPORTS
@@ -53,6 +54,9 @@ from storage import process_stored_file
 from analysis import (
     assign_roles
 )
+
+# Logger для handlers
+logger = logging.getLogger(__name__)
 
 from run_analysis import run_analysis_with_spinner, run_dialog_mode
 
@@ -1132,7 +1136,9 @@ def register_handlers(app: Client):
             user_states[c_id] = {
                 "step": "awaiting_password",
                 "user_id": user.user_id,
-                "telegram_id": telegram_id
+                "telegram_id": telegram_id,
+                "created_at": datetime.now(),
+                "expires_at": datetime.now() + timedelta(minutes=5)  # W-03: timeout 5 минут
             }
             await message.reply_text(
                 "🔐 **Вход в систему**\n\n"
@@ -1166,6 +1172,17 @@ def register_handlers(app: Client):
             )
             return
 
+        # W-03: Проверка истечения timeout (5 минут)
+        state = user_states[c_id]
+        if state.get("expires_at") and datetime.now() > state["expires_at"]:
+            del user_states[c_id]
+            await message.reply_text(
+                "⏱️ **Время ввода пароля истекло**\n\n"
+                "Отправьте /start заново для повторной попытки."
+            )
+            logger.info(f"Login timeout expired: telegram_id={telegram_id}")
+            return
+
         auth = get_auth_manager()
         if not auth:
             await message.reply_text("⚠️ Система авторизации недоступна.")
@@ -1174,8 +1191,15 @@ def register_handlers(app: Client):
         password = message.text.strip()
         user_id = user_states[c_id].get("user_id")
 
-        # Попытка аутентификации
-        session = auth.authenticate(telegram_id, password)
+        # КРИТИЧНО: Удалить сообщение с паролем из истории чата (W-02)
+        try:
+            await message.delete()
+            logger.debug(f"Password message deleted: telegram_id={telegram_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete password message: {e}")
+
+        # Попытка аутентификации (C-01: добавлен await!)
+        session = await auth.authenticate(telegram_id, password)
 
         if session:
             # ✅ Успешная аутентификация
