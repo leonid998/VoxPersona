@@ -385,16 +385,8 @@ def process_stored_file(category: str, filename: str, chat_id: int)->str|None:
         return None
 
 # ========== /start и авторизация ==========
-async def cmd_start(_: Client, message: Message) -> None:
-    """Обработчик команды /start с явной типизацией"""
-    c_id=message.chat.id
-    await send_main_menu(c_id)
-
-# Регистрируем декорированный обработчик
-@app.on_message(filters.command("start"))  # type: ignore[misc]
-async def _cmd_start_handler(client: Client, message: Message) -> None:  # pyright: ignore[reportUnusedFunction]
-    """Декорированная реализация для cmd_start"""
-    return await cmd_start(client, message)
+# УДАЛЕНО: Старый обработчик /start перенесен в handlers.py с auth_filter
+# Теперь /start обрабатывается через handlers.register_handlers() с проверкой сессии
 
 async def handle_auth_text(_: Client, message: Message) -> None:
     """Обработчик авторизации по тексту с явной типизацией"""
