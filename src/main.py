@@ -100,8 +100,13 @@ async def init_auth_manager():
 
 
 async def main():
+    # Определить путь для сохранения Telegram session файлов
+    session_dir = Path("/app/telegram_sessions")
+    session_dir.mkdir(parents=True, exist_ok=True)
+    session_path = session_dir / SESSION_NAME
+
     app = Client(
-        SESSION_NAME,
+        str(session_path),  # Полный путь к .session файлу
         api_id=int(API_ID),
         api_hash=API_HASH,
         bot_token=TELEGRAM_BOT_TOKEN

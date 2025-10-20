@@ -77,6 +77,10 @@ services:
       - ./chat_history:/home/voxpersona_user/VoxPersona/chat_history
       # Auth data persistence (КРИТИЧЕСКИ ВАЖНО для сохранения пользователей)
       - ./auth_data:/app/src/auth_data
+      # Telegram session persistence (КРИТИЧЕСКИ ВАЖНО - иначе переавторизация при каждой пересборке)
+      - ./telegram_sessions:/app/telegram_sessions
+      # Throttle data для file_sender (предотвращает дубликаты отправки)
+      - ./data:/home/voxpersona_user/VoxPersona/data
       # Cache volumes for development
       - pip_cache:/root/.cache/pip
       - huggingface_cache:/root/.cache/huggingface
