@@ -75,6 +75,8 @@ services:
       - ./conversations:/home/voxpersona_user/VoxPersona/conversations
       - ./md_reports:/home/voxpersona_user/VoxPersona/md_reports
       - ./chat_history:/home/voxpersona_user/VoxPersona/chat_history
+      # Auth data persistence (КРИТИЧЕСКИ ВАЖНО для сохранения пользователей)
+      - ./auth_data:/app/src/auth_data
       # Cache volumes for development
       - pip_cache:/root/.cache/pip
       - huggingface_cache:/root/.cache/huggingface

@@ -28,6 +28,7 @@ from typing import List, Optional, Tuple
 from uuid import uuid4
 
 from auth_storage import AuthStorageManager
+from auth_security import AuthSecurityManager
 from auth_models import (
     User, Session, Invitation, Role, AuthAuditEvent,
     UserSettings, UserMetadata, SessionMetadata, InvitationMetadata
@@ -45,6 +46,7 @@ class AuthManager:
 
     Attributes:
         storage (AuthStorageManager): Storage manager для CRUD операций
+        security (AuthSecurityManager): Security manager для bcrypt и генерации токенов
         _roles_cache (dict): Кэш ролей для быстрого доступа к правам
     """
 
@@ -56,6 +58,7 @@ class AuthManager:
             base_path: Путь к директории auth_data/
         """
         self.storage = AuthStorageManager(base_path)
+        self.security = AuthSecurityManager()
         self._roles_cache: dict[str, Role] = {}
 
         # Инициализировать роли по умолчанию
