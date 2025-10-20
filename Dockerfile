@@ -102,6 +102,9 @@ COPY prompts-by-scenario/ ./prompts-by-scenario/
 # Only copy sql_scripts if it exists (conditional copy)
 COPY sql_scripts* ./sql_scripts/
 
+# Copy migration scripts for auth system
+COPY scripts/ ./scripts/
+
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
