@@ -1109,6 +1109,110 @@ def register_handlers(app: Client):
         c_id = message.chat.id
         await send_main_menu(c_id, app)
 
+    # === AUTH: Login flow для пользователей без активной сессии ===
+    @app.on_message(filters.command("start") & ~auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
+    async def cmd_start_login(client: Client, message: Message):
+        """
+        Обработчик /start для НЕавторизованных пользователей.
+        Проверяет существование user и запрашивает пароль.
+        """
+        c_id = message.chat.id
+        telegram_id = message.from_user.id
+
+        auth = get_auth_manager()
+        if not auth:
+            await message.reply_text("⚠️ Система авторизации недоступна. Попробуйте позже.")
+            return
+
+        # Проверить существование пользователя
+        user = auth.storage.get_user_by_telegram_id(telegram_id)
+
+        if user:
+            # User существует, но нет активной сессии → запросить пароль
+            user_states[c_id] = {
+                "step": "awaiting_password",
+                "user_id": user.user_id,
+                "telegram_id": telegram_id
+            }
+            await message.reply_text(
+                "🔐 **Вход в систему**\n\n"
+                f"Здравствуйте, {user.username}!\n"
+                "Введите пароль для авторизации:",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            logger.info(f"Login prompt sent: telegram_id={telegram_id}, user_id={user.user_id}")
+        else:
+            # User НЕ существует → доступ запрещен (требуется приглашение)
+            await message.reply_text(
+                "❌ **Доступ запрещен**\n\n"
+                "Для использования бота требуется приглашение от администратора.\n"
+                "Обратитесь к администратору для получения доступа."
+            )
+            logger.warning(f"Access denied - user not found: telegram_id={telegram_id}")
+
+    @app.on_message(filters.text & ~filters.command("start") & ~auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
+    async def handle_password_input(client: Client, message: Message):
+        """
+        Обработчик ввода пароля для НЕавторизованных пользователей.
+        """
+        c_id = message.chat.id
+        telegram_id = message.from_user.id
+
+        # Проверить FSM state
+        if c_id not in user_states or user_states[c_id].get("step") != "awaiting_password":
+            # Неавторизованный пользователь отправил текст, но НЕ в состоянии ожидания пароля
+            await message.reply_text(
+                "❌ Вы не авторизованы. Отправьте /start для входа."
+            )
+            return
+
+        auth = get_auth_manager()
+        if not auth:
+            await message.reply_text("⚠️ Система авторизации недоступна.")
+            return
+
+        password = message.text.strip()
+        user_id = user_states[c_id].get("user_id")
+
+        # Попытка аутентификации
+        session = auth.authenticate(telegram_id, password)
+
+        if session:
+            # ✅ Успешная аутентификация
+            del user_states[c_id]  # Очистить FSM state
+
+            await message.reply_text(
+                "✅ **Вход выполнен успешно!**\n\n"
+                "Добро пожаловать в VoxPersona."
+            )
+
+            # Отправить главное меню
+            await send_main_menu(c_id, client)
+
+            logger.info(f"Login successful: telegram_id={telegram_id}, session_id={session.session_id}")
+        else:
+            # ❌ Неверный пароль
+            attempts = user_states[c_id].get("attempts", 0) + 1
+            user_states[c_id]["attempts"] = attempts
+
+            if attempts >= 3:
+                # Блокировка после 3 неудачных попыток
+                del user_states[c_id]
+                await message.reply_text(
+                    "❌ **Превышено количество попыток**\n\n"
+                    "Слишком много неудачных попыток входа.\n"
+                    "Попробуйте снова через некоторое время."
+                )
+                logger.warning(f"Login failed - max attempts reached: telegram_id={telegram_id}")
+            else:
+                # Повторный запрос пароля
+                await message.reply_text(
+                    f"❌ **Неверный пароль**\n\n"
+                    f"Попытка {attempts} из 3. Попробуйте еще раз:"
+                )
+                logger.warning(f"Login failed - wrong password: telegram_id={telegram_id}, attempt={attempts}")
+    # === КОНЕЦ AUTH LOGIN FLOW ===
+
     # === AUTH: Регистрация команды /change_password (ИЗМЕНЕНИЕ 4) ===
     @app.on_message(filters.command("change_password") & auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
     async def cmd_change_password(client: Client, message: Message):
