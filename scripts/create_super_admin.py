@@ -73,14 +73,33 @@ def create_super_admin(telegram_id: int, username: str, password: str) -> bool:
             logger.error(f"❌ Password validation failed: {error_msg}")
             return False
 
-        # Создаём пользователя через AuthManager (правильный способ)
-        user = auth.register_user(
+        # Создаём пользователя напрямую через storage (bypass invitation system)
+        # Это допустимо только для первого super_admin
+        import uuid
+        from datetime import datetime, timedelta
+
+        user_data = User(
+            user_id=str(uuid.uuid4()),
             telegram_id=telegram_id,
             username=username,
-            password=password,
+            password_hash=auth_security.hash_password(password),
             role="super_admin",
-            must_change_password=False  # Не требуем смены для первого admin
+            is_active=True,
+            is_blocked=False,
+            must_change_password=False,  # Не требуем смены для первого admin
+            failed_login_attempts=0,
+            last_failed_login=None,
+            created_at=datetime.now(),
+            updated_at=datetime.now()
         )
+
+        success = auth.storage.create_user(user_data)
+
+        if not success:
+            logger.error("❌ Failed to create user in storage")
+            return False
+
+        user = user_data
 
         if user:
             logger.info("✅ Super_admin created successfully!")
