@@ -930,6 +930,45 @@ class AuthStorageManager(BaseStorageManager):
                 logger.error(f"Failed to get sessions for user {user_id}: {e}")
                 return []
 
+    def get_active_session_by_telegram_id(self, telegram_id: int) -> Optional[Session]:
+        """
+        Получает активную сессию пользователя по telegram_id.
+
+        Поиск среди всех user_*/sessions.json. Возвращает первую активную сессию.
+
+        Args:
+            telegram_id: Telegram ID пользователя
+
+        Returns:
+            Optional[Session]: Активная сессия или None если не найдена
+        """
+        try:
+            # Сначала найти пользователя по telegram_id
+            user = self.get_user_by_telegram_id(telegram_id)
+            if not user:
+                logger.debug(f"User not found by telegram_id: {telegram_id}")
+                return None
+
+            # Получить активные сессии пользователя
+            sessions = self.get_user_sessions(user.user_id, include_expired=False)
+
+            # Вернуть первую активную сессию
+            now = datetime.now()
+            for session in sessions:
+                if session.is_active and session.expires_at > now:
+                    logger.debug(
+                        f"Active session found for telegram_id={telegram_id}: "
+                        f"session_id={session.session_id}"
+                    )
+                    return session
+
+            logger.debug(f"No active session found for telegram_id: {telegram_id}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to get active session by telegram_id {telegram_id}: {e}")
+            return None
+
     def list_invitations(self, include_consumed: bool = False) -> List[Invitation]:
         """
         Возвращает список всех приглашений.
