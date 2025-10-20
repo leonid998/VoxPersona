@@ -3,7 +3,7 @@ import sys
 import logging
 import warnings
 import asyncio
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Optional
 from dotenv import load_dotenv
 from typing import TYPE_CHECKING
 
@@ -95,7 +95,6 @@ REPORT_MODEL_NAME = os.getenv("REPORT_MODEL_NAME")
 
 API_ID = get_api_id()
 API_HASH = get_api_hash()
-PASSWORD = os.getenv("PASSWORD")
 
 RUN_MODE = os.getenv("RUN_MODE")
 
@@ -202,7 +201,6 @@ else:
 # Глобальные словари/сеты
 processed_texts: dict[int, str] = {}
 user_states: dict[int, dict[str, object]] = {}
-authorized_users: Set[int] = set()
 active_menus: dict[int, list[int]] = {}
 
 # 🆕 ФАЗА 1.5: Concurrent control для защиты от race condition
@@ -226,6 +224,52 @@ def get_user_lock(chat_id: int) -> asyncio.Lock:
     if chat_id not in user_locks:
         user_locks[chat_id] = asyncio.Lock()
     return user_locks[chat_id]
+
+# ========== 🔐 AUTH MANAGER GLOBAL (T11) ==========
+
+# Глобальная переменная для AuthManager
+# Используется для централизованного доступа к системе авторизации
+# Инициализируется в main.py через set_auth_manager()
+auth_manager: Optional["AuthManager"] = None
+
+def set_auth_manager(manager) -> None:
+    """
+    Устанавливает глобальный auth_manager.
+
+    Args:
+        manager: Экземпляр AuthManager для установки
+
+    Example:
+        from auth_manager import AuthManager
+        from pathlib import Path
+
+        # Создать AuthManager
+        manager = AuthManager(Path("./auth_data"))
+
+        # Установить глобальный менеджер
+        set_auth_manager(manager)
+    """
+    global auth_manager
+    auth_manager = manager
+    logging.info("Global auth_manager has been set")
+
+def get_auth_manager():
+    """
+    Возвращает глобальный auth_manager.
+
+    Returns:
+        Optional[AuthManager]: Экземпляр AuthManager или None если не инициализирован
+
+    Example:
+        from config import get_auth_manager
+
+        auth = get_auth_manager()
+        if auth:
+            user = await auth.authenticate(telegram_id=123456, password="abc123")
+        else:
+            logging.error("AuthManager не инициализирован!")
+    """
+    return auth_manager
 
 # Директории хранения (deferred creation pattern)
 STORAGE_DIRS = {

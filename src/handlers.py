@@ -9,19 +9,18 @@ from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, Document, InlineKeyboardMarkup, InlineKeyboardButton
 from minio.error import S3Error
 
-from src.minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, MinIOUploadError
+from minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, MinIOUploadError
 
 from config import (
     processed_texts,
     user_states,
-    authorized_users,
     STORAGE_DIRS
 )
 from utils import run_loading_animation, openai_audio_filter, get_username_from_chat
 from constants import COMMAND_HISTORY, COMMAND_STATS, COMMAND_REPORTS
 from conversation_manager import conversation_manager
 from md_storage import md_storage_manager
-from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, check_authorized, validate_building_type
+from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, validate_building_type
 from parser import parse_message_text, parse_building_type, parse_zone, parse_file_number, parse_place_name, parse_city, parse_name
 
 from storage import delete_tmp_params, safe_filename, find_real_filename
@@ -58,7 +57,6 @@ from analysis import (
 from run_analysis import run_analysis_with_spinner, run_dialog_mode
 
 from audio_utils import extract_audio_filename, define_audio_file_params, transcribe_audio_and_save
-from auth_utils import handle_unauthorized_user
 
 from openai import PermissionDeniedError as OpenAIPermissionError
 
@@ -94,6 +92,45 @@ from handlers_my_reports_v2 import (
     handle_report_delete_confirm
 )
 # === КОНЕЦ МОИ ОТЧЕТЫ V2 ===
+
+# === AUTH: Импорты для управления доступом ===
+from auth_filters import auth_filter
+from access_handlers import (
+    handle_access_menu,
+    handle_users_menu,
+    handle_list_users,
+    handle_user_details,
+    handle_edit_user,
+    handle_change_role,
+    handle_confirm_role_change,
+    handle_reset_password,
+    handle_confirm_reset_password,
+    handle_toggle_block_user,
+    handle_confirm_block,
+    handle_delete_user,
+    handle_confirm_delete,
+    handle_filter_users_by_role,
+    handle_search_user,
+    handle_search_user_input,
+    handle_invitations_menu,
+    handle_create_invitation,
+    handle_confirm_create_invite,
+    handle_list_invitations,
+    handle_invitation_details,
+    handle_revoke_invitation,
+    handle_confirm_revoke,
+    handle_security_menu,
+    handle_audit_log,
+    handle_change_password_start,
+    handle_password_change_current_input,
+    handle_password_change_new_input,
+    handle_password_change_confirm_input,
+    handle_users_pagination,
+    handle_invitations_pagination,
+    handle_filter_apply,
+    handle_filter_reset
+)
+# === КОНЕЦ AUTH ===
 
 # Initialize MinIO manager
 minio_manager = get_minio_manager()
@@ -442,6 +479,29 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
             await handle_report_delete_input(c_id, text_, app)
             return
     # === КОНЕЦ МОИ ОТЧЕТЫ V2 ===
+
+    # === AUTH: FSM обработка смены пароля (ИЗМЕНЕНИЕ 1) ===
+    if c_id in user_states:
+        step = user_states[c_id].get("step")
+
+        # FSM: Смена пароля
+        if step == "password_change_current":
+            await handle_password_change_current_input(c_id, text_, app)
+            return
+
+        elif step == "password_change_new":
+            await handle_password_change_new_input(c_id, text_, app)
+            return
+
+        elif step == "password_change_confirm":
+            await handle_password_change_confirm_input(c_id, text_, app)
+            return
+
+        # FSM: Поиск пользователя
+        elif step == "access_search_user_input":
+            await handle_search_user_input(c_id, text_, app)
+            return
+    # === КОНЕЦ AUTH FSM ===
 
 
     # Проверяем, есть ли у пользователя активное состояние
@@ -1033,38 +1093,44 @@ def register_handlers(app: Client):
     Регистрируем все хендлеры Pyrogram.
     """
 
-    @app.on_message(filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
+    @app.on_message(filters.command("start") & auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
     async def cmd_start(app: Client, message: Message):
+        """Команда /start - доступна только авторизованным пользователям."""
         c_id = message.chat.id
-        if c_id not in authorized_users:
-            await app.send_message(c_id, "Вы не авторизованы. Введите пароль:")
-        else:
-            await send_main_menu(c_id, app)
+        await send_main_menu(c_id, app)
 
-    @app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
+    # === AUTH: Регистрация команды /change_password (ИЗМЕНЕНИЕ 4) ===
+    @app.on_message(filters.command("change_password") & auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
+    async def cmd_change_password(client: Client, message: Message):
+        """Команда смены пароля (доступна всем авторизованным)."""
+        c_id = message.chat.id
+        await handle_change_password_start(c_id, client)
+    # === КОНЕЦ AUTH ===
+
+    # === AUTH: Применение auth_filter к текстовым сообщениям (ИЗМЕНЕНИЕ 3) ===
+    @app.on_message(filters.text & ~filters.command("start") & auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
     async def handle_auth_text(client: Client, message: Message):
         """
         Обрабатываем ввод пользователя при авторизации.
         Если пользователь ещё не авторизован — ждём пароль.
         Если авторизован, передаём управление другому хендлеру (handle_authorized_text).
+
+        ✅ ОБНОВЛЕНО: Используется auth_filter для автоматической проверки авторизации
         """
         c_id = message.chat.id
 
-        # Пользователь уже авторизован?
-        if c_id in authorized_users:
-            await handle_authorized_text(app, user_states, message)
-            return
+        # Auth filter уже проверил авторизацию - просто обрабатываем текст
+        await handle_authorized_text(app, user_states, message)
 
-        # Если пользователь ещё не авторизован — проверяем пароль
-        await handle_unauthorized_user(authorized_users, message, app)
-
-
-    @app.on_message(filters.voice | filters.audio | filter_wav_document)  # type: ignore[misc,reportUntypedFunctionDecorator]
+    # === AUTH: Применение auth_filter к аудио сообщениям (ИЗМЕНЕНИЕ 3) ===
+    @app.on_message((filters.voice | filters.audio | filter_wav_document) & auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
     async def handle_audio_msg(app: Client, message: Message, tmpdir: str="/root/Vox/VoxPersona/temp_audio", max_size: int=2 * 1024 * 1024 * 1024):
         """
         Приём голосового или аудио-сообщения, до 2 ГБ.
         Транскрибируем → assign_roles → сохраняем в processed_texts для дальнейшего анализа.
         Аудиофайл сохраняется в MinIO, временная директория удаляется.
+
+        ✅ ОБНОВЛЕНО: Используется auth_filter для автоматической проверки авторизации
         """
         c_id = message.chat.id
         global audio_file_name_to_save
@@ -1077,12 +1143,7 @@ def register_handlers(app: Client):
             logging.error("mode не является строкой")
             mode = None
 
-        try:
-            check_authorized(c_id, authorized_users)
-        except ValueError as e:
-            logging.exception(e)
-            app.send_message(c_id, "Вы не авторизованы.")
-            return
+        # ✅ Проверка авторизации уже выполнена через auth_filter
 
         file_size = define_audio_file_params(message)
 
@@ -1183,14 +1244,17 @@ def register_handlers(app: Client):
             if downloaded_file:
                 delete_tmp_params(msg=msg_, tmp_file=downloaded_file, tmp_dir=tmpdir, client_id=c_id, app=app)
 
-    @app.on_message(filters.document)  # type: ignore[misc,reportUntypedFunctionDecorator]
+    # === AUTH: Применение auth_filter к документам (ИЗМЕНЕНИЕ 3) ===
+    @app.on_message(filters.document & auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
     def handle_document_msg(app: Client, message: Message):
         """
         Приём документа. Сохранение в хранилище, если пользователь выбрал "upload||category".
+
+        ✅ ОБНОВЛЕНО: Используется auth_filter для автоматической проверки авторизации
         """
         c_id = message.chat.id
-        if c_id not in authorized_users:
-            return
+
+        # ✅ Проверка авторизации уже выполнена через auth_filter
 
         doc: Document = message.document
         st = user_states.get(c_id, {})
@@ -1286,6 +1350,117 @@ def register_handlers(app: Client):
                 await handle_menu_chats(c_id, app)
             elif data == "menu_storage":
                 await handle_menu_storage(c_id, app)
+
+            # === AUTH: Callback роутинг для меню управления доступом (ИЗМЕНЕНИЕ 2) ===
+            elif data == "menu_access":
+                await handle_access_menu(c_id, app)
+
+            # Управление пользователями
+            elif data == "access_users_menu":
+                await handle_users_menu(c_id, app)
+
+            elif data == "access_list_users":
+                await handle_list_users(c_id, 1, app)
+
+            elif data.startswith("access_list_users||page||"):
+                page = int(data.split("||")[2])
+                await handle_users_pagination(c_id, page, app)
+
+            elif data.startswith("access_user_details||"):
+                user_id = data.split("||")[1]
+                await handle_user_details(c_id, user_id, app)
+
+            elif data.startswith("access_edit_user||"):
+                user_id = data.split("||")[1]
+                await handle_edit_user(c_id, user_id, app)
+
+            elif data.startswith("access_change_role||"):
+                user_id = data.split("||")[1]
+                await handle_change_role(c_id, user_id, app)
+
+            elif data.startswith("access_set_role||"):
+                parts = data.split("||")
+                await handle_confirm_role_change(c_id, parts[1], parts[2], app)
+
+            elif data.startswith("access_reset_password||"):
+                user_id = data.split("||")[1]
+                await handle_reset_password(c_id, user_id, app)
+
+            elif data.startswith("access_confirm_reset||"):
+                user_id = data.split("||")[1]
+                await handle_confirm_reset_password(c_id, user_id, app)
+
+            elif data.startswith("access_toggle_block||"):
+                user_id = data.split("||")[1]
+                await handle_toggle_block_user(c_id, user_id, app)
+
+            elif data.startswith("access_confirm_block||"):
+                parts = data.split("||")
+                await handle_confirm_block(c_id, parts[1], app)
+
+            elif data.startswith("access_delete_user||"):
+                user_id = data.split("||")[1]
+                await handle_delete_user(c_id, user_id, app)
+
+            elif data.startswith("access_confirm_delete||"):
+                user_id = data.split("||")[1]
+                await handle_confirm_delete(c_id, user_id, app)
+
+            elif data.startswith("access_filter||"):
+                role = data.split("||")[1]
+                await handle_filter_apply(c_id, role, app)
+
+            elif data == "access_filter_reset":
+                await handle_filter_reset(c_id, app)
+
+            elif data == "access_search_user":
+                await handle_search_user(c_id, app)
+
+            elif data == "access_filter_roles":
+                await handle_filter_users_by_role(c_id, app)
+
+            # Приглашения
+            elif data == "access_invitations_menu":
+                await handle_invitations_menu(c_id, app)
+
+            elif data.startswith("access_create_invite||"):
+                role = data.split("||")[1]  # admin или user
+                await handle_create_invitation(c_id, role, app)
+
+            elif data.startswith("access_confirm_invite||"):
+                role = data.split("||")[1]
+                await handle_confirm_create_invite(c_id, role, app)
+
+            elif data == "access_list_invites":
+                await handle_list_invitations(c_id, 1, app)
+
+            elif data.startswith("access_list_invites||page||"):
+                page = int(data.split("||")[2])
+                await handle_invitations_pagination(c_id, page, app)
+
+            elif data.startswith("access_invite_details||"):
+                invite_code = data.split("||")[1]
+                await handle_invitation_details(c_id, invite_code, app)
+
+            elif data.startswith("access_revoke_invite||"):
+                invite_code = data.split("||")[1]
+                await handle_revoke_invitation(c_id, invite_code, app)
+
+            elif data.startswith("access_confirm_revoke||"):
+                invite_code = data.split("||")[1]
+                await handle_confirm_revoke(c_id, invite_code, app)
+
+            # Безопасность
+            elif data == "access_security_menu":
+                await handle_security_menu(c_id, app)
+
+            elif data == "access_audit_log":
+                await handle_audit_log(c_id, 1, app)
+
+            elif data.startswith("access_audit_log||page||"):
+                page = int(data.split("||")[2])
+                await handle_audit_log(c_id, page, app)
+            # === КОНЕЦ AUTH РОУТИНГА ===
 
             # Меню чатов
             elif data == "show_stats":
@@ -1400,4 +1575,3 @@ def register_handlers(app: Client):
 
         except Exception as e:
             logging.exception(f"Ошибка в callback_query_handler: {e}")
-

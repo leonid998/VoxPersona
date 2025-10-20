@@ -1,0 +1,47 @@
+{
+  "migration_date": "2025-10-20T14:30:00.123456",
+  "total_users": 5,
+  "migrated": [
+    {
+      "telegram_id": 123456789,
+      "username": "Иван Петров",
+      "temp_password": "a9Kx2LmNpQr8vZ",
+      "role": "user",
+      "user_id": "550e8400-e29b-41d4-a716-446655440001",
+      "success": true
+    },
+    {
+      "telegram_id": 987654321,
+      "username": "Мария Сидорова",
+      "temp_password": "b3Ty7PqWxRs5nM",
+      "role": "user",
+      "user_id": "550e8400-e29b-41d4-a716-446655440002",
+      "success": true
+    },
+    {
+      "telegram_id": 555777999,
+      "username": "Алексей Кузнецов",
+      "temp_password": "c8Hz4VjDfGh2kL",
+      "role": "user",
+      "user_id": "550e8400-e29b-41d4-a716-446655440003",
+      "success": true
+    },
+    {
+      "telegram_id": 111222333,
+      "username": "Ольга Васильева",
+      "temp_password": "d1Ux9BcFtNm6pQ",
+      "role": "user",
+      "user_id": "550e8400-e29b-41d4-a716-446655440004",
+      "success": true
+    },
+    {
+      "telegram_id": 444555666,
+      "username": "Дмитрий Смирнов",
+      "temp_password": "e7Wp2KsYvLr3xZ",
+      "role": "user",
+      "user_id": "550e8400-e29b-41d4-a716-446655440005",
+      "success": true
+    }
+  ],
+  "failed": []
+}

@@ -1,12 +1,14 @@
 import os
 import logging
 import asyncio
+from pathlib import Path
 from pyrogram import Client, idle
-from config import TELEGRAM_BOT_TOKEN, API_ID, API_HASH, SESSION_NAME, RAG_INDEX_DIR
+from config import TELEGRAM_BOT_TOKEN, API_ID, API_HASH, SESSION_NAME, RAG_INDEX_DIR, set_auth_manager
 import handlers
 from run_analysis import init_rags
 from rag_persistence import save_rag_indices, load_rag_indices
 from storage import safe_filename
+from auth_manager import AuthManager
 import nest_asyncio
 
 nest_asyncio.apply()
@@ -71,6 +73,32 @@ async def load_rags():
         logging.error(f"Ошибка при инициализации RAG моделей: {e}")
 
 
+async def init_auth_manager():
+    """
+    Инициализация AuthManager при старте бота.
+
+    Создает экземпляр AuthManager и устанавливает его как глобальный
+    через config.set_auth_manager() для использования в handlers.
+
+    Директория auth_data будет создана автоматически, если не существует.
+    """
+    try:
+        # Определить путь к auth_data (рядом с main.py)
+        auth_data_path = Path(__file__).parent / "auth_data"
+
+        # Создать AuthManager
+        auth_manager = AuthManager(base_path=auth_data_path)
+
+        # Установить глобальный auth_manager в config
+        set_auth_manager(auth_manager)
+
+        logging.info(f"AuthManager инициализирован успешно (auth_data: {auth_data_path})")
+
+    except Exception as e:
+        logging.error(f"Ошибка при инициализации AuthManager: {e}")
+        raise
+
+
 async def main():
     app = Client(
         SESSION_NAME,
@@ -82,6 +110,10 @@ async def main():
     handlers.register_handlers(app)
 
     await app.start()
+
+    # Инициализация AuthManager перед загрузкой RAG моделей
+    await init_auth_manager()
+
     asyncio.create_task(load_rags())
     logging.info("Бот запущен. Ожидаю сообщений...")
     await idle()

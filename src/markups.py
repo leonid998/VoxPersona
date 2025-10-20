@@ -22,12 +22,28 @@ def storage_menu_markup():
         [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_system")]
     ])
 
-def system_menu_markup():
-    """Меню системных настроек"""
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("        📁 Хранилище        ", callback_data="menu_storage")],
-        [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_main")]
+def system_menu_markup(user_role: str = "user"):
+    """
+    Системное меню (раздел "Системная").
+
+    Args:
+        user_role: Роль пользователя для отображения доп. пунктов
+    """
+    buttons = [
+        [InlineKeyboardButton("        📁 Хранилище        ", callback_data="menu_storage")]
+    ]
+
+    # ✅ ТОЛЬКО ДЛЯ SUPER_ADMIN
+    if user_role == "super_admin":
+        buttons.append([
+            InlineKeyboardButton("        🔐 Настройки доступа        ", callback_data="menu_access")
+        ])
+
+    buttons.append([
+        InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_main")
     ])
+
+    return InlineKeyboardMarkup(buttons)
 
 def create_chat_button_row(conv: ConversationMetadata, is_active: bool, chat_number: int = None) -> list:
     """
