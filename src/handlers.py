@@ -14,7 +14,6 @@ from minio_manager import get_minio_manager, MinIOError, MinIOConnectionError, M
 from config import (
     processed_texts,
     user_states,
-    authorized_users,
     STORAGE_DIRS
 )
 from utils import run_loading_animation, openai_audio_filter, get_username_from_chat
@@ -58,7 +57,6 @@ from analysis import (
 from run_analysis import run_analysis_with_spinner, run_dialog_mode
 
 from audio_utils import extract_audio_filename, define_audio_file_params, transcribe_audio_and_save
-from auth_utils import handle_unauthorized_user
 
 from openai import PermissionDeniedError as OpenAIPermissionError
 
@@ -1095,13 +1093,11 @@ def register_handlers(app: Client):
     Регистрируем все хендлеры Pyrogram.
     """
 
-    @app.on_message(filters.command("start"))  # type: ignore[misc,reportUntypedFunctionDecorator]
+    @app.on_message(filters.command("start") & auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
     async def cmd_start(app: Client, message: Message):
+        """Команда /start - доступна только авторизованным пользователям."""
         c_id = message.chat.id
-        if c_id not in authorized_users:
-            await app.send_message(c_id, "Вы не авторизованы. Введите пароль:")
-        else:
-            await send_main_menu(c_id, app)
+        await send_main_menu(c_id, app)
 
     # === AUTH: Регистрация команды /change_password (ИЗМЕНЕНИЕ 4) ===
     @app.on_message(filters.command("change_password") & auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
@@ -1123,13 +1119,8 @@ def register_handlers(app: Client):
         """
         c_id = message.chat.id
 
-        # Пользователь уже авторизован?
-        if c_id in authorized_users:
-            await handle_authorized_text(app, user_states, message)
-            return
-
-        # Если пользователь ещё не авторизован — проверяем пароль
-        await handle_unauthorized_user(authorized_users, message, app)
+        # Auth filter уже проверил авторизацию - просто обрабатываем текст
+        await handle_authorized_text(app, user_states, message)
 
     # === AUTH: Применение auth_filter к аудио сообщениям (ИЗМЕНЕНИЕ 3) ===
     @app.on_message((filters.voice | filters.audio | filter_wav_document) & auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]

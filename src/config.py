@@ -95,7 +95,6 @@ REPORT_MODEL_NAME = os.getenv("REPORT_MODEL_NAME")
 
 API_ID = get_api_id()
 API_HASH = get_api_hash()
-PASSWORD = os.getenv("PASSWORD")
 
 RUN_MODE = os.getenv("RUN_MODE")
 
@@ -202,7 +201,6 @@ else:
 # Глобальные словари/сеты
 processed_texts: dict[int, str] = {}
 user_states: dict[int, dict[str, object]] = {}
-authorized_users: Set[int] = set()
 active_menus: dict[int, list[int]] = {}
 
 # 🆕 ФАЗА 1.5: Concurrent control для защиты от race condition

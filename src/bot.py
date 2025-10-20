@@ -38,7 +38,6 @@ if not all([OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, API_ID, API_HASH]):
 # ================== Глобальные ==================
 processed_texts: dict[int, str] = {}
 user_states: dict[int, dict[str, str]] = {}
-authorized_users = set()
 active_menus: dict[int, list[int]] = {}
 
 STORAGE_DIRS = {
@@ -389,10 +388,7 @@ def process_stored_file(category: str, filename: str, chat_id: int)->str|None:
 async def cmd_start(_: Client, message: Message) -> None:
     """Обработчик команды /start с явной типизацией"""
     c_id=message.chat.id
-    if c_id not in authorized_users:
-        app.send_message(c_id,"Вы не авторизованы. Введите пароль:")
-    else:
-        await send_main_menu(c_id)
+    await send_main_menu(c_id)
 
 # Регистрируем декорированный обработчик
 @app.on_message(filters.command("start"))  # type: ignore[misc]
@@ -403,14 +399,8 @@ async def _cmd_start_handler(client: Client, message: Message) -> None:  # pyrig
 async def handle_auth_text(_: Client, message: Message) -> None:
     """Обработчик авторизации по тексту с явной типизацией"""
     c_id=message.chat.id
-    if c_id in authorized_users:
-        return
-    if message.text.strip()=="1243":
-        authorized_users.add(c_id)
-        app.send_message(c_id,"✅ Авторизация успешна!")
-        await send_main_menu(c_id)
-    else:
-        app.send_message(c_id,"❌ Неверный пароль. Попробуйте снова:")
+    # Старая система авторизации удалена - используйте auth_manager
+    pass
 
 # Регистрируем декорированный обработчик
 @app.on_message(filters.text & ~filters.command("start"))  # type: ignore[misc]
@@ -422,8 +412,6 @@ async def _handle_auth_text_handler(client: Client, message: Message) -> None:  
 async def handle_audio_msg(_: Client, message: Message) -> None:
     """Обработчик аудио сообщений с явной типизацией"""
     c_id=message.chat.id
-    if c_id not in authorized_users:
-        return
 
     MAX_SIZE=2*1024*1024*1024
     if message.voice:
@@ -489,8 +477,6 @@ async def _handle_audio_msg_handler(client: Client, message: Message) -> None:  
 async def handle_document_msg(_: Client, message: Message) -> None:
     """Обработчик документов с явной типизацией"""
     c_id=message.chat.id
-    if c_id not in authorized_users:
-        return
     doc: Document=message.document
     st=user_states.get(c_id,{})
     if "upload_category" in st:
