@@ -12,7 +12,7 @@ Auth Models - Модели данных для системы авторизац
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, List, Dict, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
 
 
 # ========== USER MODELS (dataclass) ==========
@@ -325,10 +325,12 @@ class UsersIndex(BaseModel):
     telegram_id_to_user_id: Dict[str, str] = Field(default_factory=dict)
     users: Dict[str, Dict] = Field(default_factory=dict)
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()
+
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, value: datetime) -> str:
+        """Сериализация datetime в ISO формат."""
+        return value.isoformat()
 
 
 class InvitationsIndex(BaseModel):
@@ -342,10 +344,12 @@ class InvitationsIndex(BaseModel):
     updated_at: datetime
     invitations: Dict[str, Dict] = Field(default_factory=dict)
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()
+
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, value: datetime) -> str:
+        """Сериализация datetime в ISO формат."""
+        return value.isoformat()
 
 
 class SessionsIndex(BaseModel):
@@ -359,10 +363,12 @@ class SessionsIndex(BaseModel):
     updated_at: datetime
     sessions: Dict[str, Dict] = Field(default_factory=dict)
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()
+
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, value: datetime) -> str:
+        """Сериализация datetime в ISO формат."""
+        return value.isoformat()
 
 
 class RolesIndex(BaseModel):
@@ -376,10 +382,12 @@ class RolesIndex(BaseModel):
     updated_at: datetime
     roles: Dict[str, Dict] = Field(default_factory=dict)
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()
+
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, value: datetime) -> str:
+        """Сериализация datetime в ISO формат."""
+        return value.isoformat()
 
 
 class SettingsIndex(BaseModel):
@@ -393,10 +401,12 @@ class SettingsIndex(BaseModel):
     updated_at: datetime
     auth_settings: Dict = Field(default_factory=dict)
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()
+
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, value: datetime) -> str:
+        """Сериализация datetime в ISO формат."""
+        return value.isoformat()
 
 
 # ========== СЛУЖЕБНЫЕ ФУНКЦИИ ==========

@@ -5,7 +5,7 @@
 Миграция с dataclass на Pydantic BaseModel для валидации данных.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Optional
 from datetime import datetime
 
@@ -33,6 +33,8 @@ class ConversationMessage(BaseModel):
     file_path: Optional[str] = Field(None, description="Путь к файлу")
     search_type: Optional[str] = Field(None, pattern="^(fast|deep)$", description="Тип поиска")
 
+    model_config = ConfigDict(extra='ignore')
+
     @field_validator('timestamp')
     @classmethod
     def validate_timestamp(cls, v: str) -> str:
@@ -42,9 +44,6 @@ class ConversationMessage(BaseModel):
             return v
         except ValueError:
             raise ValueError('Invalid ISO timestamp format')
-
-    class Config:
-        extra = 'ignore'
 
 
 class ConversationMetadata(BaseModel):
@@ -74,6 +73,8 @@ class ConversationMetadata(BaseModel):
     total_tokens: int = Field(..., ge=0, description="Сумма токенов")
     chat_number: int = Field(default=0, ge=0, description="Постоянный номер чата")
 
+    model_config = ConfigDict(extra='ignore')
+
     @field_validator('created_at', 'updated_at')
     @classmethod
     def validate_timestamps(cls, v: str) -> str:
@@ -92,9 +93,6 @@ class ConversationMetadata(BaseModel):
             raise ValueError('conversation_id must be a valid UUID')
         return v
 
-    class Config:
-        extra = 'ignore'
-
 
 class Conversation(BaseModel):
     """
@@ -107,8 +105,7 @@ class Conversation(BaseModel):
     metadata: ConversationMetadata = Field(..., description="Метаданные чата")
     messages: List[ConversationMessage] = Field(default_factory=list, description="Список сообщений")
 
-    class Config:
-        extra = 'ignore'
+    model_config = ConfigDict(extra='ignore')
 
 
 def generate_chat_name(text: str, max_length: int = 30) -> str:
