@@ -89,6 +89,9 @@ class MenuNavigator:
         # Атрибут для восстановления queue из checkpoint
         self._checkpoint_queue = None
 
+        # Текущее сообщение от бота (для актуального message_id)
+        self.current_message: Optional[Message] = None
+
     def _load_config(self, config_file: Path) -> dict:
         """
         Загрузить crawler_config.json.
@@ -167,7 +170,7 @@ class MenuNavigator:
 
     async def _send_callback(self, callback_data: str) -> Optional[Message]:
         """
-        Отправить callback_query боту.
+        Отправить callback_query боту используя актуальный message_id.
 
         Args:
             callback_data: Callback data кнопки для нажатия
@@ -183,39 +186,51 @@ class MenuNavigator:
         logger = structlog.get_logger(__name__)
 
         try:
-            # Получить последнее сообщение от бота
-            async for message in self.client.get_chat_history(self.bot_username, limit=1):
-                last_message = message
-                break
-            else:
-                logger.error("no_messages_found", bot_username=self.bot_username)
-                return None
+            # Использовать текущее сообщение (обновляется после каждого callback)
+            if self.current_message is None:
+                # Fallback: получить последнее сообщение от бота
+                async for message in self.client.get_chat_history(self.bot_username, limit=1):
+                    self.current_message = message
+                    break
+                else:
+                    logger.error("no_messages_found", bot_username=self.bot_username)
+                    return None
 
             # Проверить наличие InlineKeyboard
-            if not last_message.reply_markup:
+            if not self.current_message.reply_markup:
                 logger.warning("no_keyboard", callback_data=callback_data)
-                return None
+                # Попробовать обновить сообщение
+                async for message in self.client.get_chat_history(self.bot_username, limit=1):
+                    self.current_message = message
+                    if self.current_message.reply_markup:
+                        break
+                else:
+                    return None
 
-            # Отправить callback_query
-            logger.info("sending_callback", callback_data=callback_data, message_id=last_message.id)
+            # Отправить callback_query используя АКТУАЛЬНЫЙ message_id
+            logger.info("sending_callback", callback_data=callback_data, message_id=self.current_message.id)
 
             await self.client.request_callback_answer(
                 chat_id=self.bot_username,
-                message_id=last_message.id,
+                message_id=self.current_message.id,
                 callback_data=callback_data
             )
 
-            # Подождать обновления (бот отправит новое меню)
-            await asyncio.sleep(1)
+            # Подождать обновления (бот отредактирует сообщение)
+            await asyncio.sleep(1.5)
 
             # Получить обновлённое сообщение
             async for message in self.client.get_chat_history(self.bot_username, limit=1):
                 updated_message = message
                 break
             else:
+                logger.warning("no_updated_message", callback_data=callback_data)
                 return None
 
-            logger.info("callback_success", callback_data=callback_data)
+            # Сохранить актуальное сообщение для следующего callback
+            self.current_message = updated_message
+
+            logger.info("callback_success", callback_data=callback_data, new_message_id=updated_message.id)
             return updated_message
 
         except FloodWait as e:
@@ -225,6 +240,8 @@ class MenuNavigator:
 
         except Exception as e:
             logger.error("callback_error", callback_data=callback_data, error=str(e))
+            # При ошибке сбросить current_message для fallback
+            self.current_message = None
             return None
 
     def _parse_keyboard(self, message: Optional[Message]) -> List[Tuple[str, str]]:
@@ -412,6 +429,9 @@ class MenuNavigator:
             else:
                 logger.error("no_initial_message_found", bot_username=self.bot_username)
                 raise RuntimeError("Не удалось получить начальное сообщение от бота")
+
+            # Сохранить initial_message как current_message для первого callback
+            self.current_message = initial_message
 
             # Парсить начальную клавиатуру
             initial_buttons = self._parse_keyboard(initial_message)
