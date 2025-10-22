@@ -10,13 +10,15 @@ from pathlib import Path
 from datetime import datetime
 import json
 
-# Добавляем корневую директорию проекта в PYTHONPATH
+# Добавляем корневую директорию проекта И src в PYTHONPATH
 project_root = Path(__file__).parent.parent.parent
+src_path = project_root / "src"
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(src_path))
 
 os.environ['ENV'] = 'production'
 
-from src.conversation_manager import ConversationManager
+from conversation_manager import ConversationManager
 
 
 def create_test_conversations(user_id: str, count: int = 3):
