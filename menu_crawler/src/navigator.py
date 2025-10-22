@@ -75,6 +75,9 @@ class MenuNavigator:
         if self.test_user_id == 0:
             raise ValueError("TEST_USER_ID должен быть установлен в .env файле")
 
+        # Alias для удобства (используется в main.py)
+        self.user_id = self.test_user_id
+
         # Bot username для отправки команд
         self.bot_username = os.getenv("BOT_USERNAME", "market_res_bot")
 
