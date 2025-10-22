@@ -354,8 +354,9 @@ class MenuNavigator:
         Основной метод обхода меню через BFS алгоритм.
 
         Алгоритм:
-        1. Инициализировать queue с (None, "menu_main")
-        2. Пока queue не пуста:
+        1. Получить первую клавиатуру от бота через /start
+        2. Инициализировать queue с реальными callback_data из клавиатуры
+        3. Пока queue не пуста:
            a. Взять (parent, callback_data) из queue
            b. Проверить visited_edges (skip если посещен)
            c. Проверить whitelist/blacklist (skip запрещенные)
@@ -365,7 +366,7 @@ class MenuNavigator:
            g. Добавить детей в queue
            h. Обновить visited_edges
            i. Checkpoint каждые 10 узлов
-        3. Вернуть visited_edges
+        4. Вернуть visited_edges
 
         Returns:
             Множество посещенных рёбер (from, to)
@@ -404,8 +405,33 @@ class MenuNavigator:
                     message="Обнаружен существующий checkpoint, но resume не был вызван. Начинаем новый обход."
                 )
 
-            # Инициализация BFS с нуля
-            queue = deque([(None, "menu_main")])
+            # Получить начальную клавиатуру от бота (уже отправлен /start в init_crawler)
+            async for message in self.client.get_chat_history(self.bot_username, limit=1):
+                initial_message = message
+                break
+            else:
+                logger.error("no_initial_message_found", bot_username=self.bot_username)
+                raise RuntimeError("Не удалось получить начальное сообщение от бота")
+
+            # Парсить начальную клавиатуру
+            initial_buttons = self._parse_keyboard(initial_message)
+
+            if not initial_buttons:
+                logger.error("no_initial_keyboard", bot_username=self.bot_username)
+                raise RuntimeError("Бот не прислал inline keyboard при /start")
+
+            # Инициализация BFS с реальными callback_data из клавиатуры
+            queue = deque()
+            for button_text, callback_data in initial_buttons:
+                queue.append((None, callback_data))
+                # Добавить в actual_graph корневые узлы
+                self._add_to_actual_graph(None, callback_data, button_text)
+
+            logger.info(
+                "initial_keyboard_parsed",
+                buttons_count=len(initial_buttons),
+                initial_callbacks=[cb for _, cb in initial_buttons]
+            )
 
         circuit_breaker = CircuitBreaker(max_failures=3, backoff_base=2.0)
         checkpoint_counter = 0
