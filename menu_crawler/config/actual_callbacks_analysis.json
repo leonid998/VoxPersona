@@ -1,0 +1,360 @@
+{
+  "total_callbacks": 71,
+  "extraction_timestamp": "2025-10-22T00:00:00Z",
+  "source_file": "src/handlers.py",
+  "static_callbacks": [
+    "menu_main",
+    "menu_dialog",
+    "menu_help",
+    "menu_system",
+    "menu_chats",
+    "menu_storage",
+    "menu_access",
+    "new_chat",
+    "show_stats",
+    "show_my_reports",
+    "mode_fast",
+    "mode_deep",
+    "mode_interview",
+    "mode_design",
+    "confirm_data",
+    "edit_data",
+    "back_to_confirm",
+    "show_all_reports",
+    "send_history_manual",
+    "report_view",
+    "report_rename",
+    "report_delete",
+    "access_users_menu",
+    "access_list_users",
+    "access_search_user",
+    "access_filter_roles",
+    "access_filter_reset",
+    "access_invitations_menu",
+    "access_list_invites",
+    "access_security_menu",
+    "access_audit_log"
+  ],
+  "dynamic_patterns": [
+    {
+      "pattern": "chat_actions||{conversation_id}",
+      "description": "Действия с конкретным чатом",
+      "example": "chat_actions||conv_123456"
+    },
+    {
+      "pattern": "switch_chat||{conversation_id}",
+      "description": "Запрос на переключение чата",
+      "example": "switch_chat||conv_123456"
+    },
+    {
+      "pattern": "confirm_switch||{conversation_id}",
+      "description": "Подтверждение переключения чата",
+      "example": "confirm_switch||conv_123456"
+    },
+    {
+      "pattern": "rename_chat||{conversation_id}",
+      "description": "Запрос на переименование чата",
+      "example": "rename_chat||conv_123456"
+    },
+    {
+      "pattern": "delete_chat||{conversation_id}",
+      "description": "Запрос на удаление чата",
+      "example": "delete_chat||conv_123456"
+    },
+    {
+      "pattern": "confirm_delete||{conversation_id}",
+      "description": "Подтверждение удаления чата",
+      "example": "confirm_delete||conv_123456"
+    },
+    {
+      "pattern": "view||{category}",
+      "description": "Просмотр файлов категории",
+      "example": "view||interview"
+    },
+    {
+      "pattern": "select||{category}||{filename}",
+      "description": "Выбор конкретного файла",
+      "example": "select||interview||audio_123.wav"
+    },
+    {
+      "pattern": "delete||{category}||{filename}",
+      "description": "Удаление файла",
+      "example": "delete||interview||audio_123.wav"
+    },
+    {
+      "pattern": "upload||{category}",
+      "description": "Загрузка файла в категорию",
+      "example": "upload||interview"
+    },
+    {
+      "pattern": "edit_{field}",
+      "description": "Редактирование поля (audio_number, date, employee, place_name, building_type, zone_name, city, client)",
+      "example": "edit_audio_number"
+    },
+    {
+      "pattern": "choose_building||{building_type}",
+      "description": "Выбор типа заведения",
+      "example": "choose_building||hotel"
+    },
+    {
+      "pattern": "send_report||{file_path}",
+      "description": "Отправка отчета",
+      "example": "send_report||reports/report_2025_01.md"
+    },
+    {
+      "pattern": "report_delete_confirm||{index}",
+      "description": "Подтверждение удаления отчета",
+      "example": "report_delete_confirm||5"
+    },
+    {
+      "pattern": "access_list_users||page||{page}",
+      "description": "Пагинация списка пользователей",
+      "example": "access_list_users||page||2"
+    },
+    {
+      "pattern": "access_user_details||{user_id}",
+      "description": "Детали пользователя",
+      "example": "access_user_details||user_12345"
+    },
+    {
+      "pattern": "access_edit_user||{user_id}",
+      "description": "Редактирование пользователя",
+      "example": "access_edit_user||user_12345"
+    },
+    {
+      "pattern": "access_change_role||{user_id}",
+      "description": "Смена роли пользователя",
+      "example": "access_change_role||user_12345"
+    },
+    {
+      "pattern": "access_set_role||{user_id}||{role}",
+      "description": "Установка конкретной роли",
+      "example": "access_set_role||user_12345||admin"
+    },
+    {
+      "pattern": "access_reset_password||{user_id}",
+      "description": "Сброс пароля пользователя",
+      "example": "access_reset_password||user_12345"
+    },
+    {
+      "pattern": "access_confirm_reset||{user_id}",
+      "description": "Подтверждение сброса пароля",
+      "example": "access_confirm_reset||user_12345"
+    },
+    {
+      "pattern": "access_toggle_block||{user_id}",
+      "description": "Блокировка/разблокировка пользователя",
+      "example": "access_toggle_block||user_12345"
+    },
+    {
+      "pattern": "access_confirm_block||{user_id}",
+      "description": "Подтверждение блокировки",
+      "example": "access_confirm_block||user_12345"
+    },
+    {
+      "pattern": "access_delete_user||{user_id}",
+      "description": "Удаление пользователя",
+      "example": "access_delete_user||user_12345"
+    },
+    {
+      "pattern": "access_confirm_delete||{user_id}",
+      "description": "Подтверждение удаления пользователя",
+      "example": "access_confirm_delete||user_12345"
+    },
+    {
+      "pattern": "access_filter||{role}",
+      "description": "Фильтр пользователей по роли",
+      "example": "access_filter||admin"
+    },
+    {
+      "pattern": "access_create_invite||{role}",
+      "description": "Создание приглашения для роли",
+      "example": "access_create_invite||user"
+    },
+    {
+      "pattern": "access_confirm_invite||{role}",
+      "description": "Подтверждение создания приглашения",
+      "example": "access_confirm_invite||admin"
+    },
+    {
+      "pattern": "access_list_invites||page||{page}",
+      "description": "Пагинация списка приглашений",
+      "example": "access_list_invites||page||2"
+    },
+    {
+      "pattern": "access_invite_details||{invite_code}",
+      "description": "Детали приглашения",
+      "example": "access_invite_details||INV12345"
+    },
+    {
+      "pattern": "access_revoke_invite||{invite_code}",
+      "description": "Отзыв приглашения",
+      "example": "access_revoke_invite||INV12345"
+    },
+    {
+      "pattern": "access_confirm_revoke||{invite_code}",
+      "description": "Подтверждение отзыва приглашения",
+      "example": "access_confirm_revoke||INV12345"
+    },
+    {
+      "pattern": "access_audit_log||page||{page}",
+      "description": "Пагинация журнала аудита",
+      "example": "access_audit_log||page||2"
+    }
+  ],
+  "report_callbacks": [
+    "report_int_methodology",
+    "report_int_links",
+    "report_design_audit_methodology",
+    "report_int_general",
+    "report_int_specific",
+    "report_design_compliance",
+    "report_design_structured"
+  ],
+  "categories": {
+    "main_menu": [
+      "menu_main",
+      "menu_dialog",
+      "menu_help",
+      "menu_system",
+      "menu_chats",
+      "menu_storage"
+    ],
+    "chats_management": [
+      "new_chat",
+      "chat_actions||{id}",
+      "switch_chat||{id}",
+      "confirm_switch||{id}",
+      "rename_chat||{id}",
+      "delete_chat||{id}",
+      "confirm_delete||{id}",
+      "show_stats"
+    ],
+    "dialog_modes": [
+      "mode_fast",
+      "mode_deep"
+    ],
+    "scenario_selection": [
+      "mode_interview",
+      "mode_design"
+    ],
+    "data_management": [
+      "confirm_data",
+      "edit_data",
+      "back_to_confirm",
+      "edit_{field}"
+    ],
+    "file_storage": [
+      "view||{category}",
+      "select||{category}||{filename}",
+      "delete||{category}||{filename}",
+      "upload||{category}"
+    ],
+    "reports_v2": [
+      "show_my_reports",
+      "report_view",
+      "report_rename",
+      "report_delete",
+      "report_delete_confirm||{index}"
+    ],
+    "reports_legacy": [
+      "send_report||{path}",
+      "show_all_reports",
+      "send_history_manual"
+    ],
+    "reports_generation": [
+      "report_int_methodology",
+      "report_int_links",
+      "report_design_audit_methodology",
+      "report_int_general",
+      "report_int_specific",
+      "report_design_compliance",
+      "report_design_structured"
+    ],
+    "building_selection": [
+      "choose_building||hotel",
+      "choose_building||restaurant",
+      "choose_building||spa"
+    ],
+    "access_management": [
+      "menu_access",
+      "access_users_menu",
+      "access_list_users",
+      "access_list_users||page||{page}",
+      "access_user_details||{user_id}",
+      "access_edit_user||{user_id}",
+      "access_change_role||{user_id}",
+      "access_set_role||{user_id}||{role}",
+      "access_reset_password||{user_id}",
+      "access_confirm_reset||{user_id}",
+      "access_toggle_block||{user_id}",
+      "access_confirm_block||{user_id}",
+      "access_delete_user||{user_id}",
+      "access_confirm_delete||{user_id}",
+      "access_filter||{role}",
+      "access_filter_reset",
+      "access_search_user",
+      "access_filter_roles"
+    ],
+    "invitations": [
+      "access_invitations_menu",
+      "access_create_invite||{role}",
+      "access_confirm_invite||{role}",
+      "access_list_invites",
+      "access_list_invites||page||{page}",
+      "access_invite_details||{invite_code}",
+      "access_revoke_invite||{invite_code}",
+      "access_confirm_revoke||{invite_code}"
+    ],
+    "security": [
+      "access_security_menu",
+      "access_audit_log",
+      "access_audit_log||page||{page}"
+    ]
+  },
+  "field_edit_patterns": [
+    "edit_audio_number",
+    "edit_date",
+    "edit_employee",
+    "edit_place_name",
+    "edit_building_type",
+    "edit_zone_name",
+    "edit_city",
+    "edit_client"
+  ],
+  "protection_config": {
+    "safe_navigation": [
+      "menu_main",
+      "menu_chats",
+      "menu_system",
+      "menu_help",
+      "menu_access",
+      "access_list_users",
+      "access_list_invites",
+      "access_audit_log",
+      "show_stats",
+      "show_my_reports"
+    ],
+    "forbidden_actions": [
+      "delete_",
+      "confirm_delete",
+      "upload_",
+      "new_chat",
+      "report_delete",
+      "edit_",
+      "access_create",
+      "access_revoke",
+      "access_confirm",
+      "access_toggle_block",
+      "access_reset_password"
+    ]
+  },
+  "notes": [
+    "Все callback обработчики используют async/await",
+    "Есть защита для TEST_USER_ID через whitelist/blacklist паттернов",
+    "Используется FSM для многошаговых операций (смена пароля, редактирование, удаление отчетов)",
+    "Динамические паттерны используют разделитель '||' для передачи параметров",
+    "Есть пагинация для списков (пользователи, приглашения, аудит)",
+    "Система отчетов имеет 2 версии: V2 (новая) и legacy (старая)"
+  ]
+}
