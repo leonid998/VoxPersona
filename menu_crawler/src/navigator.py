@@ -55,11 +55,12 @@ class MenuNavigator:
 
         # Инициализировать Pyrogram клиент
         # Используем user-аккаунт (НЕ бота) для отправки callback_query
+        # Используем готовую сессию test_user_session (создаётся локально и копируется на сервер)
         self.client = Client(
-            "menu_crawler_session",
+            "test_user_session",
             api_id=int(api_id),
             api_hash=api_hash,
-            workdir=str(Path(__file__).parent.parent)  # menu_crawler/
+            workdir=str(Path(__file__).parent.parent.parent)  # Корень проекта VoxPersona/
         )
 
         # State для обхода
