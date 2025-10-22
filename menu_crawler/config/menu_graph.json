@@ -1,0 +1,1362 @@
+{
+  "nodes": {
+    "menu_main": {
+      "type": "menu",
+      "depth": 0,
+      "description": "Главное меню"
+    },
+    "menu_chats": {
+      "type": "menu",
+      "depth": 1,
+      "description": "Чаты/Диалоги"
+    },
+    "chat_actions": {
+      "type": "action",
+      "depth": 2,
+      "description": "Действия с чатом",
+      "dynamic": true
+    },
+    "new_chat": {
+      "type": "action",
+      "depth": 2,
+      "description": "Новый чат",
+      "fsm": true
+    },
+    "show_stats": {
+      "type": "view",
+      "depth": 2,
+      "description": "Статистика чатов"
+    },
+    "show_my_reports": {
+      "type": "view",
+      "depth": 2,
+      "description": "Мои отчеты"
+    },
+    "confirm_switch": {
+      "type": "action",
+      "depth": 3,
+      "description": "Подтверждение переключения чата"
+    },
+    "rename_chat": {
+      "type": "action",
+      "depth": 3,
+      "description": "Переименование чата",
+      "fsm": true
+    },
+    "delete_chat": {
+      "type": "action",
+      "depth": 3,
+      "description": "Удаление чата"
+    },
+    "confirm_delete": {
+      "type": "action",
+      "depth": 4,
+      "description": "Подтверждение удаления чата"
+    },
+    "send_report": {
+      "type": "action",
+      "depth": 3,
+      "description": "Отправить отчет",
+      "dynamic": true
+    },
+    "show_all_reports": {
+      "type": "view",
+      "depth": 3,
+      "description": "Показать все отчеты"
+    },
+    "report_view": {
+      "type": "action",
+      "depth": 4,
+      "description": "Просмотр отчета"
+    },
+    "report_rename": {
+      "type": "action",
+      "depth": 4,
+      "description": "Переименование отчета",
+      "fsm": true
+    },
+    "report_delete": {
+      "type": "action",
+      "depth": 4,
+      "description": "Удаление отчета"
+    },
+    "report_delete_confirm": {
+      "type": "action",
+      "depth": 5,
+      "description": "Подтверждение удаления отчета"
+    },
+    "menu_system": {
+      "type": "menu",
+      "depth": 1,
+      "description": "Системная"
+    },
+    "menu_storage": {
+      "type": "menu",
+      "depth": 2,
+      "description": "Хранилище"
+    },
+    "menu_access": {
+      "type": "menu",
+      "depth": 2,
+      "description": "Настройки доступа"
+    },
+    "view||audio": {
+      "type": "view",
+      "depth": 3,
+      "description": "Просмотр аудио файлов"
+    },
+    "select||audio": {
+      "type": "action",
+      "depth": 4,
+      "description": "Выбор аудио файла",
+      "dynamic": true
+    },
+    "delete||audio": {
+      "type": "action",
+      "depth": 4,
+      "description": "Удаление аудио файла",
+      "dynamic": true
+    },
+    "upload||audio": {
+      "type": "action",
+      "depth": 4,
+      "description": "Загрузка аудио файла",
+      "fsm": true
+    },
+    "access_users_menu": {
+      "type": "menu",
+      "depth": 3,
+      "description": "Управление пользователями"
+    },
+    "access_invitations_menu": {
+      "type": "menu",
+      "depth": 3,
+      "description": "Приглашения"
+    },
+    "access_security_menu": {
+      "type": "menu",
+      "depth": 3,
+      "description": "Настройки безопасности"
+    },
+    "access_list_users": {
+      "type": "view",
+      "depth": 4,
+      "description": "Список пользователей"
+    },
+    "access_list_users||page": {
+      "type": "view",
+      "depth": 4,
+      "description": "Пагинация списка",
+      "dynamic": true
+    },
+    "access_search_user": {
+      "type": "action",
+      "depth": 4,
+      "description": "Поиск пользователя",
+      "fsm": true
+    },
+    "access_filter_roles": {
+      "type": "menu",
+      "depth": 4,
+      "description": "Фильтр по ролям"
+    },
+    "access_filter||all": {
+      "type": "action",
+      "depth": 5,
+      "description": "Фильтр: Все"
+    },
+    "access_filter||super_admin": {
+      "type": "action",
+      "depth": 5,
+      "description": "Фильтр: super_admin"
+    },
+    "access_filter||admin": {
+      "type": "action",
+      "depth": 5,
+      "description": "Фильтр: admin"
+    },
+    "access_filter||user": {
+      "type": "action",
+      "depth": 5,
+      "description": "Фильтр: user"
+    },
+    "access_user_details": {
+      "type": "view",
+      "depth": 5,
+      "description": "Детали пользователя",
+      "dynamic": true
+    },
+    "access_edit_user_select": {
+      "type": "action",
+      "depth": 4,
+      "description": "Выбор пользователя для редактирования"
+    },
+    "access_edit_user": {
+      "type": "menu",
+      "depth": 5,
+      "description": "Редактирование пользователя",
+      "dynamic": true
+    },
+    "access_change_role": {
+      "type": "menu",
+      "depth": 6,
+      "description": "Изменение роли"
+    },
+    "access_set_role": {
+      "type": "action",
+      "depth": 7,
+      "description": "Установка роли",
+      "dynamic": true
+    },
+    "access_change_settings": {
+      "type": "menu",
+      "depth": 6,
+      "description": "Изменение настроек"
+    },
+    "access_set_cleanup": {
+      "type": "action",
+      "depth": 7,
+      "description": "Установка автоочистки",
+      "fsm": true
+    },
+    "access_reset_password": {
+      "type": "action",
+      "depth": 6,
+      "description": "Сброс пароля"
+    },
+    "access_confirm_reset": {
+      "type": "action",
+      "depth": 7,
+      "description": "Подтверждение сброса пароля"
+    },
+    "access_block_user_select": {
+      "type": "action",
+      "depth": 4,
+      "description": "Выбор пользователя для блокировки"
+    },
+    "access_toggle_block": {
+      "type": "action",
+      "depth": 5,
+      "description": "Блокировка/Разблокировка"
+    },
+    "access_confirm_block": {
+      "type": "action",
+      "depth": 6,
+      "description": "Подтверждение блокировки"
+    },
+    "access_delete_user_select": {
+      "type": "action",
+      "depth": 4,
+      "description": "Выбор пользователя для удаления"
+    },
+    "access_delete_user_confirm": {
+      "type": "action",
+      "depth": 5,
+      "description": "Подтверждение удаления"
+    },
+    "access_confirm_delete": {
+      "type": "action",
+      "depth": 6,
+      "description": "Окончательное подтверждение удаления"
+    },
+    "access_create_invite_admin": {
+      "type": "action",
+      "depth": 4,
+      "description": "Создать приглашение администратора",
+      "fsm": true
+    },
+    "access_create_invite_user": {
+      "type": "action",
+      "depth": 4,
+      "description": "Создать приглашение пользователя",
+      "fsm": true
+    },
+    "access_set_invite_expiry": {
+      "type": "action",
+      "depth": 5,
+      "description": "Установка срока действия",
+      "fsm": true
+    },
+    "access_confirm_create_invite": {
+      "type": "action",
+      "depth": 5,
+      "description": "Подтверждение создания"
+    },
+    "access_list_invites": {
+      "type": "view",
+      "depth": 4,
+      "description": "Список активных приглашений"
+    },
+    "access_list_invites||page": {
+      "type": "view",
+      "depth": 4,
+      "description": "Пагинация приглашений",
+      "dynamic": true
+    },
+    "access_invite_details": {
+      "type": "view",
+      "depth": 5,
+      "description": "Детали приглашения",
+      "dynamic": true
+    },
+    "access_revoke_invite": {
+      "type": "action",
+      "depth": 6,
+      "description": "Аннулирование приглашения"
+    },
+    "access_confirm_revoke": {
+      "type": "action",
+      "depth": 7,
+      "description": "Подтверждение аннулирования"
+    },
+    "access_cleanup_settings": {
+      "type": "menu",
+      "depth": 4,
+      "description": "Настройки автоочистки"
+    },
+    "access_set_cleanup_hours": {
+      "type": "action",
+      "depth": 5,
+      "description": "Установка времени очистки",
+      "fsm": true
+    },
+    "access_cleanup_per_user": {
+      "type": "menu",
+      "depth": 5,
+      "description": "Настройка для пользователей"
+    },
+    "access_set_user_cleanup": {
+      "type": "action",
+      "depth": 6,
+      "description": "Установка очистки для пользователя",
+      "dynamic": true,
+      "fsm": true
+    },
+    "access_view_cleanup_schedule": {
+      "type": "view",
+      "depth": 5,
+      "description": "Просмотр расписания очистки"
+    },
+    "access_password_policy": {
+      "type": "menu",
+      "depth": 4,
+      "description": "Политика паролей"
+    },
+    "access_set_min_length": {
+      "type": "action",
+      "depth": 5,
+      "description": "Установка минимальной длины",
+      "fsm": true
+    },
+    "access_set_complexity": {
+      "type": "action",
+      "depth": 5,
+      "description": "Установка требований к сложности"
+    },
+    "access_set_password_ttl": {
+      "type": "action",
+      "depth": 5,
+      "description": "Установка срока действия",
+      "fsm": true
+    },
+    "access_audit_log": {
+      "type": "menu",
+      "depth": 4,
+      "description": "Журнал действий"
+    },
+    "access_view_recent_log": {
+      "type": "view",
+      "depth": 5,
+      "description": "Просмотр последних записей"
+    },
+    "access_filter_log_user": {
+      "type": "action",
+      "depth": 5,
+      "description": "Фильтр по пользователю"
+    },
+    "access_filter_log_event": {
+      "type": "action",
+      "depth": 5,
+      "description": "Фильтр по типу события"
+    },
+    "access_export_log": {
+      "type": "action",
+      "depth": 5,
+      "description": "Экспорт журнала"
+    },
+    "menu_help": {
+      "type": "menu",
+      "depth": 1,
+      "description": "Помощь"
+    },
+    "help_about": {
+      "type": "view",
+      "depth": 2,
+      "description": "О боте"
+    },
+    "help_functions": {
+      "type": "view",
+      "depth": 2,
+      "description": "Функции бота"
+    },
+    "help_stats": {
+      "type": "view",
+      "depth": 2,
+      "description": "Статистика использования"
+    },
+    "help_tips": {
+      "type": "view",
+      "depth": 2,
+      "description": "Советы по использованию"
+    },
+    "confirm_menu": {
+      "type": "menu",
+      "depth": 1,
+      "description": "Подтверждение данных из аудио"
+    },
+    "confirm_data": {
+      "type": "action",
+      "depth": 2,
+      "description": "Подтверждение данных"
+    },
+    "edit_data": {
+      "type": "action",
+      "depth": 2,
+      "description": "Редактирование данных"
+    },
+    "edit_menu": {
+      "type": "menu",
+      "depth": 3,
+      "description": "Меню редактирования данных"
+    },
+    "edit_audio_number": {
+      "type": "action",
+      "depth": 4,
+      "description": "Редактирование номера файла",
+      "fsm": true
+    },
+    "edit_date": {
+      "type": "action",
+      "depth": 4,
+      "description": "Редактирование даты",
+      "fsm": true
+    },
+    "edit_employee": {
+      "type": "action",
+      "depth": 4,
+      "description": "Редактирование ФИО сотрудника",
+      "fsm": true
+    },
+    "edit_place_name": {
+      "type": "action",
+      "depth": 4,
+      "description": "Редактирование заведения",
+      "fsm": true
+    },
+    "edit_city": {
+      "type": "action",
+      "depth": 4,
+      "description": "Редактирование города",
+      "fsm": true
+    },
+    "edit_zone_name": {
+      "type": "action",
+      "depth": 4,
+      "description": "Редактирование зоны",
+      "fsm": true
+    },
+    "edit_client": {
+      "type": "action",
+      "depth": 4,
+      "description": "Редактирование клиента",
+      "fsm": true
+    },
+    "edit_building_type": {
+      "type": "action",
+      "depth": 4,
+      "description": "Редактирование типа здания"
+    },
+    "edit_mode": {
+      "type": "action",
+      "depth": 4,
+      "description": "Редактирование режима работы"
+    },
+    "back_to_confirm": {
+      "type": "action",
+      "depth": 4,
+      "description": "Возврат к подтверждению"
+    },
+    "building_type_menu": {
+      "type": "menu",
+      "depth": 3,
+      "description": "Выбор типа здания"
+    },
+    "choose_building||hotel": {
+      "type": "action",
+      "depth": 4,
+      "description": "Выбор: Отель"
+    },
+    "choose_building||restaurant": {
+      "type": "action",
+      "depth": 4,
+      "description": "Выбор: Ресторан"
+    },
+    "choose_building||other": {
+      "type": "action",
+      "depth": 4,
+      "description": "Выбор: Другое"
+    },
+    "interview_menu": {
+      "type": "menu",
+      "depth": 4,
+      "description": "Выбор режима работы (интервью)"
+    },
+    "design_menu": {
+      "type": "menu",
+      "depth": 4,
+      "description": "Выбор режима работы (дизайн)"
+    },
+    "mode_fast": {
+      "type": "action",
+      "depth": 5,
+      "description": "Быстрый режим"
+    },
+    "mode_deep": {
+      "type": "action",
+      "depth": 5,
+      "description": "Глубокий режим"
+    },
+    "invite_password_input": {
+      "type": "action",
+      "depth": 1,
+      "description": "Ввод пароля при активации",
+      "fsm": true
+    },
+    "invite_password_confirm": {
+      "type": "action",
+      "depth": 2,
+      "description": "Подтверждение пароля",
+      "fsm": true
+    },
+    "change_password_current": {
+      "type": "action",
+      "depth": 1,
+      "description": "Ввод текущего пароля",
+      "fsm": true
+    },
+    "change_password_new": {
+      "type": "action",
+      "depth": 2,
+      "description": "Ввод нового пароля",
+      "fsm": true
+    },
+    "change_password_confirm": {
+      "type": "action",
+      "depth": 3,
+      "description": "Подтверждение нового пароля",
+      "fsm": true
+    }
+  },
+  "edges": [
+    {
+      "from": "menu_main",
+      "to": "menu_chats",
+      "callback_data": "menu_chats",
+      "button_text": "📱 Чаты/Диалоги"
+    },
+    {
+      "from": "menu_main",
+      "to": "menu_system",
+      "callback_data": "menu_system",
+      "button_text": "⚙️ Системная"
+    },
+    {
+      "from": "menu_main",
+      "to": "menu_help",
+      "callback_data": "menu_help",
+      "button_text": "❓ Помощь"
+    },
+    {
+      "from": "menu_chats",
+      "to": "chat_actions",
+      "callback_data": "chat_actions||{conversation_id}",
+      "button_text": "📝 [Название чата]"
+    },
+    {
+      "from": "menu_chats",
+      "to": "new_chat",
+      "callback_data": "new_chat",
+      "button_text": "🆕 Новый чат"
+    },
+    {
+      "from": "menu_chats",
+      "to": "show_stats",
+      "callback_data": "show_stats",
+      "button_text": "📊 Статистика"
+    },
+    {
+      "from": "menu_chats",
+      "to": "show_my_reports",
+      "callback_data": "show_my_reports",
+      "button_text": "📄 Мои отчеты"
+    },
+    {
+      "from": "menu_chats",
+      "to": "menu_main",
+      "callback_data": "menu_main",
+      "button_text": "🔙 Назад"
+    },
+    {
+      "from": "chat_actions",
+      "to": "confirm_switch",
+      "callback_data": "confirm_switch||{id}",
+      "button_text": "В Чат"
+    },
+    {
+      "from": "chat_actions",
+      "to": "rename_chat",
+      "callback_data": "rename_chat||{id}",
+      "button_text": "✏️ Переименовать"
+    },
+    {
+      "from": "chat_actions",
+      "to": "delete_chat",
+      "callback_data": "delete_chat||{id}",
+      "button_text": "🗑️ Удалить"
+    },
+    {
+      "from": "delete_chat",
+      "to": "confirm_delete",
+      "callback_data": "confirm_delete||{id}",
+      "button_text": "🗑️ Да, удалить"
+    },
+    {
+      "from": "chat_actions",
+      "to": "menu_chats",
+      "callback_data": "menu_chats",
+      "button_text": "🔙 Назад"
+    },
+    {
+      "from": "show_my_reports",
+      "to": "send_report",
+      "callback_data": "send_report||{report_id}",
+      "button_text": "📄 [Название отчета]"
+    },
+    {
+      "from": "show_my_reports",
+      "to": "show_all_reports",
+      "callback_data": "show_all_reports",
+      "button_text": "ℹ️ Показать все"
+    },
+    {
+      "from": "send_report",
+      "to": "report_view",
+      "callback_data": "report_view",
+      "button_text": "👁️ Просмотр"
+    },
+    {
+      "from": "send_report",
+      "to": "report_rename",
+      "callback_data": "report_rename",
+      "button_text": "✏️ Переименовать"
+    },
+    {
+      "from": "send_report",
+      "to": "report_delete",
+      "callback_data": "report_delete",
+      "button_text": "🗑️ Удалить"
+    },
+    {
+      "from": "report_delete",
+      "to": "report_delete_confirm",
+      "callback_data": "report_delete_confirm||{num}",
+      "button_text": "🗑️ Да"
+    },
+    {
+      "from": "show_my_reports",
+      "to": "menu_chats",
+      "callback_data": "menu_chats",
+      "button_text": "🔙 Назад"
+    },
+    {
+      "from": "send_report",
+      "to": "show_my_reports",
+      "callback_data": "show_my_reports",
+      "button_text": "🔙 Назад"
+    },
+    {
+      "from": "menu_system",
+      "to": "menu_storage",
+      "callback_data": "menu_storage",
+      "button_text": "📁 Хранилище"
+    },
+    {
+      "from": "menu_system",
+      "to": "menu_access",
+      "callback_data": "menu_access",
+      "button_text": "🔐 Настройки доступа",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "menu_system",
+      "to": "menu_main",
+      "callback_data": "menu_main",
+      "button_text": "🔙 Назад"
+    },
+    {
+      "from": "menu_storage",
+      "to": "view||audio",
+      "callback_data": "view||audio",
+      "button_text": "📁 Аудио файлы"
+    },
+    {
+      "from": "view||audio",
+      "to": "select||audio",
+      "callback_data": "select||{filename}",
+      "button_text": "Выбрать файл"
+    },
+    {
+      "from": "view||audio",
+      "to": "delete||audio",
+      "callback_data": "delete||{filename}",
+      "button_text": "Удалить"
+    },
+    {
+      "from": "view||audio",
+      "to": "upload||audio",
+      "callback_data": "upload||audio",
+      "button_text": "Загрузить"
+    },
+    {
+      "from": "menu_storage",
+      "to": "menu_system",
+      "callback_data": "menu_system",
+      "button_text": "🔙 Назад"
+    },
+    {
+      "from": "menu_access",
+      "to": "access_users_menu",
+      "callback_data": "access_users_menu",
+      "button_text": "👥 Управление пользователями",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "menu_access",
+      "to": "access_invitations_menu",
+      "callback_data": "access_invitations_menu",
+      "button_text": "🎫 Приглашения",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "menu_access",
+      "to": "access_security_menu",
+      "callback_data": "access_security_menu",
+      "button_text": "⚙️ Настройки безопасности",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "menu_access",
+      "to": "menu_system",
+      "callback_data": "menu_system",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_users_menu",
+      "to": "access_list_users",
+      "callback_data": "access_list_users",
+      "button_text": "📊 Список пользователей",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_list_users",
+      "to": "access_list_users||page",
+      "callback_data": "access_list_users||page||{n}",
+      "button_text": "➡️ Следующая",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_list_users",
+      "to": "access_search_user",
+      "callback_data": "access_search_user",
+      "button_text": "🔍 Поиск пользователя",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_list_users",
+      "to": "access_filter_roles",
+      "callback_data": "access_filter_roles",
+      "button_text": "📊 Фильтр по ролям",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_filter_roles",
+      "to": "access_filter||all",
+      "callback_data": "access_filter||all",
+      "button_text": "Все",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_filter_roles",
+      "to": "access_filter||super_admin",
+      "callback_data": "access_filter||super_admin",
+      "button_text": "super_admin",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_filter_roles",
+      "to": "access_filter||admin",
+      "callback_data": "access_filter||admin",
+      "button_text": "admin",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_filter_roles",
+      "to": "access_filter||user",
+      "callback_data": "access_filter||user",
+      "button_text": "user",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_list_users",
+      "to": "access_user_details",
+      "callback_data": "access_user_details||{user_id}",
+      "button_text": "✅ [Username]",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_users_menu",
+      "to": "access_edit_user_select",
+      "callback_data": "access_edit_user_select",
+      "button_text": "✏️ Редактировать пользователя",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_user_details",
+      "to": "access_edit_user",
+      "callback_data": "access_edit_user||{user_id}",
+      "button_text": "✏️ Редактировать",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_edit_user",
+      "to": "access_change_role",
+      "callback_data": "access_change_role||{user_id}",
+      "button_text": "Изменить роль",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_change_role",
+      "to": "access_set_role",
+      "callback_data": "access_set_role||{user_id}||{role}",
+      "button_text": "[Роль]",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_edit_user",
+      "to": "access_change_settings",
+      "callback_data": "access_change_settings||{user_id}",
+      "button_text": "Изменить настройки",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_change_settings",
+      "to": "access_set_cleanup",
+      "callback_data": "access_set_cleanup||{user_id}",
+      "button_text": "Автоочистка сообщений",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_edit_user",
+      "to": "access_reset_password",
+      "callback_data": "access_reset_password||{user_id}",
+      "button_text": "Сбросить пароль",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_reset_password",
+      "to": "access_confirm_reset",
+      "callback_data": "access_confirm_reset||{user_id}",
+      "button_text": "✅ Да, сбросить",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_users_menu",
+      "to": "access_block_user_select",
+      "callback_data": "access_block_user_select",
+      "button_text": "🚫 Заблокировать/Разблокировать",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_user_details",
+      "to": "access_toggle_block",
+      "callback_data": "access_toggle_block||{user_id}",
+      "button_text": "🚫 Заблокировать/Разблокировать",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_toggle_block",
+      "to": "access_confirm_block",
+      "callback_data": "access_confirm_block||{user_id}",
+      "button_text": "✅ Да",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_users_menu",
+      "to": "access_delete_user_select",
+      "callback_data": "access_delete_user_select",
+      "button_text": "🗑️ Удалить пользователя",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_user_details",
+      "to": "access_delete_user_confirm",
+      "callback_data": "access_delete_user_confirm||{user_id}",
+      "button_text": "🗑️ Удалить",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_delete_user_confirm",
+      "to": "access_confirm_delete",
+      "callback_data": "access_confirm_delete||{user_id}",
+      "button_text": "🗑️ Да, удалить",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_users_menu",
+      "to": "menu_access",
+      "callback_data": "menu_access",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_user_details",
+      "to": "access_list_users",
+      "callback_data": "access_list_users",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_edit_user",
+      "to": "access_user_details",
+      "callback_data": "access_user_details||{user_id}",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_filter_roles",
+      "to": "access_list_users",
+      "callback_data": "access_list_users",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_invitations_menu",
+      "to": "access_create_invite_admin",
+      "callback_data": "access_create_invite_admin",
+      "button_text": "➕ Создать приглашение администратора",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_invitations_menu",
+      "to": "access_create_invite_user",
+      "callback_data": "access_create_invite_user",
+      "button_text": "➕ Создать приглашение пользователя",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_create_invite_admin",
+      "to": "access_set_invite_expiry",
+      "callback_data": "access_set_invite_expiry",
+      "button_text": "Установить срок действия",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_create_invite_admin",
+      "to": "access_confirm_create_invite",
+      "callback_data": "access_confirm_create_invite||{role}",
+      "button_text": "Создать",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_invitations_menu",
+      "to": "access_list_invites",
+      "callback_data": "access_list_invites",
+      "button_text": "📜 Активные приглашения",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_list_invites",
+      "to": "access_list_invites||page",
+      "callback_data": "access_list_invites||page||{n}",
+      "button_text": "➡️ Следующая",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_list_invites",
+      "to": "access_invite_details",
+      "callback_data": "access_invite_details||{invite_code}",
+      "button_text": "🎫 [CODE]",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_invite_details",
+      "to": "access_revoke_invite",
+      "callback_data": "access_revoke_invite||{invite_code}",
+      "button_text": "❌ Аннулировать",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_revoke_invite",
+      "to": "access_confirm_revoke",
+      "callback_data": "access_confirm_revoke||{invite_code}",
+      "button_text": "✅ Да, аннулировать",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_invitations_menu",
+      "to": "menu_access",
+      "callback_data": "menu_access",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_invite_details",
+      "to": "access_list_invites",
+      "callback_data": "access_list_invites",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_security_menu",
+      "to": "access_cleanup_settings",
+      "callback_data": "access_cleanup_settings",
+      "button_text": "🕒 Автоочистка сообщений",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_cleanup_settings",
+      "to": "access_set_cleanup_hours",
+      "callback_data": "access_set_cleanup_hours",
+      "button_text": "Установить время (1-48ч)",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_cleanup_settings",
+      "to": "access_cleanup_per_user",
+      "callback_data": "access_cleanup_per_user",
+      "button_text": "Настройка для пользователей",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_cleanup_per_user",
+      "to": "access_set_user_cleanup",
+      "callback_data": "access_set_user_cleanup||{user_id}",
+      "button_text": "[Username]",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_cleanup_settings",
+      "to": "access_view_cleanup_schedule",
+      "callback_data": "access_view_cleanup_schedule",
+      "button_text": "Просмотр расписания",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_security_menu",
+      "to": "access_password_policy",
+      "callback_data": "access_password_policy",
+      "button_text": "🔐 Политика паролей",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_password_policy",
+      "to": "access_set_min_length",
+      "callback_data": "access_set_min_length",
+      "button_text": "Минимальная длина",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_password_policy",
+      "to": "access_set_complexity",
+      "callback_data": "access_set_complexity",
+      "button_text": "Требования к сложности",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_password_policy",
+      "to": "access_set_password_ttl",
+      "callback_data": "access_set_password_ttl",
+      "button_text": "Срок действия",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_security_menu",
+      "to": "access_audit_log",
+      "callback_data": "access_audit_log",
+      "button_text": "📝 Журнал действий",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_audit_log",
+      "to": "access_view_recent_log",
+      "callback_data": "access_view_recent_log",
+      "button_text": "Просмотр последних записей",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_audit_log",
+      "to": "access_filter_log_user",
+      "callback_data": "access_filter_log_user",
+      "button_text": "Фильтр по пользователю",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_audit_log",
+      "to": "access_filter_log_event",
+      "callback_data": "access_filter_log_event",
+      "button_text": "Фильтр по типу события",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_audit_log",
+      "to": "access_export_log",
+      "callback_data": "access_export_log",
+      "button_text": "Экспорт журнала",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_security_menu",
+      "to": "menu_access",
+      "callback_data": "menu_access",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_cleanup_settings",
+      "to": "access_security_menu",
+      "callback_data": "access_security_menu",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_password_policy",
+      "to": "access_security_menu",
+      "callback_data": "access_security_menu",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_audit_log",
+      "to": "access_security_menu",
+      "callback_data": "access_security_menu",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "access_cleanup_per_user",
+      "to": "access_cleanup_settings",
+      "callback_data": "access_cleanup_settings",
+      "button_text": "🔙 Назад",
+      "condition": "user_role == super_admin"
+    },
+    {
+      "from": "menu_help",
+      "to": "help_about",
+      "callback_data": "help_about",
+      "button_text": "📱 О боте"
+    },
+    {
+      "from": "menu_help",
+      "to": "help_functions",
+      "callback_data": "help_functions",
+      "button_text": "🛠️ Функции"
+    },
+    {
+      "from": "menu_help",
+      "to": "help_stats",
+      "callback_data": "help_stats",
+      "button_text": "📊 Статистика"
+    },
+    {
+      "from": "menu_help",
+      "to": "help_tips",
+      "callback_data": "help_tips",
+      "button_text": "💡 Советы"
+    },
+    {
+      "from": "menu_help",
+      "to": "menu_main",
+      "callback_data": "menu_main",
+      "button_text": "🔙 Назад"
+    },
+    {
+      "from": "confirm_menu",
+      "to": "confirm_data",
+      "callback_data": "confirm_data",
+      "button_text": "✅ Подтвердить"
+    },
+    {
+      "from": "confirm_menu",
+      "to": "edit_data",
+      "callback_data": "edit_data",
+      "button_text": "✏️ Изменить"
+    },
+    {
+      "from": "edit_data",
+      "to": "edit_menu",
+      "callback_data": "edit_menu",
+      "button_text": "[Переход в меню редактирования]"
+    },
+    {
+      "from": "edit_menu",
+      "to": "edit_audio_number",
+      "callback_data": "edit_audio_number",
+      "button_text": "Номер файла"
+    },
+    {
+      "from": "edit_menu",
+      "to": "edit_date",
+      "callback_data": "edit_date",
+      "button_text": "Дата"
+    },
+    {
+      "from": "edit_menu",
+      "to": "edit_employee",
+      "callback_data": "edit_employee",
+      "button_text": "ФИО Сотрудника"
+    },
+    {
+      "from": "edit_menu",
+      "to": "edit_place_name",
+      "callback_data": "edit_place_name",
+      "button_text": "Заведение"
+    },
+    {
+      "from": "edit_menu",
+      "to": "edit_city",
+      "callback_data": "edit_city",
+      "button_text": "Город"
+    },
+    {
+      "from": "edit_menu",
+      "to": "edit_zone_name",
+      "callback_data": "edit_zone_name",
+      "button_text": "Зона"
+    },
+    {
+      "from": "edit_menu",
+      "to": "edit_client",
+      "callback_data": "edit_client",
+      "button_text": "Клиент"
+    },
+    {
+      "from": "edit_menu",
+      "to": "edit_building_type",
+      "callback_data": "edit_building_type",
+      "button_text": "Тип здания"
+    },
+    {
+      "from": "edit_menu",
+      "to": "edit_mode",
+      "callback_data": "edit_mode",
+      "button_text": "Режим работы"
+    },
+    {
+      "from": "edit_menu",
+      "to": "back_to_confirm",
+      "callback_data": "back_to_confirm",
+      "button_text": "🔙 Назад к подтверждению"
+    },
+    {
+      "from": "back_to_confirm",
+      "to": "confirm_menu",
+      "callback_data": "confirm_menu",
+      "button_text": "[Возврат]"
+    },
+    {
+      "from": "confirm_data",
+      "to": "building_type_menu",
+      "callback_data": "building_type_menu",
+      "button_text": "[После подтверждения]"
+    },
+    {
+      "from": "edit_building_type",
+      "to": "building_type_menu",
+      "callback_data": "building_type_menu",
+      "button_text": "[Переход]"
+    },
+    {
+      "from": "building_type_menu",
+      "to": "choose_building||hotel",
+      "callback_data": "choose_building||hotel",
+      "button_text": "🏨 Отель"
+    },
+    {
+      "from": "building_type_menu",
+      "to": "choose_building||restaurant",
+      "callback_data": "choose_building||restaurant",
+      "button_text": "🍽️ Ресторан"
+    },
+    {
+      "from": "building_type_menu",
+      "to": "choose_building||other",
+      "callback_data": "choose_building||other",
+      "button_text": "🏢 Другое"
+    },
+    {
+      "from": "choose_building||hotel",
+      "to": "interview_menu",
+      "callback_data": "interview_menu",
+      "button_text": "[После выбора здания]"
+    },
+    {
+      "from": "choose_building||restaurant",
+      "to": "interview_menu",
+      "callback_data": "interview_menu",
+      "button_text": "[После выбора здания]"
+    },
+    {
+      "from": "choose_building||other",
+      "to": "interview_menu",
+      "callback_data": "interview_menu",
+      "button_text": "[После выбора здания]"
+    },
+    {
+      "from": "edit_mode",
+      "to": "interview_menu",
+      "callback_data": "interview_menu",
+      "button_text": "[Переход]"
+    },
+    {
+      "from": "interview_menu",
+      "to": "mode_fast",
+      "callback_data": "mode_fast",
+      "button_text": "⚡ Быстрый режим"
+    },
+    {
+      "from": "interview_menu",
+      "to": "mode_deep",
+      "callback_data": "mode_deep",
+      "button_text": "🔬 Глубокий режим"
+    },
+    {
+      "from": "invite_password_input",
+      "to": "invite_password_confirm",
+      "callback_data": "invite_password_confirm",
+      "button_text": "[После ввода пароля]"
+    },
+    {
+      "from": "change_password_current",
+      "to": "change_password_new",
+      "callback_data": "change_password_new",
+      "button_text": "[После текущего пароля]"
+    },
+    {
+      "from": "change_password_new",
+      "to": "change_password_confirm",
+      "callback_data": "change_password_confirm",
+      "button_text": "[После нового пароля]"
+    }
+  ]
+}

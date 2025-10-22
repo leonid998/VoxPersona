@@ -5,6 +5,8 @@ import re
 import threading
 import logging
 import asyncio
+import json
+from pathlib import Path
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, Document, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from minio.error import S3Error
@@ -1435,6 +1437,56 @@ def register_handlers(app: Client):
             await callback.answer()
         except:
             pass
+
+        # ============ MENU CRAWLER PROTECTION ============
+        # Защита от опасных действий для тестового пользователя
+        TEST_USER_ID = int(os.getenv('TEST_USER_ID', 0))
+
+        if TEST_USER_ID and callback.from_user.id == TEST_USER_ID:
+            # Загрузка конфигурации crawler
+            config_path = Path(__file__).parent.parent / "menu_crawler" / "config" / "crawler_config.json"
+
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    crawler_config = json.load(f)
+                    safe_navigation = crawler_config.get('safe_navigation', [])
+                    forbidden_actions = crawler_config.get('forbidden_actions', [])
+            except FileNotFoundError:
+                # Fallback конфигурация если файл не найден
+                safe_navigation = ['menu_main', 'menu_chats', 'menu_system', 'menu_help', 'menu_access', 'access_list']
+                forbidden_actions = ['delete_', 'confirm_delete', 'upload_', 'new_chat', 'report_', 'edit_', 'access_create', 'access_revoke']
+
+            callback_data = callback.data
+
+            # Приоритет 1: Проверка whitelist (разрешенные безопасные действия)
+            is_safe = False
+            for safe_pattern in safe_navigation:
+                if callback_data.startswith(safe_pattern) or callback_data == safe_pattern:
+                    is_safe = True
+                    break
+
+            # Приоритет 2: Проверка blacklist (запрещенные опасные действия)
+            is_forbidden = False
+            for forbidden_pattern in forbidden_actions:
+                if forbidden_pattern in callback_data:
+                    is_forbidden = True
+                    break
+
+            # Блокировка запрещенных действий
+            if is_forbidden and not is_safe:
+                await callback.answer(
+                    "🚫 Действие заблокировано для тестового пользователя",
+                    show_alert=True
+                )
+                logger.warning(f"Blocked TEST_USER action: {callback_data}")
+
+                # Отправить JSON ответ для crawler (для детектирования блокировки)
+                await callback.message.answer(
+                    f"🤖 CRAWLER_BLOCKED: {callback_data}",
+                    parse_mode=None
+                )
+                return  # Прерываем выполнение
+        # ============ END MENU CRAWLER PROTECTION ============
 
         try:
             # === МУЛЬТИЧАТЫ: Обработчики callback ===

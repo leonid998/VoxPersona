@@ -1,0 +1,562 @@
+"""
+Menu Navigator для VoxPersona.
+
+Основной модуль для обхода меню бота через BFS алгоритм.
+Использует Pyrogram для взаимодействия с Telegram.
+"""
+
+import asyncio
+import json
+import os
+from collections import deque
+from pathlib import Path
+from typing import Optional, Dict, List, Set, Tuple
+
+from dotenv import load_dotenv
+from pyrogram import Client
+from pyrogram.errors import FloodWait
+from pyrogram.types import Message
+
+# Загрузить переменные окружения
+load_dotenv()
+
+
+class MenuNavigator:
+    """
+    Навигатор по меню бота с использованием BFS алгоритма.
+
+    Attributes:
+        config (dict): Конфигурация crawler (whitelist/blacklist)
+        expected_graph (dict): Ожидаемый граф меню из menu_graph.json
+        client (Client): Pyrogram клиент для взаимодействия с ботом
+        visited_edges (set): Посещенные рёбра графа (from, to)
+        actual_graph (dict): Фактический граф меню, собранный во время обхода
+    """
+
+    def __init__(self, config_path: Path):
+        """
+        Инициализация навигатора.
+
+        Args:
+            config_path: Путь к директории с конфигами (config/)
+        """
+        self.config_path = config_path
+
+        # Загрузить конфигурацию
+        self.config = self._load_config(config_path / "crawler_config.json")
+        self.expected_graph = self._load_menu_graph(config_path / "menu_graph.json")
+
+        # Получить credentials из .env
+        api_id = os.getenv("API_ID")
+        api_hash = os.getenv("API_HASH")
+
+        if not api_id or not api_hash:
+            raise ValueError("API_ID и API_HASH должны быть установлены в .env файле")
+
+        # Инициализировать Pyrogram клиент
+        # Используем user-аккаунт (НЕ бота) для отправки callback_query
+        self.client = Client(
+            "menu_crawler_session",
+            api_id=int(api_id),
+            api_hash=api_hash,
+            workdir=str(Path(__file__).parent.parent)  # menu_crawler/
+        )
+
+        # State для обхода
+        self.visited_edges: Set[Tuple[Optional[str], str]] = set()
+        self.actual_graph: Dict[str, any] = {
+            "nodes": {},
+            "edges": []
+        }
+
+        # TEST_USER_ID для безопасности
+        self.test_user_id = int(os.getenv("TEST_USER_ID", "0"))
+        if self.test_user_id == 0:
+            raise ValueError("TEST_USER_ID должен быть установлен в .env файле")
+
+        # Bot username для отправки команд
+        self.bot_username = os.getenv("BOT_USERNAME", "market_res_bot")
+
+        # CheckpointManager для сохранения прогресса
+        from .utils.checkpoint_manager import CheckpointManager
+        checkpoint_dir = Path(__file__).parent.parent  # menu_crawler/
+        self.checkpoint_manager = CheckpointManager(checkpoint_dir / "progress.json")
+
+        # Атрибут для восстановления queue из checkpoint
+        self._checkpoint_queue = None
+
+    def _load_config(self, config_file: Path) -> dict:
+        """
+        Загрузить crawler_config.json.
+
+        Args:
+            config_file: Путь к crawler_config.json
+
+        Returns:
+            Словарь с конфигурацией (safe_navigation, forbidden_actions)
+        """
+        if not config_file.exists():
+            raise FileNotFoundError(f"Конфигурация не найдена: {config_file}")
+
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+
+        # Добавить параметры по умолчанию
+        config.setdefault("throttle_delay", 2.0)  # 2 сек между запросами
+        config.setdefault("callback_timeout", 10)  # 10 сек timeout
+
+        return config
+
+    def _load_menu_graph(self, graph_file: Path) -> dict:
+        """
+        Загрузить menu_graph.json.
+
+        Args:
+            graph_file: Путь к menu_graph.json
+
+        Returns:
+            Словарь с ожидаемым графом меню (nodes, edges)
+        """
+        if not graph_file.exists():
+            raise FileNotFoundError(f"Граф меню не найден: {graph_file}")
+
+        with open(graph_file, 'r', encoding='utf-8') as f:
+            graph = json.load(f)
+
+        return graph
+
+    def _is_safe_navigation(self, callback_data: str) -> bool:
+        """
+        Проверить, безопасен ли callback_data для навигации.
+
+        Логика:
+        1. Если callback_data в safe_navigation whitelist → разрешено
+        2. Если callback_data в forbidden_actions blacklist → запрещено
+        3. Если callback_data начинается с префикса из whitelist → разрешено
+        4. Иначе → запрещено (по умолчанию безопасно)
+
+        Args:
+            callback_data: Callback data кнопки
+
+        Returns:
+            True если навигация безопасна, False иначе
+        """
+        safe_navigation = self.config.get("safe_navigation", [])
+        forbidden_actions = self.config.get("forbidden_actions", [])
+
+        # Приоритет 1: Whitelist (явное разрешение)
+        if callback_data in safe_navigation:
+            return True
+
+        # Приоритет 2: Blacklist (явный запрет)
+        if callback_data in forbidden_actions:
+            return False
+
+        # Приоритет 3: Префиксы из whitelist
+        # Например: "menu_" разрешает "menu_main", "menu_chats"
+        for safe_prefix in safe_navigation:
+            if callback_data.startswith(safe_prefix):
+                return True
+
+        # По умолчанию: запрещено (осторожный подход)
+        return False
+
+    async def _send_callback(self, callback_data: str) -> Optional[Message]:
+        """
+        Отправить callback_query боту.
+
+        Args:
+            callback_data: Callback data кнопки для нажатия
+
+        Returns:
+            Обновлённое сообщение с новым меню (или None при ошибке)
+
+        Raises:
+            FloodWait: При достижении Rate Limit (обрабатывается в crawl)
+            TimeoutError: При превышении timeout (10 сек)
+        """
+        import structlog
+        logger = structlog.get_logger(__name__)
+
+        try:
+            # Получить последнее сообщение от бота
+            async for message in self.client.get_chat_history(self.bot_username, limit=1):
+                last_message = message
+                break
+            else:
+                logger.error("no_messages_found", bot_username=self.bot_username)
+                return None
+
+            # Проверить наличие InlineKeyboard
+            if not last_message.reply_markup:
+                logger.warning("no_keyboard", callback_data=callback_data)
+                return None
+
+            # Отправить callback_query
+            logger.info("sending_callback", callback_data=callback_data, message_id=last_message.id)
+
+            await self.client.request_callback_answer(
+                chat_id=self.bot_username,
+                message_id=last_message.id,
+                callback_data=callback_data
+            )
+
+            # Подождать обновления (бот отправит новое меню)
+            await asyncio.sleep(1)
+
+            # Получить обновлённое сообщение
+            async for message in self.client.get_chat_history(self.bot_username, limit=1):
+                updated_message = message
+                break
+            else:
+                return None
+
+            logger.info("callback_success", callback_data=callback_data)
+            return updated_message
+
+        except FloodWait as e:
+            # FloodWait пробрасывается наверх для обработки CircuitBreaker
+            logger.warning("flood_wait", callback_data=callback_data, wait_seconds=e.value)
+            raise
+
+        except Exception as e:
+            logger.error("callback_error", callback_data=callback_data, error=str(e))
+            return None
+
+    def _parse_keyboard(self, message: Optional[Message]) -> List[Tuple[str, str]]:
+        """
+        Парсить InlineKeyboard из сообщения.
+
+        Args:
+            message: Сообщение от бота с InlineKeyboard
+
+        Returns:
+            Список кортежей (button_text, callback_data)
+        """
+        import structlog
+        logger = structlog.get_logger(__name__)
+
+        if not message or not message.reply_markup:
+            return []
+
+        buttons = []
+
+        try:
+            # Извлечь кнопки из InlineKeyboard
+            for row in message.reply_markup.inline_keyboard:
+                for button in row:
+                    if button.callback_data:
+                        buttons.append((button.text, button.callback_data))
+
+            logger.info(
+                "keyboard_parsed",
+                buttons_count=len(buttons),
+                buttons=[b[1] for b in buttons]  # только callback_data
+            )
+
+        except Exception as e:
+            logger.error("keyboard_parse_error", error=str(e))
+
+        return buttons
+
+    def _add_to_actual_graph(
+        self,
+        parent: Optional[str],
+        child: str,
+        button_text: str
+    ) -> None:
+        """
+        Добавить узел и ребро в actual_graph.
+
+        Args:
+            parent: Родительский callback_data (None для корня)
+            child: Дочерний callback_data
+            button_text: Текст кнопки
+        """
+        # Добавить узел (если новый)
+        if child not in self.actual_graph["nodes"]:
+            self.actual_graph["nodes"][child] = {
+                "type": "unknown",  # тип можно определить позже
+                "description": button_text
+            }
+
+        # Добавить ребро
+        edge = {
+            "from": parent,
+            "to": child,
+            "button_text": button_text
+        }
+
+        # Проверить, не добавлено ли уже такое ребро
+        if edge not in self.actual_graph["edges"]:
+            self.actual_graph["edges"].append(edge)
+
+    def resume_from_checkpoint(self) -> bool:
+        """
+        Восстановить состояние из checkpoint перед запуском crawl().
+
+        Returns:
+            True если resume успешен, False если checkpoint не найден
+
+        Example:
+            >>> navigator = MenuNavigator(config_path)
+            >>> if navigator.resume_from_checkpoint():
+            ...     print("Восстановлен из checkpoint")
+            ... else:
+            ...     print("Начинаем новый обход")
+            >>> await navigator.crawl()
+        """
+        return self.checkpoint_manager.resume_crawl(self)
+
+    async def init_crawler(self) -> None:
+        """
+        Инициализировать crawler.
+
+        1. Запустить Pyrogram клиент
+        2. Проверить TEST_USER_ID (должен быть не 0)
+        3. Отправить /start боту для получения главного меню
+
+        Raises:
+            ValueError: Если TEST_USER_ID не установлен
+            RuntimeError: Если не удалось получить главное меню
+        """
+        # Запустить клиент
+        await self.client.start()
+        print(f"✅ Pyrogram клиент запущен (session: menu_crawler_session)")
+
+        # Проверить TEST_USER_ID
+        if self.test_user_id == 0:
+            raise ValueError("TEST_USER_ID не может быть 0. Установите в .env")
+
+        print(f"✅ TEST_USER_ID: {self.test_user_id}")
+
+        # Отправить /start боту для получения главного меню
+        try:
+            await self.client.send_message(self.bot_username, "/start")
+            print(f"✅ Отправлена команда /start боту @{self.bot_username}")
+
+            # Подождать ответа (2 секунды)
+            await asyncio.sleep(2)
+        except Exception as e:
+            raise RuntimeError(f"Ошибка при отправке /start: {e}")
+
+    async def crawl(self) -> Set[Tuple[Optional[str], str]]:
+        """
+        Основной метод обхода меню через BFS алгоритм.
+
+        Алгоритм:
+        1. Инициализировать queue с (None, "menu_main")
+        2. Пока queue не пуста:
+           a. Взять (parent, callback_data) из queue
+           b. Проверить visited_edges (skip если посещен)
+           c. Проверить whitelist/blacklist (skip запрещенные)
+           d. Отправить callback через _send_callback()
+           e. Применить throttling (2 сек delay)
+           f. Парсить keyboard через _parse_keyboard()
+           g. Добавить детей в queue
+           h. Обновить visited_edges
+           i. Checkpoint каждые 10 узлов
+        3. Вернуть visited_edges
+
+        Returns:
+            Множество посещенных рёбер (from, to)
+        """
+        import structlog
+        from .utils.circuit_breaker import CircuitBreaker
+
+        logger = structlog.get_logger(__name__)
+
+        # Инициализация
+        await self.init_crawler()
+
+        logger.info("crawler_started", test_user_id=self.test_user_id)
+
+        # Попытка восстановления из checkpoint
+        checkpoint_resumed = False
+        if self._checkpoint_queue is not None:
+            # Resume из checkpoint (вызван resume_crawl перед crawl)
+            queue = self._checkpoint_queue
+            checkpoint_resumed = True
+            logger.info(
+                "resuming_from_checkpoint",
+                visited_edges=len(self.visited_edges),
+                queue_size=len(queue)
+            )
+        else:
+            # Проверить наличие checkpoint файла
+            checkpoint_info = self.checkpoint_manager.get_info()
+            if checkpoint_info:
+                # Checkpoint существует, но resume не был вызван
+                # Можно автоматически восстановить или начать с нуля
+                # Для безопасности начнём с нуля, но залогируем предупреждение
+                logger.warning(
+                    "checkpoint_exists_but_not_resumed",
+                    checkpoint_info=checkpoint_info,
+                    message="Обнаружен существующий checkpoint, но resume не был вызван. Начинаем новый обход."
+                )
+
+            # Инициализация BFS с нуля
+            queue = deque([(None, "menu_main")])
+
+        circuit_breaker = CircuitBreaker(max_failures=3, backoff_base=2.0)
+        checkpoint_counter = 0
+
+        # Получить throttle delay из конфига
+        throttle_delay = self.config.get("throttle_delay", 2.0)
+
+        logger.info(
+            "bfs_initialized",
+            initial_node="menu_main",
+            throttle_delay=throttle_delay
+        )
+
+        # Основной цикл BFS
+        while queue:
+            parent, callback_data = queue.popleft()
+            edge = (parent, callback_data)
+
+            # Проверка 1: Уже посещён?
+            if edge in self.visited_edges:
+                logger.debug("edge_already_visited", edge=edge)
+                continue
+
+            # Проверка 2: Безопасная навигация?
+            if not self._is_safe_navigation(callback_data):
+                logger.warning(
+                    "skipping_forbidden_action",
+                    callback_data=callback_data,
+                    parent=parent
+                )
+                continue
+
+            logger.info(
+                "visiting_edge",
+                from_node=parent,
+                to_node=callback_data,
+                queue_size=len(queue)
+            )
+
+            # Отправка callback с обработкой FloodWait
+            try:
+                response = await self._send_callback(callback_data)
+
+                # Успех - сброс Circuit Breaker
+                circuit_breaker.reset()
+
+                # Throttling (задержка между запросами)
+                await asyncio.sleep(throttle_delay)
+
+            except FloodWait as e:
+                # Обработка Rate Limit через Circuit Breaker
+                logger.warning(
+                    "rate_limit_encountered",
+                    callback_data=callback_data,
+                    wait_seconds=e.value
+                )
+
+                should_retry = await circuit_breaker.handle_error(e)
+
+                if should_retry:
+                    # Retry - вернуть edge в начало queue
+                    queue.appendleft((parent, callback_data))
+                    logger.info("retry_edge", edge=edge)
+                    continue
+                else:
+                    # Circuit opened - прекращаем обход
+                    logger.error(
+                        "circuit_breaker_stopped_crawl",
+                        visited_edges=len(self.visited_edges),
+                        remaining_queue=len(queue)
+                    )
+                    break
+
+            except Exception as e:
+                logger.error(
+                    "unexpected_error",
+                    callback_data=callback_data,
+                    error=str(e)
+                )
+                # Продолжаем обход, пропуская проблемный узел
+                continue
+
+            # Парсинг keyboard и добавление детей в queue
+            if response:
+                buttons = self._parse_keyboard(response)
+
+                for button_text, child_callback in buttons:
+                    # Добавить в actual_graph
+                    self._add_to_actual_graph(callback_data, child_callback, button_text)
+
+                    # Добавить в queue (если ещё не посещён и безопасен)
+                    child_edge = (callback_data, child_callback)
+                    if child_edge not in self.visited_edges:
+                        if self._is_safe_navigation(child_callback):
+                            queue.append((callback_data, child_callback))
+                            logger.debug(
+                                "added_to_queue",
+                                parent=callback_data,
+                                child=child_callback
+                            )
+
+            # Пометить ребро как посещённое
+            self.visited_edges.add(edge)
+
+            # Checkpoint (каждые 10 узлов)
+            checkpoint_counter += 1
+            if checkpoint_counter % 10 == 0:
+                # Сохранить checkpoint
+                checkpoint_state = {
+                    "visited_edges": self.visited_edges,
+                    "queue": queue,
+                    "actual_graph": self.actual_graph
+                }
+                self.checkpoint_manager.save(checkpoint_state)
+
+                logger.info(
+                    "checkpoint",
+                    visited_edges=len(self.visited_edges),
+                    queue_size=len(queue),
+                    actual_graph_nodes=len(self.actual_graph["nodes"]),
+                    actual_graph_edges=len(self.actual_graph["edges"])
+                )
+
+        # Финальная статистика
+        logger.info(
+            "crawler_finished",
+            visited_edges=len(self.visited_edges),
+            actual_graph_nodes=len(self.actual_graph["nodes"]),
+            actual_graph_edges=len(self.actual_graph["edges"]),
+            circuit_breaker_state=circuit_breaker.get_state()
+        )
+
+        return self.visited_edges
+
+    async def cleanup(self) -> None:
+        """
+        Очистить ресурсы после завершения обхода.
+
+        - Остановить Pyrogram клиент
+        """
+        if self.client.is_connected:
+            await self.client.stop()
+            print("✅ Pyrogram клиент остановлен")
+
+
+# Пример использования
+async def main():
+    """Тестовый запуск navigator."""
+    config_path = Path(__file__).parent.parent / "config"
+
+    navigator = MenuNavigator(config_path)
+
+    try:
+        visited = await navigator.crawl()
+        print(f"\n✅ Обход завершен. Посещено рёбер: {len(visited)}")
+    except Exception as e:
+        print(f"❌ Ошибка во время обхода: {e}")
+    finally:
+        await navigator.cleanup()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
