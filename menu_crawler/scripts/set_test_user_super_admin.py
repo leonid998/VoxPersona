@@ -26,7 +26,8 @@ def main():
     print(f"🔍 Поиск TEST_USER (telegram_id: {TEST_USER_TELEGRAM_ID})...")
 
     # Инициализация AuthStorageManager
-    storage = AuthStorageManager()
+    base_path = project_root / "auth_data"
+    storage = AuthStorageManager(base_path=base_path)
 
     # Поиск пользователя
     user = storage.get_user_by_telegram_id(TEST_USER_TELEGRAM_ID)
