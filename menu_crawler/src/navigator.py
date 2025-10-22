@@ -344,8 +344,8 @@ class MenuNavigator:
             await self.client.send_message(self.bot_username, "/start")
             print(f"✅ Отправлена команда /start боту @{self.bot_username}")
 
-            # Подождать ответа (2 секунды)
-            await asyncio.sleep(2)
+            # Подождать ответа (3 секунды - бот может отвечать с задержкой)
+            await asyncio.sleep(3)
         except Exception as e:
             raise RuntimeError(f"Ошибка при отправке /start: {e}")
 
