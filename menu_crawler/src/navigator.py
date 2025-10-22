@@ -375,8 +375,8 @@ class MenuNavigator:
 
         logger = structlog.get_logger(__name__)
 
-        # Инициализация
-        await self.init_crawler()
+        # Инициализация УЖЕ выполнена в main.py через init_crawler()
+        # НЕ вызываем повторно!
 
         logger.info("crawler_started", test_user_id=self.test_user_id)
 
