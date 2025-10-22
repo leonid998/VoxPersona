@@ -30,7 +30,7 @@ sys.path.insert(0, str(project_root))
 from menu_crawler.src.navigator import MenuNavigator
 from menu_crawler.src.coverage_verifier import CoverageVerifier
 from menu_crawler.src.report_builder import ReportBuilder
-from menu_crawler.src.utils.cleanup import cleanup_test_user_data
+from menu_crawler.src.utils.cleanup import cleanup_test_files
 from menu_crawler.src.utils.logging_config import setup_logging, get_logger
 
 # Настроить structured logging
@@ -136,7 +136,7 @@ async def main():
 
         # Cleanup данных созданных во время этой сессии
         # Используем TEST_USER_ID и timestamp начала сессии
-        cleanup_result = cleanup_test_user_data(
+        cleanup_result = cleanup_test_files(
             user_id=navigator.user_id,
             created_after=start_time
         )
