@@ -207,6 +207,22 @@ class MenuNavigator:
                 else:
                     return None
 
+            # КРИТИЧНО: Проверить что callback_data есть в текущей клавиатуре
+            available_callbacks = []
+            for row in self.current_message.reply_markup.inline_keyboard:
+                for button in row:
+                    if button.callback_data:
+                        available_callbacks.append(button.callback_data)
+
+            if callback_data not in available_callbacks:
+                logger.warning(
+                    "callback_not_in_keyboard",
+                    callback_data=callback_data,
+                    available_callbacks=available_callbacks,
+                    message_id=self.current_message.id
+                )
+                return None
+
             # Отправить callback_query используя АКТУАЛЬНЫЙ message_id
             logger.info("sending_callback", callback_data=callback_data, message_id=self.current_message.id)
 
