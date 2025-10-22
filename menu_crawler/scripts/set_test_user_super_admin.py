@@ -15,7 +15,7 @@ sys.path.insert(0, str(src_path))
 
 os.environ['ENV'] = 'production'
 
-from auth_storage import AuthStorage
+from auth_storage import AuthStorageManager
 
 
 def main():
@@ -25,8 +25,8 @@ def main():
 
     print(f"🔍 Поиск TEST_USER (telegram_id: {TEST_USER_TELEGRAM_ID})...")
 
-    # Инициализация AuthStorage
-    storage = AuthStorage()
+    # Инициализация AuthStorageManager
+    storage = AuthStorageManager()
 
     # Поиск пользователя
     user = storage.get_user_by_telegram_id(TEST_USER_TELEGRAM_ID)
