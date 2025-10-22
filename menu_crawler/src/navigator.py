@@ -92,6 +92,9 @@ class MenuNavigator:
         # Текущее сообщение от бота (для актуального message_id)
         self.current_message: Optional[Message] = None
 
+        # Текущий узел в графе меню (для отслеживания местоположения)
+        self.current_node: str = "menu_main"  # Начинаем с главного меню
+
     def _load_config(self, config_file: Path) -> dict:
         """
         Загрузить crawler_config.json.
@@ -328,6 +331,195 @@ class MenuNavigator:
         if edge not in self.actual_graph["edges"]:
             self.actual_graph["edges"].append(edge)
 
+    def _find_path(self, from_node: str, to_node: str) -> List[str]:
+        """
+        Найти кратчайший путь между двумя узлами в графе меню.
+
+        Использует BFS для поиска пути в menu_graph.json.
+
+        Args:
+            from_node: Начальный узел (callback_data)
+            to_node: Целевой узел (callback_data)
+
+        Returns:
+            Список callback_data для перехода от from_node к to_node.
+            Пустой список если путь не найден.
+
+        Example:
+            >>> path = self._find_path("menu_chats", "menu_system")
+            >>> # ["menu_main", "menu_system"]
+        """
+        import structlog
+        logger = structlog.get_logger(__name__)
+
+        if from_node == to_node:
+            return []
+
+        # BFS для поиска пути
+        queue = deque([(from_node, [from_node])])
+        visited = {from_node}
+
+        while queue:
+            node, path = queue.popleft()
+
+            # Проверить все исходящие рёбра из текущего узла
+            for edge in self.expected_graph.get("edges", []):
+                if edge["from"] == node:
+                    next_node = edge["to"]
+
+                    if next_node == to_node:
+                        # Нашли целевой узел!
+                        return path + [next_node]
+
+                    if next_node not in visited:
+                        visited.add(next_node)
+                        queue.append((next_node, path + [next_node]))
+
+        # Путь не найден
+        logger.warning(
+            "path_not_found",
+            from_node=from_node,
+            to_node=to_node,
+            visited_count=len(visited)
+        )
+        return []
+
+    def _get_node_for_callback(self, callback_data: str) -> Optional[str]:
+        """
+        Найти узел, из которого доступен данный callback_data.
+
+        Ищет в menu_graph.json, какой узел имеет исходящее ребро
+        с указанным callback_data.
+
+        Args:
+            callback_data: Callback data кнопки
+
+        Returns:
+            callback_data родительского узла или None если не найден
+
+        Example:
+            >>> node = self._get_node_for_callback("menu_system")
+            >>> # "menu_main"
+        """
+        import structlog
+        logger = structlog.get_logger(__name__)
+
+        # Поиск в expected_graph
+        for edge in self.expected_graph.get("edges", []):
+            if edge["to"] == callback_data or edge.get("callback_data") == callback_data:
+                from_node = edge["from"]
+                logger.debug(
+                    "found_parent_node",
+                    callback_data=callback_data,
+                    from_node=from_node
+                )
+                return from_node
+
+        # Не найдено - возможно динамическая кнопка
+        logger.debug(
+            "parent_node_not_found",
+            callback_data=callback_data,
+            hint="Возможно, это динамическая кнопка с UUID"
+        )
+        return None
+
+    async def _navigate_to(self, target_node: str) -> bool:
+        """
+        Навигировать к указанному узлу в графе меню.
+
+        Если текущий узел (self.current_node) != target_node,
+        найти путь через _find_path() и выполнить последовательность переходов.
+
+        Args:
+            target_node: Целевой узел (callback_data)
+
+        Returns:
+            True если навигация успешна, False если путь не найден
+
+        Example:
+            >>> # Текущий узел: menu_chats
+            >>> success = await self._navigate_to("menu_main")
+            >>> # Выполнит переход: menu_chats → menu_main
+        """
+        import structlog
+        logger = structlog.get_logger(__name__)
+
+        if self.current_node == target_node:
+            # Уже в нужном узле
+            logger.debug("already_at_target_node", node=target_node)
+            return True
+
+        # Найти путь
+        path = self._find_path(self.current_node, target_node)
+
+        if not path:
+            logger.error(
+                "navigation_path_not_found",
+                from_node=self.current_node,
+                to_node=target_node
+            )
+            return False
+
+        logger.info(
+            "navigating_to_node",
+            from_node=self.current_node,
+            to_node=target_node,
+            path=path
+        )
+
+        # Выполнить последовательность переходов
+        for i, next_node in enumerate(path):
+            if next_node == self.current_node:
+                continue  # Уже в этом узле
+
+            # Найти callback_data для перехода current_node → next_node
+            callback_to_send = None
+            for edge in self.expected_graph.get("edges", []):
+                if edge["from"] == self.current_node and edge["to"] == next_node:
+                    callback_to_send = edge.get("callback_data", edge["to"])
+                    break
+
+            if not callback_to_send:
+                logger.error(
+                    "callback_not_found_for_edge",
+                    from_node=self.current_node,
+                    to_node=next_node
+                )
+                return False
+
+            # Отправить callback
+            try:
+                logger.debug(
+                    "navigation_step",
+                    step=i + 1,
+                    total_steps=len(path),
+                    callback_data=callback_to_send
+                )
+
+                response = await self._send_callback(callback_to_send)
+
+                # Обновить текущий узел
+                self.current_node = next_node
+
+                # Throttling
+                await asyncio.sleep(self.config.get("throttle_delay", 2.0))
+
+            except Exception as e:
+                logger.error(
+                    "navigation_step_failed",
+                    step=i + 1,
+                    callback_data=callback_to_send,
+                    error=str(e)
+                )
+                return False
+
+        logger.info(
+            "navigation_completed",
+            from_node=path[0] if path else self.current_node,
+            to_node=target_node
+        )
+        return True
+
     def resume_from_checkpoint(self) -> bool:
         """
         Восстановить состояние из checkpoint перед запуском crawl().
@@ -507,12 +699,43 @@ class MenuNavigator:
                 queue_size=len(queue)
             )
 
+            # 🧭 ИНТЕЛЛЕКТУАЛЬНАЯ НАВИГАЦИЯ с использованием menu_graph.json
+            # Найти, из какого узла доступен этот callback
+            target_from_node = self._get_node_for_callback(callback_data)
+
+            if target_from_node and target_from_node != self.current_node:
+                # Требуется навигация к нужному узлу
+                logger.info(
+                    "navigation_required",
+                    current_node=self.current_node,
+                    target_node=target_from_node,
+                    callback_data=callback_data
+                )
+
+                navigation_success = await self._navigate_to(target_from_node)
+
+                if not navigation_success:
+                    logger.error(
+                        "navigation_failed_skipping_edge",
+                        callback_data=callback_data,
+                        current_node=self.current_node,
+                        target_node=target_from_node
+                    )
+                    continue  # Пропустить этот callback - недостижим
+
             # Отправка callback с обработкой FloodWait
             try:
                 response = await self._send_callback(callback_data)
 
                 # Успех - сброс Circuit Breaker
                 circuit_breaker.reset()
+
+                # Обновить текущий узел после успешного перехода
+                self.current_node = callback_data
+                logger.debug(
+                    "current_node_updated",
+                    current_node=self.current_node
+                )
 
                 # Throttling (задержка между запросами)
                 await asyncio.sleep(throttle_delay)
