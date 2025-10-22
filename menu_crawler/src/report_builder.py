@@ -156,13 +156,15 @@ class ReportBuilder:
         warnings = issues["warnings"]
         md.append(f"## 🟡 Предупреждения ({len(warnings)})\n")
 
+        # Инициализация переменных (используются позже в рекомендациях)
+        undocumented = [w for w in warnings if w["type"] == "undocumented_node"]
+        deep = [w for w in warnings if w["type"] == "deep_node"]
+        no_back = [w for w in warnings if w["type"] == "no_back_button"]
+
         if not warnings:
             md.append("*Предупреждений не обнаружено*\n")
         else:
-            # Группировка по типам
-            undocumented = [w for w in warnings if w["type"] == "undocumented_node"]
-            deep = [w for w in warnings if w["type"] == "deep_node"]
-            no_back = [w for w in warnings if w["type"] == "no_back_button"]
+            # Группировка по типам уже сделана выше
 
             if undocumented:
                 md.append(f"### Недокументированные узлы ({len(undocumented)})")
