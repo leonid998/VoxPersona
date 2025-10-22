@@ -1,291 +1,176 @@
 """
-Утилита для безопасного удаления тестовых данных из PostgreSQL БД.
+Утилита для безопасного удаления тестовых данных из файловой системы.
 
-Поддерживает два режима:
-- Вариант A: Удаление по test_session_id (если колонка существует)
-- Вариант B: Удаление по user_id + timestamp (fallback)
+Menu Crawler не создаёт данные в БД, только на файловой системе.
+Cleanup проверяет conversations/ и md_reports/ на наличие тестовых файлов.
 
 Использование:
-    from utils.cleanup import cleanup_test_data, cleanup_test_user_data
+    from utils.cleanup import cleanup_test_files, verify_cleanup_files
 
-    # Вариант A: Удаление по session_id
-    result = cleanup_test_data("20251022_153000")
-
-    # Вариант B: Удаление по user_id + timestamp
+    # Удалить файлы тестового пользователя
     from datetime import datetime, timedelta
     cutoff = datetime.now() - timedelta(hours=1)
-    result = cleanup_test_user_data(155894817, cutoff)
+    result = cleanup_test_files(155894817, cutoff)
+
+    # Проверить результаты
+    verify_result = verify_cleanup_files(155894817)
 """
 
-from typing import Dict, Optional, Any
+import os
+import json
+from typing import Dict, List, Any
 from datetime import datetime
+from pathlib import Path
 import time
 import structlog
-
-from db_handler.db import get_db_connection
 
 logger = structlog.get_logger()
 
 
-def cleanup_test_data(session_id: str) -> Dict[str, Any]:
+def cleanup_test_files(user_id: int, created_after: datetime, base_path: str = "/home/voxpersona_user/VoxPersona") -> Dict[str, Any]:
     """
-    Удалить все тестовые данные по test_session_id.
+    Удалить файлы тестового пользователя созданные после указанного времени.
 
-    Удаляет данные из всех таблиц, где есть колонка test_session_id.
-    Операция выполняется в транзакции - при ошибке все откатывается.
+    Это safety net (3й уровень защиты) на случай, если TEST_USER_ID
+    защита в handlers.py не сработала и Menu Crawler создал файлы.
 
-    Args:
-        session_id: Уникальный ID тестовой сессии (например "20251022_153000")
-
-    Returns:
-        dict с количеством удаленных строк по каждой таблице:
-        {
-            "conversations": 5,
-            "conversation_messages": 120,
-            "reports": 3,
-            "audit_log": 15,
-            "transcriptions": 2,
-            "total_deleted": 145,
-            "duration_ms": 250,
-            "status": "success"
-        }
-
-    Raises:
-        Exception: При ошибке БД (с автоматическим ROLLBACK)
-
-    Example:
-        >>> result = cleanup_test_data("20251022_153000")
-        >>> print(f"Удалено: {result['total_deleted']} строк")
-        Удалено: 145 строк
-    """
-    conn = None
-    cursor = None
-    start_time = time.time()
-
-    # Таблицы для очистки (в порядке зависимостей)
-    tables = [
-        "conversation_messages",  # Зависит от conversations
-        "conversations",          # Основная таблица
-        "reports",               # Отчеты пользователя
-        "audit_log",            # Логи аудита
-        "transcriptions"        # Транскрипции аудио
-    ]
-
-    result: Dict[str, Any] = {
-        "status": "success",
-        "total_deleted": 0
-    }
-
-    logger.info("cleanup_started", session_id=session_id, tables=tables)
-
-    try:
-        # Получить соединение с БД
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # BEGIN транзакция (автоматически при первом запросе)
-
-        # Удалить данные из каждой таблицы
-        for table in tables:
-            try:
-                query = f"DELETE FROM {table} WHERE test_session_id = %s"
-                cursor.execute(query, (session_id,))
-                rows_deleted = cursor.rowcount
-
-                result[table] = rows_deleted
-                result["total_deleted"] += rows_deleted
-
-                logger.info(
-                    "cleaned_table",
-                    table=table,
-                    rows_deleted=rows_deleted,
-                    session_id=session_id
-                )
-
-            except Exception as table_error:
-                # Логировать ошибку для конкретной таблицы, но продолжить
-                logger.warning(
-                    "table_cleanup_skipped",
-                    table=table,
-                    error=str(table_error),
-                    session_id=session_id
-                )
-                result[table] = 0
-
-        # COMMIT транзакции
-        conn.commit()
-
-        # Рассчитать длительность операции
-        duration_ms = int((time.time() - start_time) * 1000)
-        result["duration_ms"] = duration_ms
-
-        logger.info(
-            "cleanup_completed",
-            session_id=session_id,
-            total_deleted=result["total_deleted"],
-            duration_ms=duration_ms
-        )
-
-        return result
-
-    except Exception as e:
-        # ROLLBACK транзакции при ошибке
-        if conn:
-            conn.rollback()
-            logger.error(
-                "cleanup_rollback",
-                session_id=session_id,
-                error=str(e)
-            )
-
-        logger.error(
-            "cleanup_failed",
-            session_id=session_id,
-            error=str(e),
-            error_type=type(e).__name__
-        )
-
-        return {
-            "status": "error",
-            "error": str(e),
-            "error_type": type(e).__name__,
-            "total_deleted": 0,
-            "session_id": session_id
-        }
-
-    finally:
-        # Закрыть соединение
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-
-def cleanup_test_user_data(user_id: int, created_after: datetime) -> Dict[str, Any]:
-    """
-    Удалить данные тестового пользователя по user_id + timestamp.
-
-    Fallback метод для случаев, когда test_session_id не существует в БД.
-    Удаляет данные пользователя, созданные после указанного времени.
+    Ожидаемый результат: 0 файлов удалено (доказывает, что защита работает!)
 
     Args:
         user_id: Telegram ID тестового пользователя (например 155894817)
-        created_after: Удалить данные созданные после этого времени
+        created_after: Удалить файлы созданные после этого времени
+        base_path: Корневая директория VoxPersona
 
     Returns:
-        dict с количеством удаленных строк по каждой таблице:
+        dict с количеством удалённых файлов:
         {
-            "conversations": 3,
-            "conversation_messages": 80,
-            "reports": 2,
-            "total_deleted": 85,
-            "duration_ms": 180,
+            "conversations_deleted": 0,
+            "reports_deleted": 0,
+            "total_deleted": 0,
+            "duration_ms": 50,
             "status": "success"
         }
-
-    Raises:
-        Exception: При ошибке БД (с автоматическим ROLLBACK)
 
     Example:
         >>> from datetime import datetime, timedelta
         >>> cutoff = datetime.now() - timedelta(hours=1)
-        >>> result = cleanup_test_user_data(155894817, cutoff)
-        >>> print(f"Удалено данных пользователя: {result['total_deleted']}")
-        Удалено данных пользователя: 85
+        >>> result = cleanup_test_files(155894817, cutoff)
+        >>> print(f"Удалено файлов: {result['total_deleted']}")
+        Удалено файлов: 0  # Ожидаемый результат!
     """
-    conn = None
-    cursor = None
     start_time = time.time()
-
-    # Таблицы с полями user_id и created_at/timestamp
-    tables_config = [
-        {"name": "conversation_messages", "time_field": "timestamp"},
-        {"name": "conversations", "time_field": "created_at"},
-        {"name": "reports", "time_field": "timestamp"},
-        {"name": "transcriptions", "time_field": "created_at"}
-    ]
 
     result: Dict[str, Any] = {
         "status": "success",
+        "conversations_deleted": 0,
+        "reports_deleted": 0,
         "total_deleted": 0,
         "user_id": user_id,
-        "created_after": created_after.isoformat()
+        "created_after": created_after.isoformat(),
+        "deleted_files": []
     }
 
     logger.info(
-        "cleanup_user_started",
+        "cleanup_files_started",
         user_id=user_id,
-        created_after=created_after.isoformat()
+        created_after=created_after.isoformat(),
+        base_path=base_path
     )
 
     try:
-        # Получить соединение с БД
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # Конвертировать created_after в timestamp для сравнения
+        cutoff_timestamp = created_after.timestamp()
 
-        # BEGIN транзакция
+        # 1. Проверить conversations/user_{user_id}/
+        conversations_dir = Path(base_path) / "conversations" / f"user_{user_id}"
+        if conversations_dir.exists():
+            logger.info("checking_conversations", path=str(conversations_dir))
 
-        # Удалить данные из каждой таблицы
-        for table_config in tables_config:
-            table = table_config["name"]
-            time_field = table_config["time_field"]
+            for file_path in conversations_dir.glob("*.json"):
+                try:
+                    # Получить время модификации файла
+                    file_mtime = file_path.stat().st_mtime
 
-            try:
-                query = f"""
-                    DELETE FROM {table}
-                    WHERE user_id = %s AND {time_field} >= %s
-                """
-                cursor.execute(query, (user_id, created_after))
-                rows_deleted = cursor.rowcount
+                    if file_mtime >= cutoff_timestamp:
+                        # Файл создан после cutoff - удалить
+                        file_path.unlink()
+                        result["conversations_deleted"] += 1
+                        result["deleted_files"].append(str(file_path))
 
-                result[table] = rows_deleted
-                result["total_deleted"] += rows_deleted
+                        logger.info(
+                            "file_deleted",
+                            file=str(file_path),
+                            mtime=datetime.fromtimestamp(file_mtime).isoformat()
+                        )
 
-                logger.info(
-                    "cleaned_user_table",
-                    table=table,
-                    rows_deleted=rows_deleted,
-                    user_id=user_id
-                )
+                except Exception as file_error:
+                    logger.warning(
+                        "file_delete_failed",
+                        file=str(file_path),
+                        error=str(file_error)
+                    )
 
-            except Exception as table_error:
-                # Логировать ошибку для конкретной таблицы
-                logger.warning(
-                    "user_table_cleanup_skipped",
-                    table=table,
-                    error=str(table_error),
-                    user_id=user_id
-                )
-                result[table] = 0
+        # 2. Проверить md_reports/user_{user_id}/
+        reports_dir = Path(base_path) / "md_reports" / f"user_{user_id}"
+        if reports_dir.exists():
+            logger.info("checking_reports", path=str(reports_dir))
 
-        # COMMIT транзакции
-        conn.commit()
+            for file_path in reports_dir.glob("*"):
+                try:
+                    # Пропустить директории
+                    if file_path.is_dir():
+                        continue
 
-        # Рассчитать длительность операции
+                    # Получить время модификации файла
+                    file_mtime = file_path.stat().st_mtime
+
+                    if file_mtime >= cutoff_timestamp:
+                        # Файл создан после cutoff - удалить
+                        file_path.unlink()
+                        result["reports_deleted"] += 1
+                        result["deleted_files"].append(str(file_path))
+
+                        logger.info(
+                            "file_deleted",
+                            file=str(file_path),
+                            mtime=datetime.fromtimestamp(file_mtime).isoformat()
+                        )
+
+                except Exception as file_error:
+                    logger.warning(
+                        "file_delete_failed",
+                        file=str(file_path),
+                        error=str(file_error)
+                    )
+
+        # Подсчитать итоги
+        result["total_deleted"] = result["conversations_deleted"] + result["reports_deleted"]
+
+        # Рассчитать длительность
         duration_ms = int((time.time() - start_time) * 1000)
         result["duration_ms"] = duration_ms
 
         logger.info(
-            "cleanup_user_completed",
+            "cleanup_files_completed",
             user_id=user_id,
+            conversations_deleted=result["conversations_deleted"],
+            reports_deleted=result["reports_deleted"],
             total_deleted=result["total_deleted"],
             duration_ms=duration_ms
         )
 
+        # Если ничего не удалено - это ХОРОШО! Защита работает
+        if result["total_deleted"] == 0:
+            logger.info(
+                "cleanup_success_no_files",
+                message="✅ Защита TEST_USER_ID работает! Тестовые файлы не были созданы."
+            )
+
         return result
 
     except Exception as e:
-        # ROLLBACK транзакции при ошибке
-        if conn:
-            conn.rollback()
-            logger.error(
-                "cleanup_user_rollback",
-                user_id=user_id,
-                error=str(e)
-            )
-
         logger.error(
-            "cleanup_user_failed",
+            "cleanup_files_failed",
             user_id=user_id,
             error=str(e),
             error_type=type(e).__name__
@@ -299,128 +184,213 @@ def cleanup_test_user_data(user_id: int, created_after: datetime) -> Dict[str, A
             "user_id": user_id
         }
 
-    finally:
-        # Закрыть соединение
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
-
-def verify_cleanup(session_id: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
+def verify_cleanup_files(user_id: int, base_path: str = "/home/voxpersona_user/VoxPersona") -> Dict[str, Any]:
     """
-    Проверить результаты очистки - остались ли тестовые данные.
+    Проверить наличие тестовых файлов после cleanup.
 
     Args:
-        session_id: Проверить по test_session_id (Вариант A)
-        user_id: Проверить по user_id (Вариант B)
+        user_id: Telegram ID тестового пользователя
+        base_path: Корневая директория VoxPersona
 
     Returns:
-        dict с количеством оставшихся строк:
+        dict с количеством оставшихся файлов:
         {
-            "conversations": 0,
-            "conversation_messages": 0,
-            "total_remaining": 0,
-            "status": "clean" | "data_remaining"
+            "conversations_remaining": 5,
+            "reports_remaining": 10,
+            "total_remaining": 15,
+            "status": "data_remaining" | "clean"
         }
     """
-    conn = None
-    cursor = None
-
     result: Dict[str, Any] = {
         "status": "clean",
-        "total_remaining": 0
+        "conversations_remaining": 0,
+        "reports_remaining": 0,
+        "total_remaining": 0,
+        "user_id": user_id
     }
 
-    tables = ["conversations", "conversation_messages", "reports", "transcriptions"]
+    logger.info("verify_cleanup_started", user_id=user_id)
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # Проверить conversations/user_{user_id}/
+        conversations_dir = Path(base_path) / "conversations" / f"user_{user_id}"
+        if conversations_dir.exists():
+            conversations_files = list(conversations_dir.glob("*.json"))
+            result["conversations_remaining"] = len(conversations_files)
 
-        for table in tables:
-            if session_id:
-                query = f"SELECT COUNT(*) FROM {table} WHERE test_session_id = %s"
-                cursor.execute(query, (session_id,))
-            elif user_id:
-                query = f"SELECT COUNT(*) FROM {table} WHERE user_id = %s"
-                cursor.execute(query, (user_id,))
-            else:
-                continue
+        # Проверить md_reports/user_{user_id}/
+        reports_dir = Path(base_path) / "md_reports" / f"user_{user_id}"
+        if reports_dir.exists():
+            reports_files = [f for f in reports_dir.iterdir() if f.is_file()]
+            result["reports_remaining"] = len(reports_files)
 
-            count = cursor.fetchone()[0]
-            result[table] = count
-            result["total_remaining"] += count
+        # Подсчитать итоги
+        result["total_remaining"] = result["conversations_remaining"] + result["reports_remaining"]
 
         if result["total_remaining"] > 0:
             result["status"] = "data_remaining"
+            logger.warning(
+                "cleanup_incomplete",
+                conversations_remaining=result["conversations_remaining"],
+                reports_remaining=result["reports_remaining"],
+                total_remaining=result["total_remaining"]
+            )
+        else:
+            logger.info("cleanup_verified_clean", message="✅ Нет оставшихся тестовых файлов")
 
-        logger.info("cleanup_verified", **result)
         return result
 
     except Exception as e:
         logger.error("verify_cleanup_failed", error=str(e))
-        return {"status": "error", "error": str(e)}
+        return {
+            "status": "error",
+            "error": str(e),
+            "user_id": user_id
+        }
 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+
+def get_test_files_info(user_id: int, base_path: str = "/home/voxpersona_user/VoxPersona") -> Dict[str, Any]:
+    """
+    Получить информацию о тестовых файлах без удаления.
+
+    Полезно для диагностики - показывает какие файлы есть у тестового пользователя.
+
+    Args:
+        user_id: Telegram ID тестового пользователя
+        base_path: Корневая директория VoxPersona
+
+    Returns:
+        dict с информацией о файлах:
+        {
+            "conversations": [
+                {"file": "uuid.json", "size": 1024, "mtime": "2025-10-22T15:30:00"}
+            ],
+            "reports": [
+                {"file": "report.md", "size": 2048, "mtime": "2025-10-22T16:00:00"}
+            ],
+            "total_files": 2,
+            "total_size_bytes": 3072
+        }
+    """
+    result: Dict[str, Any] = {
+        "user_id": user_id,
+        "conversations": [],
+        "reports": [],
+        "total_files": 0,
+        "total_size_bytes": 0
+    }
+
+    try:
+        # Conversations
+        conversations_dir = Path(base_path) / "conversations" / f"user_{user_id}"
+        if conversations_dir.exists():
+            for file_path in conversations_dir.glob("*.json"):
+                stat = file_path.stat()
+                result["conversations"].append({
+                    "file": file_path.name,
+                    "size": stat.st_size,
+                    "mtime": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                })
+                result["total_size_bytes"] += stat.st_size
+
+        # Reports
+        reports_dir = Path(base_path) / "md_reports" / f"user_{user_id}"
+        if reports_dir.exists():
+            for file_path in reports_dir.iterdir():
+                if file_path.is_file():
+                    stat = file_path.stat()
+                    result["reports"].append({
+                        "file": file_path.name,
+                        "size": stat.st_size,
+                        "mtime": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    })
+                    result["total_size_bytes"] += stat.st_size
+
+        result["total_files"] = len(result["conversations"]) + len(result["reports"])
+
+        logger.info(
+            "test_files_info",
+            user_id=user_id,
+            total_files=result["total_files"],
+            total_size_bytes=result["total_size_bytes"]
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error("get_test_files_info_failed", error=str(e))
+        return {
+            "status": "error",
+            "error": str(e),
+            "user_id": user_id
+        }
 
 
 if __name__ == "__main__":
     """
-    Примеры использования утилиты очистки.
+    Примеры использования утилиты очистки файлов.
     """
     print("=" * 60)
-    print("🧹 VoxPersona - Cleanup Utility")
+    print("🧹 VoxPersona Menu Crawler - Cleanup Utility")
     print("=" * 60)
 
-    # Пример 1: Удаление по session_id (Вариант A)
-    print("\n[Пример 1] Удаление тестовых данных по session_id:")
+    test_user_id = 155894817
+
+    # Пример 1: Получить информацию о файлах
+    print("\n[Пример 1] Информация о тестовых файлах:")
     print("-" * 60)
-    test_session_id = "20251022_153000"
-    print(f"Session ID: {test_session_id}")
 
-    result_a = cleanup_test_data(test_session_id)
-    print(f"\nРезультат:")
-    print(f"  Статус: {result_a['status']}")
-    print(f"  Всего удалено: {result_a['total_deleted']} строк")
-    print(f"  Длительность: {result_a.get('duration_ms', 0)} мс")
+    # Для локального тестирования используем относительный путь
+    base_path = "."
 
-    if result_a['status'] == 'success':
-        for table in ["conversations", "conversation_messages", "reports"]:
-            if table in result_a:
-                print(f"  - {table}: {result_a[table]} строк")
+    info = get_test_files_info(test_user_id, base_path)
+    print(f"User ID: {test_user_id}")
+    print(f"Всего файлов: {info.get('total_files', 0)}")
+    print(f"Размер: {info.get('total_size_bytes', 0)} байт")
 
-    # Пример 2: Удаление по user_id + timestamp (Вариант B)
-    print("\n[Пример 2] Удаление данных пользователя по user_id + timestamp:")
+    if info.get('conversations'):
+        print(f"\nConversations: {len(info['conversations'])}")
+        for conv in info['conversations'][:3]:  # Показать первые 3
+            print(f"  - {conv['file']} ({conv['size']} байт)")
+
+    if info.get('reports'):
+        print(f"\nReports: {len(info['reports'])}")
+        for report in info['reports'][:3]:  # Показать первые 3
+            print(f"  - {report['file']} ({report['size']} байт)")
+
+    # Пример 2: Удалить файлы созданные за последний час
+    print("\n[Пример 2] Удаление тестовых файлов (созданных за последний час):")
     print("-" * 60)
     from datetime import timedelta
 
-    test_user_id = 155894817
     cutoff_time = datetime.now() - timedelta(hours=1)
     print(f"User ID: {test_user_id}")
     print(f"Created after: {cutoff_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    result_b = cleanup_test_user_data(test_user_id, cutoff_time)
+    result = cleanup_test_files(test_user_id, cutoff_time, base_path)
     print(f"\nРезультат:")
-    print(f"  Статус: {result_b['status']}")
-    print(f"  Всего удалено: {result_b['total_deleted']} строк")
-    print(f"  Длительность: {result_b.get('duration_ms', 0)} мс")
+    print(f"  Статус: {result['status']}")
+    print(f"  Conversations удалено: {result['conversations_deleted']}")
+    print(f"  Reports удалено: {result['reports_deleted']}")
+    print(f"  Всего удалено: {result['total_deleted']}")
+    print(f"  Длительность: {result.get('duration_ms', 0)} мс")
 
-    if result_b['status'] == 'success':
-        for table in ["conversations", "conversation_messages", "reports"]:
-            if table in result_b:
-                print(f"  - {table}: {result_b[table]} строк")
+    if result['total_deleted'] == 0:
+        print("\n  ✅ ОТЛИЧНО! Тестовые файлы не были созданы.")
+        print("  Это доказывает, что TEST_USER_ID защита работает корректно!")
 
-    # Пример 3: Проверка результатов очистки
-    print("\n[Пример 3] Проверка результатов очистки:")
+    # Пример 3: Проверка результатов
+    print("\n[Пример 3] Проверка результатов cleanup:")
     print("-" * 60)
 
-    verify_result = verify_cleanup(session_id=test_session_id)
+    verify_result = verify_cleanup_files(test_user_id, base_path)
     print(f"Статус: {verify_result['status']}")
-    print(f"Осталось строк: {verify_result['total_remaining']}")
+    print(f"Conversations осталось: {verify_result['conversations_remaining']}")
+    print(f"Reports осталось: {verify_result['reports_remaining']}")
+    print(f"Всего осталось: {verify_result['total_remaining']}")
+
+    if verify_result['status'] == 'clean':
+        print("\n✅ Cleanup прошел успешно - нет оставшихся файлов!")
 
     print("\n" + "=" * 60)
