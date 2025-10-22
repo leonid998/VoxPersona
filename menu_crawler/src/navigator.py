@@ -328,11 +328,16 @@ class MenuNavigator:
         await self.client.start()
         print(f"✅ Pyrogram клиент запущен (session: menu_crawler_session)")
 
+        # Получить информацию о пользователе
+        me = await self.client.get_me()
+        self.username = me.username if me.username else f"user_{me.id}"
+
         # Проверить TEST_USER_ID
         if self.test_user_id == 0:
             raise ValueError("TEST_USER_ID не может быть 0. Установите в .env")
 
         print(f"✅ TEST_USER_ID: {self.test_user_id}")
+        print(f"✅ Username: @{self.username}")
 
         # Отправить /start боту для получения главного меню
         try:
