@@ -229,20 +229,27 @@ class MenuNavigator:
             # Отправить callback_query используя АКТУАЛЬНЫЙ message_id
             logger.info("sending_callback", callback_data=callback_data, message_id=self.current_message.id)
 
-            await self.client.request_callback_answer(
-                chat_id=self.bot_username,
-                message_id=self.current_message.id,
-                callback_data=callback_data
+            # НОВЫЙ ПОДХОД: отправить команду /test_callback боту
+            await self.client.send_message(
+                self.bot_username,
+                f"/test_callback {callback_data}"
             )
 
             # Подождать обновления (бот отредактирует сообщение)
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(2.0)
 
-            # Получить обновлённое сообщение
-            async for message in self.client.get_chat_history(self.bot_username, limit=1):
-                updated_message = message
-                break
-            else:
+            # Получить обновлённое сообщение (пропускаем служебные сообщения)
+            updated_message = None
+            async for message in self.client.get_chat_history(self.bot_username, limit=5):
+                # Пропустить служебные сообщения от test_callback
+                if message.text and any(x in message.text for x in ["✅ Test callback", "🤖", "⚠️", "❌"]):
+                    continue
+                # Найти сообщение с клавиатурой (это обновлённое меню)
+                if message.reply_markup:
+                    updated_message = message
+                    break
+
+            if not updated_message:
                 logger.warning("no_updated_message", callback_data=callback_data)
                 return None
 

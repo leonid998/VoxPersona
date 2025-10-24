@@ -1765,3 +1765,66 @@ def register_handlers(app: Client):
 
         except Exception as e:
             logging.exception(f"Ошибка в callback_query_handler: {e}")
+
+    # ============ TEST CALLBACK HANDLER FOR MENU CRAWLER ============
+    @app.on_message(filters.command("test_callback"))  # type: ignore[misc,reportUntypedFunctionDecorator]
+    async def test_callback_handler(client: Client, message: Message):
+        """
+        Специальный обработчик для Menu Crawler.
+        Эмулирует нажатие callback кнопки без реального CallbackQuery.
+
+        БЕЗОПАСНОСТЬ: Доступен ТОЛЬКО для TEST_USER_ID.
+
+        Использование:
+            /test_callback menu_system
+            /test_callback show_stats
+        """
+        TEST_USER_ID = int(os.getenv('TEST_USER_ID', 0))
+
+        # Защита: только для TEST_USER_ID
+        if not TEST_USER_ID or message.from_user.id != TEST_USER_ID:
+            await message.reply("🚫 Эта команда доступна только для тестирования")
+            return
+
+        # Извлечь callback_data из команды
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.reply("⚠️ Использование: /test_callback <callback_data>")
+            return
+
+        callback_data = parts[1].strip()
+
+        # Создать mock CallbackQuery
+        from types import SimpleNamespace
+
+        # Получить последнее сообщение от бота с клавиатурой
+        bot_message = None
+        async for msg in client.get_chat_history(message.chat.id, limit=5):
+            if msg.reply_markup and msg.from_user and msg.from_user.is_bot:
+                bot_message = msg
+                break
+
+        if not bot_message:
+            await message.reply("⚠️ Не найдено сообщение от бота с клавиатурой")
+            return
+
+        # Mock CallbackQuery
+        mock_callback = SimpleNamespace(
+            id=f"test_{callback_data}_{message.id}",
+            from_user=message.from_user,
+            message=bot_message,
+            chat_instance="test_crawler",
+            data=callback_data,
+            answer=lambda text="", show_alert=False: asyncio.create_task(
+                message.reply(f"🤖 {text}" if text else "🤖 OK")
+            )
+        )
+
+        try:
+            # Вызвать основной обработчик
+            await callback_query_handler(client, mock_callback)
+            await message.reply(f"✅ Test callback: {callback_data}")
+        except Exception as e:
+            await message.reply(f"❌ Error: {str(e)}")
+            logging.exception(f"test_callback error: {e}")
+    # ============ END TEST CALLBACK HANDLER ============
