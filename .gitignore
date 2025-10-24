@@ -98,3 +98,20 @@ docker-compose.override.yml
 conversations/
 md_reports/
 chat_history/
+
+# CRITICAL: Protect from git clean -fd (Issue #00006)
+# These directories contain runtime data that must not be deleted
+telegram_sessions/
+auth_data/
+menu_crawler/reports/
+menu_crawler/*.session
+menu_crawler/progress.json
+rag_indices/
+
+# Temporary and generated data
+audio_files/
+data/
+backups/
+sql_scripts/
+text_with_roles/
+text_without_roles/
