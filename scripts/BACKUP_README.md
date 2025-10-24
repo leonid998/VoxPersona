@@ -19,7 +19,6 @@
 - `minio_data` - S3-хранилище MinIO
 - `minio_certs` - SSL сертификаты MinIO
 - `pip_cache` - Кэш pip пакетов
-- `huggingface_cache` - Кэш HuggingFace моделей
 
 ## ⏰ Расписание
 
@@ -211,9 +210,10 @@ tar -xzf "${BACKUP_FILE}" auth_data/ -C /home/voxpersona_user/VoxPersona
 | md_reports | 396 KB |
 | postgres_data | ~50-100 MB |
 | minio_data | ~500 MB - 2 GB |
-| **Итоговый backup** | ~1-2.5 GB |
+| pip_cache | ~1-5 MB |
+| **Итоговый backup** | ~700 MB - 2.5 GB |
 
-**Требуется места для 7 дней:** ~10-20 GB
+**Требуется места для 7 дней:** ~5-20 GB
 
 ## 🆘 Решение проблем
 

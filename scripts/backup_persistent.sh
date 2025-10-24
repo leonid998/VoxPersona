@@ -49,7 +49,6 @@ DOCKER_VOLUMES=(
     "voxpersona_minio_data"
     "voxpersona_minio_certs"
     "voxpersona_pip_cache"
-    "voxpersona_huggingface_cache"
 )
 
 # Временная директория для экспорта Docker volumes
