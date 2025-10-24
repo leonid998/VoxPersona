@@ -45,11 +45,11 @@ BACKUP_TARGETS=(
 
 # Docker named volumes для backup
 DOCKER_VOLUMES=(
-    "postgres_data"
-    "minio_data"
-    "minio_certs"
-    "pip_cache"
-    "huggingface_cache"
+    "voxpersona_postgres_data"
+    "voxpersona_minio_data"
+    "voxpersona_minio_certs"
+    "voxpersona_pip_cache"
+    "voxpersona_huggingface_cache"
 )
 
 # Временная директория для экспорта Docker volumes
