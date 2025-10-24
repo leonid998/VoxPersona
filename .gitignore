@@ -115,3 +115,6 @@ backups/
 sql_scripts/
 text_with_roles/
 text_without_roles/
+
+# Task management (internal documentation)
+TASKS/
