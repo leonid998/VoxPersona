@@ -131,3 +131,56 @@ def check_audio_file_size(file_size: int, max_size: int, chat_id: int, app: Clie
         msg = f"Файл слишком большой ({file_size / 1024 / 1024:.1f} MB). Макс 2GB."
         app.send_message(chat_id, msg)
         raise ValueError(msg)
+
+
+def _validate_username(username: str) -> tuple[bool, str]:
+    """
+    Валидация username при регистрации.
+
+    Требования:
+    - Длина: 3-32 символа
+    - Символы: только буквы (a-z, A-Z), цифры (0-9), подчеркивание (_)
+    - Должен начинаться с буквы
+    - Не может состоять только из цифр
+
+    Args:
+        username: Username для валидации
+
+    Returns:
+        tuple[bool, str]: (is_valid, error_message)
+            - is_valid: True если username валиден
+            - error_message: Сообщение об ошибке (пустое если валидация успешна)
+
+    Examples:
+        >>> _validate_username("alice")
+        (True, "")
+        >>> _validate_username("user123")
+        (True, "")
+        >>> _validate_username("ab")
+        (False, "❌ Username слишком короткий (минимум 3 символа).")
+
+    Автор: agent-organizer
+    Дата: 2025-11-05
+    Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
+    """
+    if not username:
+        return False, "❌ Username не может быть пустым."
+
+    if len(username) < 3:
+        return False, "❌ Username слишком короткий (минимум 3 символа)."
+
+    if len(username) > 32:
+        return False, "❌ Username слишком длинный (максимум 32 символа)."
+
+    # Проверка допустимых символов и что начинается с буквы
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', username):
+        return False, (
+            "❌ Username может содержать только буквы, цифры и подчеркивание.\n"
+            "Username должен начинаться с буквы."
+        )
+
+    # Проверка что не состоит только из цифр (хотя regex уже это покрывает, но для ясности)
+    if username.isdigit():
+        return False, "❌ Username не может состоять только из цифр."
+
+    return True, ""

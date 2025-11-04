@@ -23,7 +23,7 @@ from utils import run_loading_animation, openai_audio_filter, get_username_from_
 from constants import COMMAND_HISTORY, COMMAND_STATS, COMMAND_REPORTS
 from conversation_manager import conversation_manager
 from md_storage import md_storage_manager
-from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, validate_building_type
+from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, validate_building_type, _validate_username
 from parser import parse_message_text, parse_building_type, parse_zone, parse_file_number, parse_place_name, parse_city, parse_name
 
 from storage import delete_tmp_params, safe_filename, find_real_filename
@@ -1224,82 +1224,371 @@ def register_handlers(app: Client):
     @app.on_message(filters.text & ~filters.command("start") & ~auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
     async def handle_password_input(client: Client, message: Message):
         """
-        Обработчик ввода пароля для НЕавторизованных пользователей.
+        Обработчик ввода текста для НЕавторизованных пользователей.
+
+        ✅ ОБНОВЛЕНО (K-03): Добавлена обработка FSM регистрации:
+        - registration_username
+        - registration_password
+        - registration_confirm_password
+        - awaiting_password (существующий логин)
         """
         c_id = message.chat.id
         telegram_id = message.from_user.id
 
         # Проверить FSM state
-        if c_id not in user_states or user_states[c_id].get("step") != "awaiting_password":
-            # Неавторизованный пользователь отправил текст, но НЕ в состоянии ожидания пароля
+        if c_id not in user_states:
+            # Неавторизованный пользователь отправил текст БЕЗ FSM state
             await message.reply_text(
                 "❌ Вы не авторизованы. Отправьте /start для входа."
             )
             return
 
-        # W-03: Проверка истечения timeout (5 минут)
         state = user_states[c_id]
+        current_step = state.get("step")
+
+        # ==================== TIMEOUT ПРОВЕРКА (для ВСЕХ states) ====================
         if state.get("expires_at") and datetime.now() > state["expires_at"]:
             del user_states[c_id]
             await message.reply_text(
-                "⏱️ **Время ввода пароля истекло**\n\n"
+                "⏱️ **Время сессии истекло**\n\n"
                 "Отправьте /start заново для повторной попытки."
             )
-            logger.info(f"Login timeout expired: telegram_id={telegram_id}")
+            logger.info(f"Session timeout: telegram_id={telegram_id}, step={current_step}")
             return
 
+        # ==================== FSM РОУТИНГ ====================
+
+        # K-03: Регистрация - шаг 1: username
+        if current_step == "registration_username":
+            await handle_registration_username_input(c_id, message, client)
+            return
+
+        # K-03: Регистрация - шаг 2: password
+        elif current_step == "registration_password":
+            await handle_registration_password_input(c_id, message, client)
+            return
+
+        # K-03: Регистрация - шаг 3: confirm password
+        elif current_step == "registration_confirm_password":
+            await handle_registration_confirm_password_input(c_id, message, client)
+            return
+
+        # Существующая логика: awaiting_password (логин)
+        elif current_step == "awaiting_password":
+            # Логика логина (пока inline, будет вынесена в задаче 1.3.6)
+            auth = get_auth_manager()
+            if not auth:
+                await message.reply_text("⚠️ Система авторизации недоступна.")
+                return
+
+            password = message.text.strip()
+            user_id = user_states[c_id].get("user_id")
+
+            # КРИТИЧНО: Удалить сообщение с паролем из истории чата (W-02)
+            try:
+                await message.delete()
+                logger.debug(f"Password message deleted: telegram_id={telegram_id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete password message: {e}")
+
+            # Попытка аутентификации (C-01: добавлен await!)
+            session = await auth.authenticate(telegram_id, password)
+
+            if session:
+                # ✅ Успешная аутентификация
+                del user_states[c_id]  # Очистить FSM state
+
+                await message.reply_text(
+                    "✅ **Вход выполнен успешно!**\n\n"
+                    "Добро пожаловать в VoxPersona."
+                )
+
+                # Отправить главное меню
+                await send_main_menu(c_id, client)
+
+                logger.info(f"Login successful: telegram_id={telegram_id}, session_id={session.session_id}")
+            else:
+                # ❌ Неверный пароль
+                attempts = user_states[c_id].get("attempts", 0) + 1
+                user_states[c_id]["attempts"] = attempts
+
+                if attempts >= 3:
+                    # Блокировка после 3 неудачных попыток
+                    del user_states[c_id]
+                    await message.reply_text(
+                        "❌ **Превышено количество попыток**\n\n"
+                        "Слишком много неудачных попыток входа.\n"
+                        "Попробуйте снова через некоторое время."
+                    )
+                    logger.warning(f"Login failed - max attempts reached: telegram_id={telegram_id}")
+                else:
+                    # Повторный запрос пароля
+                    await message.reply_text(
+                        f"❌ **Неверный пароль**\n\n"
+                        f"Попытка {attempts} из 3. Попробуйте еще раз:"
+                    )
+                    logger.warning(f"Login failed - wrong password: telegram_id={telegram_id}, attempt={attempts}")
+            return
+
+        # Неизвестный state
+        else:
+            await message.reply_text(
+                "❌ Некорректное состояние сессии. Отправьте /start заново."
+            )
+            logger.error(f"Unknown FSM state: step={current_step}, chat_id={c_id}")
+            del user_states[c_id]
+            return
+
+    # === K-03: FSM HANDLERS ДЛЯ РЕГИСТРАЦИИ ===
+
+    async def handle_registration_username_input(chat_id: int, message: Message, app: Client):
+        """
+        FSM: Обработка ввода username при регистрации.
+
+        State: registration_username → registration_password
+
+        Автор: agent-organizer
+        Дата: 2025-11-05
+        Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        telegram_id = message.from_user.id
+        state = user_states[chat_id]
+        username_input = message.text.strip()
+
+        # Валидация username
+        is_valid, error_msg = _validate_username(username_input)
+
+        if not is_valid:
+            await message.reply_text(
+                f"{error_msg}\n\n"
+                "Попробуйте еще раз:"
+            )
+            logger.debug(f"Username validation failed: telegram_id={telegram_id}, username={username_input[:10]}...")
+            return
+
+        # Проверка уникальности username
         auth = get_auth_manager()
         if not auth:
             await message.reply_text("⚠️ Система авторизации недоступна.")
             return
 
-        password = message.text.strip()
-        user_id = user_states[c_id].get("user_id")
+        # Проверить что username еще не занят
+        existing_user = auth.storage.get_user_by_username(username_input)
+        if existing_user:
+            await message.reply_text(
+                "❌ **Username уже занят**\n\n"
+                "Пожалуйста, выберите другое имя пользователя:"
+            )
+            logger.debug(f"Username already taken: telegram_id={telegram_id}, username={username_input}")
+            return
 
-        # КРИТИЧНО: Удалить сообщение с паролем из истории чата (W-02)
+        # ✅ Username валиден и свободен
+        state["registration_data"]["username"] = username_input
+        state["step"] = "registration_password"
+
+        await message.reply_text(
+            "✅ Username принят!\n\n"
+            "Шаг 2/3: Введите пароль для вашего аккаунта:\n\n"
+            "_Требования: минимум 8 символов, содержит буквы и цифры_"
+        )
+
+        logger.info(f"Username accepted: telegram_id={telegram_id}, username={username_input}")
+
+    async def handle_registration_password_input(chat_id: int, message: Message, app: Client):
+        """
+        FSM: Обработка ввода пароля при регистрации.
+
+        State: registration_password → registration_confirm_password
+
+        КРИТИЧНО: Удаляет сообщение с паролем из истории чата.
+
+        Автор: agent-organizer
+        Дата: 2025-11-05
+        Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        telegram_id = message.from_user.id
+        state = user_states[chat_id]
+        password_input = message.text.strip()
+
+        # КРИТИЧНО: Удалить сообщение с паролем из истории чата
         try:
             await message.delete()
             logger.debug(f"Password message deleted: telegram_id={telegram_id}")
         except Exception as e:
             logger.warning(f"Failed to delete password message: {e}")
 
-        # Попытка аутентификации (C-01: добавлен await!)
-        session = await auth.authenticate(telegram_id, password)
+        # Валидация пароля (базовая проверка)
+        if len(password_input) < 8:
+            await app.send_message(
+                chat_id,
+                "❌ **Пароль слишком короткий**\n\n"
+                "Минимальная длина: 8 символов.\n"
+                "Попробуйте еще раз:"
+            )
+            logger.debug(f"Password too short: telegram_id={telegram_id}")
+            return
 
-        if session:
-            # ✅ Успешная аутентификация
-            del user_states[c_id]  # Очистить FSM state
+        # Проверка наличия букв И цифр
+        has_letter = any(c.isalpha() for c in password_input)
+        has_digit = any(c.isdigit() for c in password_input)
 
-            await message.reply_text(
-                "✅ **Вход выполнен успешно!**\n\n"
-                "Добро пожаловать в VoxPersona."
+        if not (has_letter and has_digit):
+            await app.send_message(
+                chat_id,
+                "❌ **Пароль слишком простой**\n\n"
+                "Пароль должен содержать как буквы, так и цифры.\n"
+                "Попробуйте еще раз:"
+            )
+            logger.debug(f"Password too weak: telegram_id={telegram_id}")
+            return
+
+        # ✅ Пароль валиден
+        state["registration_data"]["password"] = password_input
+        state["step"] = "registration_confirm_password"
+
+        await app.send_message(
+            chat_id,
+            "✅ Пароль принят!\n\n"
+            "Шаг 3/3: Подтвердите пароль (введите еще раз):"
+        )
+
+        logger.info(f"Password accepted: telegram_id={telegram_id}")
+
+    async def handle_registration_confirm_password_input(chat_id: int, message: Message, app: Client):
+        """
+        FSM: Подтверждение пароля и создание пользователя.
+
+        State: registration_confirm_password → registration_complete (cleanup)
+
+        КРИТИЧНО:
+        - Удаляет сообщение с паролем
+        - Создает пользователя
+        - Consume invitation
+        - Автологин
+        - Очищает FSM state в finally блоке
+
+        Автор: agent-organizer
+        Дата: 2025-11-05
+        Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        telegram_id = message.from_user.id
+        state = user_states[chat_id]
+        password_confirm = message.text.strip()
+
+        # КРИТИЧНО: Удалить сообщение с паролем из истории
+        try:
+            await message.delete()
+            logger.debug(f"Password confirmation message deleted: telegram_id={telegram_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete password confirmation: {e}")
+
+        # Проверка совпадения паролей
+        original_password = state["registration_data"].get("password")
+
+        if password_confirm != original_password:
+            await app.send_message(
+                chat_id,
+                "❌ **Пароли не совпадают**\n\n"
+                "Введите подтверждение пароля еще раз:"
+            )
+            logger.debug(f"Password mismatch: telegram_id={telegram_id}")
+            return
+
+        # ✅ Пароли совпадают -> создание пользователя
+        auth = get_auth_manager()
+        if not auth:
+            await app.send_message(chat_id, "⚠️ Система авторизации недоступна.")
+            return
+
+        username = state["registration_data"]["username"]
+        password = state["registration_data"]["password"]
+        invite_code = state["invite_code"]
+        invited_role = state["invited_role"]
+
+        try:
+            # Создание нового пользователя
+            new_user = auth.storage.create_user(
+                username=username,
+                password_hash=auth.security.hash_password(password),
+                role=invited_role,
+                telegram_id=telegram_id
             )
 
-            # Отправить главное меню
-            await send_main_menu(c_id, client)
+            if not new_user:
+                raise ValueError("Failed to create user")
 
-            logger.info(f"Login successful: telegram_id={telegram_id}, session_id={session.session_id}")
-        else:
-            # ❌ Неверный пароль
-            attempts = user_states[c_id].get("attempts", 0) + 1
-            user_states[c_id]["attempts"] = attempts
+            # Consume invitation (пометить как использованное)
+            consume_success = auth.storage.consume_invitation(
+                invite_code=invite_code,
+                used_by=new_user.user_id
+            )
 
-            if attempts >= 3:
-                # Блокировка после 3 неудачных попыток
-                del user_states[c_id]
-                await message.reply_text(
-                    "❌ **Превышено количество попыток**\n\n"
-                    "Слишком много неудачных попыток входа.\n"
-                    "Попробуйте снова через некоторое время."
+            if not consume_success:
+                logger.warning(f"Failed to consume invitation: invite_code={invite_code}")
+
+            # Audit logging: успешная регистрация
+            auth.storage.log_auth_event(
+                event_type="USER_REGISTERED",
+                user_id=new_user.user_id,
+                metadata={
+                    "username": username,
+                    "telegram_id": telegram_id,
+                    "role": invited_role,
+                    "invite_code": invite_code,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+
+            logger.info(
+                f"User registered successfully: user_id={new_user.user_id}, "
+                f"username={username}, telegram_id={telegram_id}, role={invited_role}"
+            )
+
+            # ✅ Автоматический логин после регистрации
+            session = await auth.authenticate(telegram_id, password)
+
+            if not session:
+                # Не удалось создать сессию (странно, но обработаем)
+                await app.send_message(
+                    chat_id,
+                    "✅ **Регистрация завершена!**\n\n"
+                    f"Username: {username}\n"
+                    f"Роль: {invited_role}\n\n"
+                    "Войдите в систему с помощью /start"
                 )
-                logger.warning(f"Login failed - max attempts reached: telegram_id={telegram_id}")
+                logger.warning(f"Auto-login failed after registration: user_id={new_user.user_id}")
             else:
-                # Повторный запрос пароля
-                await message.reply_text(
-                    f"❌ **Неверный пароль**\n\n"
-                    f"Попытка {attempts} из 3. Попробуйте еще раз:"
+                # Успешный автологин
+                await app.send_message(
+                    chat_id,
+                    "✅ **Регистрация завершена успешно!**\n\n"
+                    f"Username: {username}\n"
+                    f"Роль: {invited_role}\n\n"
+                    "Добро пожаловать в VoxPersona!"
                 )
-                logger.warning(f"Login failed - wrong password: telegram_id={telegram_id}, attempt={attempts}")
+
+                # Отправить главное меню
+                await send_main_menu(chat_id, app)
+
+                logger.info(
+                    f"Auto-login successful: user_id={new_user.user_id}, "
+                    f"session_id={session.session_id}"
+                )
+
+        except Exception as e:
+            logger.error(f"User registration failed: {e}")
+            await app.send_message(
+                chat_id,
+                "❌ **Ошибка при создании аккаунта**\n\n"
+                "Обратитесь к администратору или попробуйте позже."
+            )
+
+        finally:
+            # Очистка FSM state (в любом случае)
+            if chat_id in user_states:
+                del user_states[chat_id]
+            logger.debug(f"FSM state cleaned: chat_id={chat_id}")
+
     # === КОНЕЦ AUTH LOGIN FLOW ===
 
     # === AUTH: Регистрация команды /change_password (ИЗМЕНЕНИЕ 4) ===
