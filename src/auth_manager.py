@@ -66,37 +66,6 @@ class AuthManager:
 
         logger.info(f"AuthManager initialized with base_path: {base_path}")
 
-    # ========== ВРЕМЕННЫЕ МЕТОДЫ (ДО T09) ==========
-
-    def _temp_hash_password(self, password: str) -> str:
-        """
-        TEMPORARY: Простое хеширование пароля через SHA256.
-
-        TODO (T09): Заменить на AuthSecurityManager.hash_password() с bcrypt (cost=12)
-
-        Args:
-            password: Открытый пароль
-
-        Returns:
-            str: SHA256 хеш пароля
-        """
-        return hashlib.sha256(password.encode()).hexdigest()
-
-    def _temp_verify_password(self, password: str, password_hash: str) -> bool:
-        """
-        TEMPORARY: Простая проверка пароля через SHA256.
-
-        TODO (T09): Заменить на AuthSecurityManager.verify_password() с bcrypt
-
-        Args:
-            password: Открытый пароль
-            password_hash: Хеш пароля для проверки
-
-        Returns:
-            bool: True если пароль соответствует хешу
-        """
-        return self._temp_hash_password(password) == password_hash
-
     def _validate_password(self, password: str) -> Tuple[bool, str]:
         """
         Валидация пароля (из T05_password_validation_spec.md).
@@ -485,9 +454,8 @@ class AuthManager:
             logger.warning(f"Registration failed: user already exists (telegram_id={telegram_id})")
             raise ValueError("Пользователь с таким Telegram ID уже существует")
 
-        # 4. Хеширование пароля
-        # TODO (T09): Заменить на AuthSecurityManager.hash_password()
-        password_hash = self._temp_hash_password(password)
+        # 4. Хеширование пароля через bcrypt
+        password_hash = self.security.hash_password(password)
 
         # 5. Создать пользователя
         user = User(
@@ -883,9 +851,8 @@ class AuthManager:
             )
             raise ValueError(f"Невалидный новый пароль: {error_msg}")
 
-        # 4. Хеширование нового пароля
-        # TODO (T09): Заменить на AuthSecurityManager.hash_password()
-        new_password_hash = self._temp_hash_password(new_password)
+        # 4. Хеширование нового пароля через bcrypt
+        new_password_hash = self.security.hash_password(new_password)
 
         # 5. Обновить пароль и связанные поля
         user.password_hash = new_password_hash
@@ -951,9 +918,8 @@ class AuthManager:
             )
             raise ValueError(f"Невалидный пароль: {error_msg}")
 
-        # 3. Хеширование нового пароля
-        # TODO (T09): Заменить на AuthSecurityManager.hash_password()
-        new_password_hash = self._temp_hash_password(new_password)
+        # 3. Хеширование нового пароля через bcrypt
+        new_password_hash = self.security.hash_password(new_password)
 
         # 4. Обновить пароль и установить флаги принудительной смены
         user.password_hash = new_password_hash

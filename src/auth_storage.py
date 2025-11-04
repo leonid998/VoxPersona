@@ -295,6 +295,42 @@ class AuthStorageManager(BaseStorageManager):
                 logger.error(f"Failed to update user {user.user_id}: {e}")
                 return False
 
+    def update_user_password(
+        self,
+        user_id: str,
+        new_password: str,
+        must_change_password: bool = False,
+        temp_password_expires_at: Optional[str] = None
+    ) -> bool:
+        """
+        Обновить пароль пользователя.
+
+        Args:
+            user_id: ID пользователя
+            new_password: Новый пароль (PLAINTEXT, будет захеширован)
+            must_change_password: Требовать смену при входе
+            temp_password_expires_at: Срок действия временного пароля (ISO string)
+
+        Returns:
+            bool: True если успешно
+        """
+        from auth_security import auth_security
+        from utils import iso_to_datetime
+        from datetime import datetime
+
+        user = self.get_user(user_id)
+        if not user:
+            return False
+
+        # Хеширование через bcrypt
+        user.password_hash = auth_security.hash_password(new_password)
+        user.must_change_password = must_change_password
+        user.temp_password_expires_at = iso_to_datetime(temp_password_expires_at) if temp_password_expires_at else None
+        user.password_changed_at = datetime.now()
+        user.updated_at = datetime.now()
+
+        return self.update_user(user)
+
     def delete_user(self, user_id: str) -> bool:
         """
         Удаляет пользователя (помечает как is_active=False, НЕ удаляет физически).
