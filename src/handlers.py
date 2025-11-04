@@ -1125,6 +1125,13 @@ def register_handlers(app: Client):
         c_id = message.chat.id
         telegram_id = message.from_user.id
 
+        # K-01: Извлечение invite_code из deep link
+        # Формат: /start ABC123xyz456... (invite_code - все после пробела)
+        text_parts = message.text.strip().split(maxsplit=1)
+        invite_code = text_parts[1] if len(text_parts) > 1 else None
+
+        logger.debug(f"Deep link parsed: invite_code={'<present>' if invite_code else '<none>'}, telegram_id={telegram_id}")
+
         auth = get_auth_manager()
         if not auth:
             await message.reply_text("⚠️ Система авторизации недоступна. Попробуйте позже.")
@@ -1150,13 +1157,69 @@ def register_handlers(app: Client):
             )
             logger.info(f"Login prompt sent: telegram_id={telegram_id}, user_id={user.user_id}")
         else:
-            # User НЕ существует → доступ запрещен (требуется приглашение)
+            # K-01: User НЕ существует -> проверить invite_code
+            if not invite_code:
+                # Нет invite_code -> доступ запрещен
+                await message.reply_text(
+                    "❌ **Доступ запрещен**\n\n"
+                    "Для использования бота требуется приглашение от администратора.\n"
+                    "Обратитесь к администратору для получения доступа."
+                )
+                logger.warning(f"Access denied - no invite_code: telegram_id={telegram_id}")
+                return
+
+            # Валидация invite_code
+            invitation = auth.storage.validate_invitation(invite_code)
+
+            if not invitation:
+                # Недействительный invite_code
+                await message.reply_text(
+                    "❌ **Недействительное приглашение**\n\n"
+                    "Ссылка приглашения недействительна или истекла.\n"
+                    "Обратитесь к администратору для получения нового приглашения."
+                )
+                logger.warning(
+                    f"Invalid invite_code: telegram_id={telegram_id}, "
+                    f"invite_code={invite_code[:8]}..."
+                )
+
+                # Audit logging: попытка использования невалидного invite
+                auth.storage.log_auth_event(
+                    event_type="INVALID_INVITE_ATTEMPT",
+                    user_id=None,
+                    metadata={
+                        "telegram_id": telegram_id,
+                        "invite_code": invite_code,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+                return
+
+            # ✅ Валидный invite_code -> инициализация FSM регистрации
+            # K-03: FSM state для регистрации
+            user_states[c_id] = {
+                "step": "registration_username",  # Первый шаг FSM
+                "invite_code": invite_code,
+                "invited_role": invitation.role,
+                "telegram_id": telegram_id,
+                "created_at": datetime.now(),
+                "expires_at": datetime.now() + timedelta(minutes=10),  # timeout регистрации
+                "registration_data": {}  # Словарь для накопления данных
+            }
+
             await message.reply_text(
-                "❌ **Доступ запрещен**\n\n"
-                "Для использования бота требуется приглашение от администратора.\n"
-                "Обратитесь к администратору для получения доступа."
+                f"✨ **Добро пожаловать в VoxPersona!**\n\n"
+                f"Вы приглашены с ролью: **{invitation.role}**\n\n"
+                f"Давайте создадим ваш аккаунт.\n"
+                f"Шаг 1/3: Введите желаемое имя пользователя (username):\n\n"
+                f"_Требования: 3-32 символа, только буквы, цифры и подчеркивание_",
+                reply_markup=ReplyKeyboardRemove()  # Очистка reply-клавиатур
             )
-            logger.warning(f"Access denied - user not found: telegram_id={telegram_id}")
+
+            logger.info(
+                f"Registration initiated: telegram_id={telegram_id}, "
+                f"invite_code={invite_code[:8]}..., role={invitation.role}"
+            )
 
     @app.on_message(filters.text & ~filters.command("start") & ~auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
     async def handle_password_input(client: Client, message: Message):
