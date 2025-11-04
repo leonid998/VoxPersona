@@ -1615,11 +1615,29 @@ def register_handlers(app: Client):
 
             elif data.startswith("access_create_invite||"):
                 role = data.split("||")[1]  # admin или user
-                await handle_create_invitation(c_id, role, app)
+                # K-02: Дополнительная RBAC проверка на уровне роутинга
+                auth = get_auth_manager()
+                if auth:
+                    user = auth.storage.get_user_by_telegram_id(c_id)
+                    if user and user.role == "admin":
+                        await handle_create_invitation(c_id, role, app)
+                    else:
+                        # Отказ в доступе на уровне роутинга
+                        logger.warning(f"Callback RBAC violation: user_id={user.user_id if user else None}, action=create_invite")
+                        await callback.answer("🚫 Доступ запрещен. Только администраторы могут создавать приглашения.", show_alert=True)
 
             elif data.startswith("access_confirm_invite||"):
                 role = data.split("||")[1]
-                await handle_confirm_create_invite(c_id, role, app)
+                # K-02: Дополнительная RBAC проверка на уровне роутинга
+                auth = get_auth_manager()
+                if auth:
+                    user = auth.storage.get_user_by_telegram_id(c_id)
+                    if user and user.role == "admin":
+                        await handle_confirm_create_invite(c_id, role, app)
+                    else:
+                        # Отказ в доступе на уровне роутинга
+                        logger.warning(f"Callback RBAC violation: user_id={user.user_id if user else None}, action=confirm_create_invite")
+                        await callback.answer("🚫 Доступ запрещен. Только администраторы могут создавать приглашения.", show_alert=True)
 
             elif data == "access_list_invites":
                 await handle_list_invitations(c_id, 1, app)

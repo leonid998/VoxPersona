@@ -1336,6 +1336,50 @@ async def handle_create_invitation(chat_id: int, role: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # K-02: RBAC проверка - получить пользователя и проверить роль
+        auth = get_auth_manager()
+        if not auth:
+            logger.error("AuthManager не инициализирован!")
+            return
+
+        current_user = auth.storage.get_user_by_telegram_id(chat_id)
+        if not current_user:
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="❌ Пользователь не найден.",
+                message_type="status_message"
+            )
+            return
+
+        # K-02: КРИТИЧНО - проверка роли
+        if current_user.role != "admin":
+            # Audit logging: попытка нарушения RBAC
+            auth.storage.log_auth_event(
+                event_type="RBAC_VIOLATION",
+                user_id=current_user.user_id,
+                metadata={
+                    "action": "create_invitation_request",
+                    "required_role": "admin",
+                    "actual_role": current_user.role,
+                    "telegram_id": chat_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+
+            logger.warning(
+                f"RBAC violation: user_id={current_user.user_id} "
+                f"(role={current_user.role}) attempted to create invitation"
+            )
+
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="❌ **Доступ запрещен**\n\nТолько администраторы могут создавать приглашения.",
+                message_type="status_message"
+            )
+            return
+
         # Валидация роли
         if role not in ["admin", "user"]:
             await track_and_send(
@@ -1411,6 +1455,34 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
                 chat_id=chat_id,
                 app=app,
                 text="❌ Администратор не найден.",
+                message_type="status_message"
+            )
+            return
+
+        # K-02: КРИТИЧНО - проверка роли
+        if admin_user.role != "admin":
+            # Audit logging: попытка нарушения RBAC
+            auth.storage.log_auth_event(
+                event_type="RBAC_VIOLATION",
+                user_id=admin_user.user_id,
+                metadata={
+                    "action": "create_invitation",
+                    "required_role": "admin",
+                    "actual_role": admin_user.role,
+                    "telegram_id": chat_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+
+            logger.warning(
+                f"RBAC violation: user_id={admin_user.user_id} "
+                f"(role={admin_user.role}) attempted to create invitation"
+            )
+
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="❌ **Доступ запрещен**\n\nТолько администраторы могут создавать приглашения.",
                 message_type="status_message"
             )
             return
