@@ -1492,11 +1492,8 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
         expires_hours = state.get("expires_hours", 720)
         expires_at = datetime.now() + timedelta(hours=expires_hours)
 
-        # Генерировать invite_code через AuthSecurityManager
-        import secrets
-        import string
-        alphabet = string.ascii_letters + string.digits
-        invite_code = ''.join(secrets.choice(alphabet) for _ in range(32))
+        # K-05: Генерировать invite_code через AuthSecurityManager (рефакторинг)
+        invite_code = auth.security.generate_invite_code()
 
         # Создать приглашение через AuthManager
         success = auth.storage.create_invitation(
