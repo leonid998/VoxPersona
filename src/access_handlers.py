@@ -1580,7 +1580,12 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=access_back_markup("access_invitations_menu"),
+            # K-04: Улучшенная клавиатура после создания приглашения
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("        ➕ Создать еще одно приглашение        ", callback_data="access_invitations_menu")],
+                [InlineKeyboardButton("        📋 Список приглашений        ", callback_data="access_list_invites")],
+                [InlineKeyboardButton("        « Главное меню        ", callback_data="menu_main")]
+            ]),
             message_type="menu"
         )
 

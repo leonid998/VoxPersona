@@ -39,6 +39,12 @@ def system_menu_markup(user_role: str = "user"):
             InlineKeyboardButton("        🔐 Настройки доступа        ", callback_data="menu_access")
         ])
 
+    # ✅ K-04: КНОПКИ ДЛЯ ADMIN (прямой доступ к приглашениям)
+    if user_role == "admin":
+        buttons.append([
+            InlineKeyboardButton("        ✉️ Управление приглашениями        ", callback_data="access_invitations_menu")
+        ])
+
     buttons.append([
         InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_main")
     ])
