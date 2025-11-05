@@ -1767,7 +1767,7 @@ async def handle_invitation_details(chat_id: int, invite_code: str, app: Client)
             f"**Статус:** {status_emoji} {status_text}\n"
             f"**Создатель:** {creator_name}\n"
             f"**Действителен до:** {expires_text}\n"
-            f"**Дата создания:** {invite.created_at.strftime("%d.%m.%Y") if isinstance(invite.created_at, datetime) else str(invite.created_at)[:10]}\n\n"
+            f"**Дата создания:** {invite.created_at.strftime('%d.%m.%Y') if isinstance(invite.created_at, datetime) else str(invite.created_at)[:10]}\n\n"
             f"**Ссылка:**\n{invite_link}\n\n"
             "Выберите действие:"
         )
