@@ -182,16 +182,16 @@ class AuthSecurityManager:
 
     # ========== Invite Tokens ==========
 
-    def generate_invite_code(self) -> str:
+    def generate_invite_token(self) -> str:
         """
-        Генерирует криптографически безопасный invite токен.
+        Генерирует криптографически безопасный invite токен (legacy метод).
 
         Returns:
             str: Токен (128 bits entropy, ~16 символов)
 
         Example:
             >>> security = AuthSecurityManager()
-            >>> token = security.generate_invite_code()
+            >>> token = security.generate_invite_token()
             >>> len(token) > 10
             True
         """
@@ -203,6 +203,33 @@ class AuthSecurityManager:
 
         self.log_audit_event("INVITE_TOKEN_CREATED", 0, {"token": token[:8] + "***"})
         return token
+
+    @staticmethod
+    def generate_invite_code(length: int = 32) -> str:
+        """
+        Генерация криптографически безопасного invite_code.
+
+        K-05: Централизованная генерация для переиспользования.
+        Используется для создания приглашений в VoxPersona.
+
+        Args:
+            length: Длина кода (по умолчанию 32 символа)
+
+        Returns:
+            str: Приглашение вида "ABC123xyz456..." (буквы + цифры)
+
+        Example:
+            >>> invite_code = AuthSecurityManager.generate_invite_code()
+            >>> len(invite_code)
+            32
+            >>> invite_code = AuthSecurityManager.generate_invite_code(16)
+            >>> len(invite_code)
+            16
+        """
+        import string
+        alphabet = string.ascii_letters + string.digits  # a-zA-Z0-9
+        invite_code = ''.join(secrets.choice(alphabet) for _ in range(length))
+        return invite_code
 
     def verify_invite_token(self, token: str) -> bool:
         """
@@ -441,7 +468,7 @@ def example_register_user():
         return
 
     # 2. Проверить invite токен
-    invite_token = auth_security.generate_invite_code()
+    invite_token = auth_security.generate_invite_token()
     print(f"✅ Invite токен создан: {invite_token}")
 
     if not auth_security.verify_invite_token(invite_token):

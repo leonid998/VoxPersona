@@ -410,6 +410,45 @@ class AuthStorageManager(BaseStorageManager):
             logger.error(f"Failed to get user by telegram_id {telegram_id}: {e}")
             return None
 
+    def get_user_by_username(self, username: str) -> Optional[User]:
+        """
+        Получает пользователя по username.
+
+        Поиск среди всех user_* директорий.
+
+        Args:
+            username: Username пользователя
+
+        Returns:
+            Optional[User]: Объект User или None если не найден
+
+        Автор: agent-organizer
+        Дата: 2025-11-05
+        Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        try:
+            # Поиск среди всех user_* директорий
+            for user_dir in self.base_path.glob("user_*"):
+                if not user_dir.is_dir():
+                    continue
+
+                user_file = user_dir / "user.json"
+                if not user_file.exists():
+                    continue
+
+                user_data = self.atomic_read(user_file)
+                if user_data.get("username") == username:
+                    # Найден пользователь, вернуть через get_user() для корректной конвертации
+                    user_id = user_data.get("user_id")
+                    return self.get_user(user_id)
+
+            logger.debug(f"User not found by username: {username}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to get user by username {username}: {e}")
+            return None
+
     def list_users(self, include_inactive: bool = False) -> List[User]:
         """
         Возвращает список всех пользователей.
