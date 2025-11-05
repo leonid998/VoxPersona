@@ -2020,7 +2020,7 @@ def register_handlers(app: Client):
                 auth = get_auth_manager()
                 if auth:
                     user = auth.storage.get_user_by_telegram_id(c_id)
-                    if user and user.role == "admin":
+                    if user and user.role in ["super_admin", "admin"]:
                         await handle_create_invitation(c_id, role, app)
                     else:
                         # Отказ в доступе на уровне роутинга
@@ -2033,7 +2033,7 @@ def register_handlers(app: Client):
                 auth = get_auth_manager()
                 if auth:
                     user = auth.storage.get_user_by_telegram_id(c_id)
-                    if user and user.role == "admin":
+                    if user and user.role in ["super_admin", "admin"]:
                         await handle_confirm_create_invite(c_id, role, app)
                     else:
                         # Отказ в доступе на уровне роутинга
