@@ -1220,7 +1220,7 @@ def register_handlers(app: Client):
 
             await message.reply_text(
                 f"✨ **Добро пожаловать в VoxPersona!**\n\n"
-                f"Вы приглашены с ролью: **{invitation.role}**\n\n"
+                f"Вы приглашены с ролью: **{invitation.target_role}**\n\n"
                 f"Давайте создадим ваш аккаунт.\n"
                 f"Шаг 1/3: Введите желаемое имя пользователя (username):\n\n"
                 f"_Требования: 3-32 символа, только буквы, цифры и подчеркивание_",
@@ -1229,7 +1229,7 @@ def register_handlers(app: Client):
 
             logger.info(
                 f"Registration initiated: telegram_id={telegram_id}, "
-                f"invite_code={invite_code[:8]}..., role={invitation.role}"
+                f"invite_code={invite_code[:8]}..., role={invitation.target_role}"
             )
 
     @app.on_message(filters.text & ~filters.command("start") & ~auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
