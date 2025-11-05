@@ -1130,6 +1130,42 @@ class AuthStorageManager(BaseStorageManager):
                 logger.error(f"Failed to update invitation {invitation.invite_code}: {e}")
                 return False
 
+
+    def revoke_invitation(self, invite_code: str) -> bool:
+        """
+        Аннулирует приглашение (устанавливает is_active = False).
+
+        Thread-safe операция с использованием global lock.
+
+        Args:
+            invite_code: Код приглашения для аннулирования
+
+        Returns:
+            bool: True если успешно аннулировано, False при ошибке
+        """
+        try:
+            # Получить приглашение
+            invitation = self.get_invitation(invite_code)
+            if not invitation:
+                logger.warning(f"Cannot revoke non-existent invitation: {invite_code}")
+                return False
+
+            # Установить is_active = False
+            invitation.is_active = False
+
+            # Обновить через update_invitation
+            success = self.update_invitation(invitation)
+
+            if success:
+                logger.info(f"Invitation revoked: {invite_code}")
+            else:
+                logger.error(f"Failed to revoke invitation: {invite_code}")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error revoking invitation {invite_code}: {e}")
+            return False
     def get_auth_settings(self) -> AuthSettings:
         """
         Получает настройки системы авторизации.
