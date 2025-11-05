@@ -1067,6 +1067,10 @@ class AuthStorageManager(BaseStorageManager):
                     if not include_consumed and inv_data.get("is_consumed", False):
                         continue
 
+                    # Фильтровать аннулированные приглашения (is_active == False)
+                    if not inv_data.get("is_active", True):
+                        continue
+
                     # Конвертировать в Invitation объект
                     inv_data["created_at"] = iso_to_datetime(inv_data.get("created_at"))
                     inv_data["expires_at"] = iso_to_datetime(inv_data.get("expires_at"))
