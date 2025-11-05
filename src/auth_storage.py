@@ -1203,6 +1203,22 @@ class AuthStorageManager(BaseStorageManager):
                 logger.error(f"Failed to update auth settings: {e}")
                 return False
 
+    def get_audit_log(self, limit: int = 100) -> list:
+        """
+        Получить список событий из audit log.
+
+        TODO: Полная реализация audit log функциональности.
+        Текущая версия - заглушка, возвращает пустой список.
+
+        Args:
+            limit: Максимальное количество событий для возврата
+
+        Returns:
+            list: Список событий audit log (пока пустой)
+        """
+        logger.warning("get_audit_log() stub called - full implementation pending")
+        return []
+
 
 # ========== ЭКСПОРТ ==========
 

@@ -2171,6 +2171,7 @@ async def handle_audit_log(chat_id: int, page: int = 1, app: Client = None):
 
     except Exception as e:
         logger.error(f"Error in handle_audit_log: {e}")
+        logger.error(traceback.format_exc())
         await track_and_send(
             chat_id=chat_id,
             app=app,
