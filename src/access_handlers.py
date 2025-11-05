@@ -24,11 +24,12 @@ Handlers для управления доступом (Authorization System).
 import logging
 import asyncio
 import traceback
+import uuid
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from pyrogram import Client
 from pyrogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
-from auth_models import Invitation
+from auth_models import Invitation, AuthAuditEvent
 from auth_security import AuthSecurityManager
 
 # Импорты из существующих модулей
@@ -532,14 +533,16 @@ async def handle_confirm_role_change(chat_id: int, user_id: str, role: str, app:
 
         # Audit logging
         auth.storage.log_auth_event(
-            event_type="ROLE_CHANGED",
-            user_id=user_id,
-            metadata={
-                "admin_id": admin_user.user_id,
-                "old_role": old_role,
-                "new_role": role,
-                "timestamp": datetime.now().isoformat()
-            }
+            AuthAuditEvent(
+                event_id=str(uuid.uuid4()),
+                event_type="ROLE_CHANGED",
+                user_id=user_id,
+                details={
+                    "admin_id": admin_user.user_id,
+                    "old_role": old_role,
+                    "new_role": role
+                }
+            )
         )
 
         # Уведомление о успехе (автоудаление через 15 сек)
@@ -693,14 +696,16 @@ async def handle_confirm_reset_password(chat_id: int, user_id: str, app: Client)
 
         # Audit logging
         auth.storage.log_auth_event(
-            event_type="PASSWORD_RESET",
-            user_id=user_id,
-            metadata={
-                "admin_id": admin_user.user_id,
-                "reset_by_admin": True,
-                "expires_at": expires_at.isoformat(),
-                "timestamp": datetime.now().isoformat()
-            }
+            AuthAuditEvent(
+                event_id=str(uuid.uuid4()),
+                event_type="PASSWORD_RESET",
+                user_id=user_id,
+                details={
+                    "admin_id": admin_user.user_id,
+                    "reset_by_admin": True,
+                    "expires_at": expires_at.isoformat()
+                }
+            )
         )
 
         # Отправить пароль пользователю через Telegram
@@ -888,13 +893,15 @@ async def handle_confirm_block(chat_id: int, user_id: str, app: Client):
 
         # Audit logging
         auth.storage.log_auth_event(
-            event_type=event_type,
-            user_id=user_id,
-            metadata={
-                "admin_id": admin_user.user_id,
-                "new_status": "blocked" if new_blocked_status else "active",
-                "timestamp": datetime.now().isoformat()
-            }
+            AuthAuditEvent(
+                event_id=str(uuid.uuid4()),
+                event_type=event_type,
+                user_id=user_id,
+                details={
+                    "admin_id": admin_user.user_id,
+                    "new_status": "blocked" if new_blocked_status else "active"
+                }
+            )
         )
 
         # Уведомление о успехе
@@ -1059,14 +1066,16 @@ async def handle_confirm_delete(chat_id: int, user_id: str, app: Client):
 
         # Audit logging
         auth.storage.log_auth_event(
-            event_type="USER_DELETED",
-            user_id=user_id,
-            metadata={
-                "admin_id": admin_user.user_id,
-                "deleted_username": deleted_username,
-                "deleted_role": deleted_role,
-                "timestamp": datetime.now().isoformat()
-            }
+            AuthAuditEvent(
+                event_id=str(uuid.uuid4()),
+                event_type="USER_DELETED",
+                user_id=user_id,
+                details={
+                    "admin_id": admin_user.user_id,
+                    "deleted_username": deleted_username,
+                    "deleted_role": deleted_role
+                }
+            )
         )
 
         # Уведомление о успехе
@@ -1356,19 +1365,21 @@ async def handle_create_invitation(chat_id: int, role: str, app: Client):
             )
             return
 
-        # K-02: КРИТИЧНО - проверка роли
-        if current_user.role != "admin":
+        # K-02: КРИТИЧНО - проверка роли (super_admin и admin могут создавать приглашения)
+        if current_user.role not in ["super_admin", "admin"]:
             # Audit logging: попытка нарушения RBAC
             auth.storage.log_auth_event(
-                event_type="RBAC_VIOLATION",
-                user_id=current_user.user_id,
-                metadata={
-                    "action": "create_invitation_request",
-                    "required_role": "admin",
-                    "actual_role": current_user.role,
-                    "telegram_id": chat_id,
-                    "timestamp": datetime.now().isoformat()
-                }
+                AuthAuditEvent(
+                    event_id=str(uuid.uuid4()),
+                    event_type="RBAC_VIOLATION",
+                    user_id=current_user.user_id,
+                    details={
+                        "action": "create_invitation_request",
+                        "required_roles": ["super_admin", "admin"],
+                        "actual_role": current_user.role,
+                        "telegram_id": chat_id
+                    }
+                )
             )
 
             logger.warning(
@@ -1463,19 +1474,21 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
             )
             return
 
-        # K-02: КРИТИЧНО - проверка роли
-        if admin_user.role != "admin":
+        # K-02: КРИТИЧНО - проверка роли (super_admin и admin могут создавать приглашения)
+        if admin_user.role not in ["super_admin", "admin"]:
             # Audit logging: попытка нарушения RBAC
             auth.storage.log_auth_event(
-                event_type="RBAC_VIOLATION",
-                user_id=admin_user.user_id,
-                metadata={
-                    "action": "create_invitation",
-                    "required_role": "admin",
-                    "actual_role": admin_user.role,
-                    "telegram_id": chat_id,
-                    "timestamp": datetime.now().isoformat()
-                }
+                AuthAuditEvent(
+                    event_id=str(uuid.uuid4()),
+                    event_type="RBAC_VIOLATION",
+                    user_id=admin_user.user_id,
+                    details={
+                        "action": "create_invitation",
+                        "required_roles": ["super_admin", "admin"],
+                        "actual_role": admin_user.role,
+                        "telegram_id": chat_id
+                    }
+                )
             )
 
             logger.warning(
@@ -1560,14 +1573,16 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
 
         # Audit logging
         auth.storage.log_auth_event(
-            event_type="INVITE_CREATED",
-            user_id=admin_user.user_id,
-            metadata={
-                "invite_code": invite_code,
-                "role": role,
-                "expires_at": expires_at.isoformat(),
-                "timestamp": datetime.now().isoformat()
-            }
+            AuthAuditEvent(
+                event_id=str(uuid.uuid4()),
+                event_type="INVITE_CREATED",
+                user_id=admin_user.user_id,
+                details={
+                    "invite_code": invite_code,
+                    "role": role,
+                    "expires_at": expires_at.isoformat()
+                }
+            )
         )
 
         # Уведомление о успехе
@@ -1892,12 +1907,14 @@ async def handle_confirm_revoke(chat_id: int, invite_code: str, app: Client):
 
         # Audit logging
         auth.storage.log_auth_event(
-            event_type="INVITE_REVOKED",
-            user_id=admin_user.user_id,
-            metadata={
-                "invite_code": invite_code,
-                "timestamp": datetime.now().isoformat()
-            }
+            AuthAuditEvent(
+                event_id=str(uuid.uuid4()),
+                event_type="INVITE_REVOKED",
+                user_id=admin_user.user_id,
+                details={
+                    "invite_code": invite_code
+                }
+            )
         )
 
         # Уведомление о успехе
@@ -2369,12 +2386,14 @@ async def handle_password_change_current_input(chat_id: int, password: str, app:
 
                 # Audit logging
                 auth.storage.log_auth_event(
-                    event_type="PASSWORD_CHANGE_FAILED",
-                    user_id=user_id,
-                    metadata={
-                        "reason": "Too many attempts",
-                        "timestamp": datetime.now().isoformat()
-                    }
+                    AuthAuditEvent(
+                        event_id=str(uuid.uuid4()),
+                        event_type="PASSWORD_CHANGE_FAILED",
+                        user_id=user_id,
+                        details={
+                            "reason": "Too many attempts"
+                        }
+                    )
                 )
 
                 logger.warning(f"Password change failed (too many attempts): chat_id={chat_id}, user_id={user_id}")
@@ -2590,12 +2609,14 @@ async def handle_password_change_confirm_input(chat_id: int, password: str, app:
 
         # Audit logging
         auth.storage.log_auth_event(
-            event_type="PASSWORD_CHANGED",
-            user_id=user_id,
-            metadata={
-                "self_changed": True,
-                "timestamp": datetime.now().isoformat()
-            }
+            AuthAuditEvent(
+                event_id=str(uuid.uuid4()),
+                event_type="PASSWORD_CHANGED",
+                user_id=user_id,
+                details={
+                    "self_changed": True
+                }
+            )
         )
 
         # Очистить FSM состояние

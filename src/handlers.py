@@ -5,6 +5,7 @@ import re
 import threading
 import logging
 import asyncio
+import uuid
 import json
 from pathlib import Path
 from pyrogram import Client, filters
@@ -25,7 +26,7 @@ from conversation_manager import conversation_manager
 from md_storage import md_storage_manager
 from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, validate_building_type, _validate_username
 from parser import parse_message_text, parse_building_type, parse_zone, parse_file_number, parse_place_name, parse_city, parse_name
-from auth_models import User, Invitation
+from auth_models import User, Invitation, AuthAuditEvent
 
 from storage import delete_tmp_params, safe_filename, find_real_filename
 from datamodels import mapping_building_names, REPORT_MAPPING, mapping_scenario_names
@@ -1193,13 +1194,15 @@ def register_handlers(app: Client):
 
                 # Audit logging: попытка использования невалидного invite
                 auth.storage.log_auth_event(
-                    event_type="INVALID_INVITE_ATTEMPT",
-                    user_id=None,
-                    metadata={
-                        "telegram_id": telegram_id,
-                        "invite_code": invite_code,
-                        "timestamp": datetime.now().isoformat()
-                    }
+                    AuthAuditEvent(
+                        event_id=str(uuid.uuid4()),
+                        event_type="INVALID_INVITE_ATTEMPT",
+                        user_id="anonymous",
+                        details={
+                            "telegram_id": telegram_id,
+                            "invite_code": invite_code
+                        }
+                    )
                 )
                 return
 
@@ -1497,15 +1500,17 @@ def register_handlers(app: Client):
 
             # Audit logging: успешная регистрация
             auth.storage.log_auth_event(
-                event_type="USER_REGISTERED",
-                user_id=new_user_obj.user_id,
-                metadata={
-                    "username": username,
-                    "telegram_id": telegram_id,
-                    "role": invited_role,
-                    "invite_code": invite_code,
-                    "timestamp": datetime.now().isoformat()
-                }
+                AuthAuditEvent(
+                    event_id=str(uuid.uuid4()),
+                    event_type="USER_REGISTERED",
+                    user_id=new_user_obj.user_id,
+                    details={
+                        "username": username,
+                        "telegram_id": telegram_id,
+                        "role": invited_role,
+                        "invite_code": invite_code
+                    }
+                )
             )
 
             logger.info(
