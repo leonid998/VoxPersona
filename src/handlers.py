@@ -25,6 +25,7 @@ from conversation_manager import conversation_manager
 from md_storage import md_storage_manager
 from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, validate_building_type, _validate_username
 from parser import parse_message_text, parse_building_type, parse_zone, parse_file_number, parse_place_name, parse_city, parse_name
+from auth_models import User, Invitation
 
 from storage import delete_tmp_params, safe_filename, find_real_filename
 from datamodels import mapping_building_names, REPORT_MAPPING, mapping_scenario_names
@@ -1507,20 +1508,26 @@ def register_handlers(app: Client):
 
         try:
             # Создание нового пользователя
-            new_user = auth.storage.create_user(
+            # HOTFIX (Issue 1.1): Создаём объект User перед передачей в create_user()
+            new_user_obj = User(
+                user_id=f"user_{telegram_id}_{int(datetime.now().timestamp())}",  # уникальный ID
+                telegram_id=telegram_id,
                 username=username,
                 password_hash=auth.security.hash_password(password),
                 role=invited_role,
-                telegram_id=telegram_id
+                created_at=datetime.now(),
+                updated_at=datetime.now()
             )
 
-            if not new_user:
+            success = auth.storage.create_user(new_user_obj)
+            if not success:
                 raise ValueError("Failed to create user")
 
             # Consume invitation (пометить как использованное)
+            # HOTFIX (Issue 1.2): Исправлен параметр used_by → consumed_by_user_id
             consume_success = auth.storage.consume_invitation(
-                invite_code=invite_code,
-                used_by=new_user.user_id
+                code=invite_code,
+                consumed_by_user_id=new_user_obj.user_id
             )
 
             if not consume_success:
@@ -1529,7 +1536,7 @@ def register_handlers(app: Client):
             # Audit logging: успешная регистрация
             auth.storage.log_auth_event(
                 event_type="USER_REGISTERED",
-                user_id=new_user.user_id,
+                user_id=new_user_obj.user_id,
                 metadata={
                     "username": username,
                     "telegram_id": telegram_id,
@@ -1540,7 +1547,7 @@ def register_handlers(app: Client):
             )
 
             logger.info(
-                f"User registered successfully: user_id={new_user.user_id}, "
+                f"User registered successfully: user_id={new_user_obj.user_id}, "
                 f"username={username}, telegram_id={telegram_id}, role={invited_role}"
             )
 
@@ -1556,7 +1563,7 @@ def register_handlers(app: Client):
                     f"Роль: {invited_role}\n\n"
                     "Войдите в систему с помощью /start"
                 )
-                logger.warning(f"Auto-login failed after registration: user_id={new_user.user_id}")
+                logger.warning(f"Auto-login failed after registration: user_id={new_user_obj.user_id}")
             else:
                 # Успешный автологин
                 await app.send_message(
@@ -1571,7 +1578,7 @@ def register_handlers(app: Client):
                 await send_main_menu(chat_id, app)
 
                 logger.info(
-                    f"Auto-login successful: user_id={new_user.user_id}, "
+                    f"Auto-login successful: user_id={new_user_obj.user_id}, "
                     f"session_id={session.session_id}"
                 )
 

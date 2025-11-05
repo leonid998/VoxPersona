@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from pyrogram import Client
 from pyrogram.types import CallbackQuery, Message
+from auth_models import Invitation
 
 # Импорты из существующих модулей
 from config import get_auth_manager, user_states
@@ -1496,12 +1497,18 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
         invite_code = auth.security.generate_invite_code()
 
         # Создать приглашение через AuthManager
-        success = auth.storage.create_invitation(
+        # HOTFIX (Issue 1.5): Создаём объект Invitation перед передачей в create_invitation()
+        invitation_obj = Invitation(
             invite_code=invite_code,
-            role=role,
-            created_by=admin_user.user_id,
-            expires_at=expires_at.isoformat()
+            invite_type="user",  # по умолчанию для обычных приглашений
+            created_by_user_id=admin_user.user_id,
+            target_role=role,
+            created_at=datetime.now(),
+            expires_at=expires_at,  # уже datetime object
+            max_uses=1
         )
+
+        success = auth.storage.create_invitation(invitation_obj)
 
         if not success:
             await track_and_send(
