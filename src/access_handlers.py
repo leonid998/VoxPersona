@@ -1667,21 +1667,42 @@ async def handle_list_invitations(chat_id: int, page: int = 1, app: Client = Non
                 "created_by": invite.created_by_user_id
             })
 
-        # Формат текста
-        text = (
-            f"📋 **СПИСОК АКТИВНЫХ ПРИГЛАШЕНИЙ**\n\n"
-            f"Всего приглашений: {total_invites}\n"
-            f"Страница {page}/{total_pages}\n\n"
-            "Выберите приглашение для просмотра деталей:"
-        )
+        # Проверка пустого списка приглашений
+        if total_invites == 0:
+            # Нет активных приглашений - показать меню для создания
+            text = (
+                f"📋 **СПИСОК АКТИВНЫХ ПРИГЛАШЕНИЙ**\n\n"
+                "Активных приглашений нет.\n\n"
+                "Создайте новое приглашение для новых пользователей."
+            )
 
-        await track_and_send(
-            chat_id=chat_id,
-            app=app,
-            text=text,
-            reply_markup=access_invite_list_markup(invites_dict, page, total_pages),
-            message_type="menu"
-        )
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text=text,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("        ➕ Создать приглашение (Admin)        ", callback_data="access_create_invite||admin")],
+                    [InlineKeyboardButton("        ➕ Создать приглашение (User)        ", callback_data="access_create_invite||user")],
+                    [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_access")]
+                ]),
+                message_type="menu"
+            )
+        else:
+            # Есть приглашения - показать список
+            text = (
+                f"📋 **СПИСОК АКТИВНЫХ ПРИГЛАШЕНИЙ**\n\n"
+                f"Всего приглашений: {total_invites}\n"
+                f"Страница {page}/{total_pages}\n\n"
+                "Выберите приглашение для просмотра деталей:"
+            )
+
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text=text,
+                reply_markup=access_invite_list_markup(invites_dict, page, total_pages),
+                message_type="menu"
+            )
 
         logger.info(f"Invitation list shown to chat_id={chat_id}, page={page}/{total_pages}")
 
