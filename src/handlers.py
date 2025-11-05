@@ -127,6 +127,8 @@ from access_handlers import (
     handle_revoke_invitation,
     handle_confirm_revoke,
     handle_security_menu,
+    handle_password_policy,
+    handle_cleanup_settings,
     handle_audit_log,
     handle_change_password_start,
     handle_password_change_current_input,
@@ -2023,7 +2025,7 @@ def register_handlers(app: Client):
                     else:
                         # Отказ в доступе на уровне роутинга
                         logger.warning(f"Callback RBAC violation: user_id={user.user_id if user else None}, action=create_invite")
-                        await callback.answer("🚫 Доступ запрещен. Только администраторы могут создавать приглашения.", show_alert=True)
+                        await track_and_send(chat_id=c_id, app=app, text="🚫 Доступ запрещен. Только администраторы могут создавать приглашения.", message_type="info_message")
 
             elif data.startswith("access_confirm_invite||"):
                 role = data.split("||")[1]
@@ -2036,7 +2038,7 @@ def register_handlers(app: Client):
                     else:
                         # Отказ в доступе на уровне роутинга
                         logger.warning(f"Callback RBAC violation: user_id={user.user_id if user else None}, action=confirm_create_invite")
-                        await callback.answer("🚫 Доступ запрещен. Только администраторы могут создавать приглашения.", show_alert=True)
+                        await track_and_send(chat_id=c_id, app=app, text="🚫 Доступ запрещен. Только администраторы могут создавать приглашения.", message_type="info_message")
 
             elif data == "access_list_invites":
                 await handle_list_invitations(c_id, 1, app)
@@ -2060,6 +2062,11 @@ def register_handlers(app: Client):
             # Безопасность
             elif data == "access_security_menu":
                 await handle_security_menu(c_id, app)
+n            elif data == "access_password_policy":
+                await handle_password_policy(c_id, app)
+
+            elif data == "access_cleanup_settings":
+                await handle_cleanup_settings(c_id, app)
 
             elif data == "access_audit_log":
                 await handle_audit_log(c_id, 1, app)

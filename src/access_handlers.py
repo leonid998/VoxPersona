@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 from pyrogram import Client
 from pyrogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from auth_models import Invitation
+from auth_security import AuthSecurityManager
 
 # Импорты из существующих модулей
 from config import get_auth_manager, user_states
@@ -50,6 +51,7 @@ from access_markups import (
     access_invite_type_markup,
     # Безопасность
     access_security_menu_markup,
+    access_password_policy_markup,
     access_audit_log_markup,
     access_cleanup_settings_markup,
     # Универсальные
@@ -1927,7 +1929,7 @@ async def handle_confirm_revoke(chat_id: int, invite_code: str, app: Client):
 
 
 # ========================================
-# 4. БЕЗОПАСНОСТЬ (2 функции)
+# 4. БЕЗОПАСНОСТЬ (4 функции)
 # ========================================
 
 async def handle_security_menu(chat_id: int, app: Client):
@@ -1967,6 +1969,114 @@ async def handle_security_menu(chat_id: int, app: Client):
             chat_id=chat_id,
             app=app,
             text="❌ Произошла ошибка при загрузке меню безопасности.",
+            message_type="menu"
+        )
+
+
+
+async def handle_password_policy(chat_id: int, app: Client):
+    """
+    Меню просмотра политики паролей.
+
+    callback_data: "access_password_policy"
+
+    Отображает текущие требования к паролям в системе VoxPersona:
+    - Минимальная и максимальная длина
+    - Обязательные символы (буквы, цифры)
+
+    Args:
+        chat_id: Telegram chat_id
+        app: Pyrogram Client
+    """
+    try:
+        # Информация о политике паролей из AuthSecurityManager
+        text = (
+            "🔐 **ПОЛИТИКА ПАРОЛЕЙ**\n\n"
+            "Требования к паролю в системе VoxPersona:\n\n"
+            "📏 **Длина:**\n"
+            "• Минимум: 5 символов\n"
+            "• Максимум: 8 символов\n\n"
+            "🔤 **Обязательные символы:**\n"
+            "• Хотя бы одна буква (латинская или кириллица)\n"
+            "• Хотя бы одна цифра\n\n"
+            "✅ **Примеры корректных паролей:**\n"
+            "• abc123\n"
+            "• пароль1\n"
+            "• Test12\n\n"
+            "Эти требования применяются при:\n"
+            "- Регистрации нового пользователя\n"
+            "- Смене пароля\n"
+            "- Создании временного пароля администратором"
+        )
+
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text=text,
+            reply_markup=access_password_policy_markup(),
+            message_type="menu"
+        )
+
+        logger.info(f"Password policy shown to chat_id={chat_id}")
+
+    except Exception as e:
+        logger.error(f"Error in handle_password_policy: {e}")
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text="❌ Произошла ошибка при загрузке политики паролей.",
+            message_type="menu"
+        )
+
+
+async def handle_cleanup_settings(chat_id: int, app: Client):
+    """
+    Меню настроек автоочистки сообщений.
+
+    callback_data: "access_cleanup_settings"
+
+    Отображает информацию о системе автоматической очистки сообщений MessageTracker.
+    Текущая реализация: автоочистка при смене контекста.
+    Расширенные настройки (время, per-user) - в разработке.
+
+    Args:
+        chat_id: Telegram chat_id
+        app: Pyrogram Client
+    """
+    try:
+        text = (
+            "🕒 **АВТООЧИСТКА СООБЩЕНИЙ**\n\n"
+            "Система MessageTracker автоматически очищает устаревшие сообщения:\n\n"
+            "✅ **Текущая функциональность:**\n"
+            "• Автоматическая очистка старых меню при открытии нового\n"
+            "• Очистка запросов ввода при смене контекста\n"
+            "• Удаление подтверждающих диалогов после выбора\n"
+            "• Очистка статусных сообщений ('Думаю...', 'Обрабатываю...')\n\n"
+            "📋 **Правила очистки:**\n"
+            "• Новое меню → удаляет все предыдущие меню\n"
+            "• Новый запрос ввода → удаляет старые запросы\n"
+            "• Смена раздела → очищает всё\n\n"
+            "🔧 **Расширенные настройки:**\n"
+            "Дополнительные параметры (время жизни, per-user настройки) "
+            "будут доступны в следующих версиях."
+        )
+
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text=text,
+            reply_markup=access_cleanup_settings_markup(),
+            message_type="menu"
+        )
+
+        logger.info(f"Cleanup settings shown to chat_id={chat_id}")
+
+    except Exception as e:
+        logger.error(f"Error in handle_cleanup_settings: {e}")
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text="❌ Произошла ошибка при загрузке настроек автоочистки.",
             message_type="menu"
         )
 
