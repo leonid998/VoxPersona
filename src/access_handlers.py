@@ -23,6 +23,7 @@ Handlers для управления доступом (Authorization System).
 
 import logging
 import asyncio
+import traceback
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from pyrogram import Client
@@ -1629,7 +1630,8 @@ async def handle_list_invitations(chat_id: int, page: int = 1, app: Client = Non
             return
 
         # Получить список всех активных приглашений
-        all_invites = auth.storage.list_invitations(active_only=True)
+        # include_consumed=False → только неиспользованные (активные) приглашения
+        all_invites = auth.storage.list_invitations(include_consumed=False)
 
         # Пагинация
         total_invites = len(all_invites)
@@ -1670,6 +1672,7 @@ async def handle_list_invitations(chat_id: int, page: int = 1, app: Client = Non
 
     except Exception as e:
         logger.error(f"Error in handle_list_invitations: {e}")
+        logger.error(traceback.format_exc())
         await track_and_send(
             chat_id=chat_id,
             app=app,
