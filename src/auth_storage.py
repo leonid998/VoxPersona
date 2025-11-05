@@ -1,4 +1,4 @@
-"""
+﻿"""
 AuthStorageManager - Storage Manager с threading.Lock для системы авторизации VoxPersona.
 
 Класс реализует CRUD операции для users/sessions/invitations с thread-safety
@@ -1259,3 +1259,4 @@ class AuthStorageManager(BaseStorageManager):
 # ========== ЭКСПОРТ ==========
 
 __all__ = ["AuthStorageManager"]
+

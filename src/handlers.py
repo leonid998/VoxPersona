@@ -1,4 +1,4 @@
-from typing import Any, cast
+﻿from typing import Any, cast
 from datetime import datetime, date, timedelta
 import os
 import re
@@ -1211,7 +1211,7 @@ def register_handlers(app: Client):
             user_states[c_id] = {
                 "step": "registration_username",  # Первый шаг FSM
                 "invite_code": invite_code,
-                "invited_role": invitation.role,
+                "invited_role": invitation.target_role,
                 "telegram_id": telegram_id,
                 "created_at": datetime.now(),
                 "expires_at": datetime.now() + timedelta(minutes=10),  # timeout регистрации
@@ -2257,3 +2257,4 @@ def register_handlers(app: Client):
             await message.reply(f"❌ Error: {str(e)}")
             logging.exception(f"test_callback error: {e}")
     # ============ END TEST CALLBACK HANDLER ============
+
