@@ -139,6 +139,11 @@ from access_handlers import (
 )
 # === КОНЕЦ AUTH ===
 
+# === КОНСТАНТЫ СООБЩЕНИЙ ===
+# SonarCloud: Define constants instead of duplicating literals
+MSG_AUTH_UNAVAILABLE = "⚠️ Система авторизации недоступна."
+# === КОНЕЦ КОНСТАНТЫ ===
+
 # Initialize MinIO manager
 minio_manager = get_minio_manager()
 
@@ -1318,7 +1323,7 @@ def register_handlers(app: Client):
         # Проверка уникальности username
         auth = get_auth_manager()
         if not auth:
-            await message.reply_text("⚠️ Система авторизации недоступна.")
+            await message.reply_text(MSG_AUTH_UNAVAILABLE)
             return
 
         # Проверить что username еще не занят
@@ -1371,7 +1376,7 @@ def register_handlers(app: Client):
         # вместо дублирующей валидации
         auth = get_auth_manager()
         if not auth:
-            await app.send_message(chat_id, "⚠️ Система авторизации недоступна.")
+            await app.send_message(chat_id, MSG_AUTH_UNAVAILABLE)
             return
 
         is_valid, error_message = auth.security.validate_password(password_input)
@@ -1441,7 +1446,7 @@ def register_handlers(app: Client):
         # ✅ Пароли совпадают -> создание пользователя
         auth = get_auth_manager()
         if not auth:
-            await app.send_message(chat_id, "⚠️ Система авторизации недоступна.")
+            await app.send_message(chat_id, MSG_AUTH_UNAVAILABLE)
             return
 
         username = state["registration_data"]["username"]
@@ -1580,7 +1585,7 @@ def register_handlers(app: Client):
 
         auth = get_auth_manager()
         if not auth:
-            await message.reply_text("⚠️ Система авторизации недоступна.")
+            await message.reply_text(MSG_AUTH_UNAVAILABLE)
             return
 
         password = message.text.strip()
