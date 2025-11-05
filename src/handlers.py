@@ -2062,7 +2062,7 @@ def register_handlers(app: Client):
             # Безопасность
             elif data == "access_security_menu":
                 await handle_security_menu(c_id, app)
-n            elif data == "access_password_policy":
+            elif data == "access_password_policy":
                 await handle_password_policy(c_id, app)
 
             elif data == "access_cleanup_settings":

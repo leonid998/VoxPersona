@@ -356,7 +356,6 @@ def access_security_menu_markup() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("        🔐 Политика паролей        ", callback_data="access_password_policy")],
         [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_access")]
     ])
-n
 def access_password_policy_markup() -> InlineKeyboardMarkup:
     """
     Меню просмотра политики паролей.
