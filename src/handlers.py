@@ -1276,59 +1276,7 @@ def register_handlers(app: Client):
 
         # Существующая логика: awaiting_password (логин)
         elif current_step == "awaiting_password":
-            # Логика логина (пока inline, будет вынесена в задаче 1.3.6)
-            auth = get_auth_manager()
-            if not auth:
-                await message.reply_text("⚠️ Система авторизации недоступна.")
-                return
-
-            password = message.text.strip()
-            user_id = user_states[c_id].get("user_id")
-
-            # КРИТИЧНО: Удалить сообщение с паролем из истории чата (W-02)
-            try:
-                await message.delete()
-                logger.debug(f"Password message deleted: telegram_id={telegram_id}")
-            except Exception as e:
-                logger.warning(f"Failed to delete password message: {e}")
-
-            # Попытка аутентификации (C-01: добавлен await!)
-            session = await auth.authenticate(telegram_id, password)
-
-            if session:
-                # ✅ Успешная аутентификация
-                del user_states[c_id]  # Очистить FSM state
-
-                await message.reply_text(
-                    "✅ **Вход выполнен успешно!**\n\n"
-                    "Добро пожаловать в VoxPersona."
-                )
-
-                # Отправить главное меню
-                await send_main_menu(c_id, client)
-
-                logger.info(f"Login successful: telegram_id={telegram_id}, session_id={session.session_id}")
-            else:
-                # ❌ Неверный пароль
-                attempts = user_states[c_id].get("attempts", 0) + 1
-                user_states[c_id]["attempts"] = attempts
-
-                if attempts >= 3:
-                    # Блокировка после 3 неудачных попыток
-                    del user_states[c_id]
-                    await message.reply_text(
-                        "❌ **Превышено количество попыток**\n\n"
-                        "Слишком много неудачных попыток входа.\n"
-                        "Попробуйте снова через некоторое время."
-                    )
-                    logger.warning(f"Login failed - max attempts reached: telegram_id={telegram_id}")
-                else:
-                    # Повторный запрос пароля
-                    await message.reply_text(
-                        f"❌ **Неверный пароль**\n\n"
-                        f"Попытка {attempts} из 3. Попробуйте еще раз:"
-                    )
-                    logger.warning(f"Login failed - wrong password: telegram_id={telegram_id}, attempt={attempts}")
+            await handle_login_password_input(c_id, message, client)
             return
 
         # Неизвестный state
@@ -1602,6 +1550,86 @@ def register_handlers(app: Client):
             if chat_id in user_states:
                 del user_states[chat_id]
             logger.debug(f"FSM state cleaned: chat_id={chat_id}")
+
+    async def handle_login_password_input(chat_id: int, message: Message, app: Client):
+        """
+        FSM: Обработка ввода пароля при логине существующего пользователя.
+
+        State: awaiting_password
+
+        Логика:
+        - Проверяет введенный пароль через auth.authenticate()
+        - При неверном пароле: увеличивает счетчик попыток, блокирует при превышении лимита
+        - При успешной аутентификации:
+          * Очищает FSM state
+          * Отправляет главное меню
+          * Логирует успешный вход
+
+        КРИТИЧНО: Удаляет сообщение с паролем из истории чата (security).
+
+        Args:
+            chat_id: Telegram chat ID пользователя
+            message: Pyrogram Message объект с введенным паролем
+            app: Pyrogram Client экземпляр
+
+        Автор: refactoring-specialist + agent-organizer
+        Дата: 2025-11-05
+        Задача: Issue 2.4 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        telegram_id = message.from_user.id
+
+        auth = get_auth_manager()
+        if not auth:
+            await message.reply_text("⚠️ Система авторизации недоступна.")
+            return
+
+        password = message.text.strip()
+        user_id = user_states[chat_id].get("user_id")
+
+        # КРИТИЧНО: Удалить сообщение с паролем из истории чата (W-02)
+        try:
+            await message.delete()
+            logger.debug(f"Password message deleted: telegram_id={telegram_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete password message: {e}")
+
+        # Попытка аутентификации (C-01: добавлен await!)
+        session = await auth.authenticate(telegram_id, password)
+
+        if session:
+            # ✅ Успешная аутентификация
+            del user_states[chat_id]  # Очистить FSM state
+
+            await message.reply_text(
+                "✅ **Вход выполнен успешно!**\n\n"
+                "Добро пожаловать в VoxPersona."
+            )
+
+            # Отправить главное меню
+            await send_main_menu(chat_id, app)
+
+            logger.info(f"Login successful: telegram_id={telegram_id}, session_id={session.session_id}")
+        else:
+            # ❌ Неверный пароль
+            attempts = user_states[chat_id].get("attempts", 0) + 1
+            user_states[chat_id]["attempts"] = attempts
+
+            if attempts >= 3:
+                # Блокировка после 3 неудачных попыток
+                del user_states[chat_id]
+                await message.reply_text(
+                    "❌ **Превышено количество попыток**\n\n"
+                    "Слишком много неудачных попыток входа.\n"
+                    "Попробуйте снова через некоторое время."
+                )
+                logger.warning(f"Login failed - max attempts reached: telegram_id={telegram_id}")
+            else:
+                # Повторный запрос пароля
+                await message.reply_text(
+                    f"❌ **Неверный пароль**\n\n"
+                    f"Попытка {attempts} из 3. Попробуйте еще раз:"
+                )
+                logger.warning(f"Login failed - wrong password: telegram_id={telegram_id}, attempt={attempts}")
 
     # === КОНЕЦ AUTH LOGIN FLOW ===
 
