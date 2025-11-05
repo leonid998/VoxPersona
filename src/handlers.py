@@ -2032,7 +2032,7 @@ def register_handlers(app: Client):
                         logger.warning(f"Callback RBAC violation: user_id={user.user_id if user else None}, action=create_invite")
                         await track_and_send(chat_id=c_id, app=app, text="🚫 Доступ запрещен. Только администраторы могут создавать приглашения.", message_type="info_message")
 
-            elif data.startswith("access_confirm_invite||"):
+            elif data.startswith("access_confirm_create_invite||"):
                 role = data.split("||")[1]
                 # K-02: Дополнительная RBAC проверка на уровне роутинга
                 auth = get_auth_manager()
