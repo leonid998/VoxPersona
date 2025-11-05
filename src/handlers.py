@@ -1526,7 +1526,19 @@ def register_handlers(app: Client):
             )
 
             if not consume_success:
-                logger.warning(f"Failed to consume invitation: invite_code={invite_code}")
+                # URGENT (Issue 1.8): ROLLBACK - удалить созданного пользователя
+                # Если invitation не удалось consume, откатываем создание пользователя
+                logger.error(
+                    f"Failed to consume invitation: invite_code={invite_code}. "
+                    f"Rolling back user creation: user_id={new_user_obj.user_id}"
+                )
+                rollback_success = auth.storage.delete_user(new_user_obj.user_id)
+                if rollback_success:
+                    logger.info(f"Rollback successful: user_id={new_user_obj.user_id} deleted")
+                else:
+                    logger.critical(f"ROLLBACK FAILED: user_id={new_user_obj.user_id} not deleted!")
+
+                raise RuntimeError(f"Failed to consume invitation code: {invite_code}")
 
             # Audit logging: успешная регистрация
             auth.storage.log_auth_event(
