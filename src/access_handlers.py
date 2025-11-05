@@ -26,7 +26,7 @@ import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from pyrogram import Client
-from pyrogram.types import CallbackQuery, Message
+from pyrogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from auth_models import Invitation
 
 # Импорты из существующих модулей
