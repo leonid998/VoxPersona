@@ -1662,9 +1662,9 @@ async def handle_list_invitations(chat_id: int, page: int = 1, app: Client = Non
         for invite in invites_page:
             invites_dict.append({
                 "invite_code": invite.invite_code,
-                "role": invite.role,
+                "role": invite.target_role,
                 "expires_at": invite.expires_at,
-                "created_by": invite.created_by
+                "created_by": invite.created_by_user_id
             })
 
         # Формат текста
@@ -1726,13 +1726,13 @@ async def handle_invitation_details(chat_id: int, invite_code: str, app: Client)
             return
 
         # Эмодзи для роли
-        role_emoji = "⚙️" if invite.role == "admin" else "👤"
+        role_emoji = "⚙️" if invite.target_role == "admin" else "👤"
 
         # Статус приглашения
         status_emoji = "✅"
         status_text = "Активно"
 
-        if invite.used:
+        if invite.is_consumed:
             status_emoji = "🔒"
             status_text = "Использовано"
         elif not invite.is_active:
@@ -1753,8 +1753,8 @@ async def handle_invitation_details(chat_id: int, invite_code: str, app: Client)
                 expires_text = invite.expires_at
 
         # Создатель
-        creator = auth.storage.get_user(invite.created_by)
-        creator_name = creator.username if creator else invite.created_by
+        creator = auth.storage.get_user(invite.created_by_user_id)
+        creator_name = creator.username if creator else invite.created_by_user_id
 
         # Генерировать ссылку
         bot_username = (await app.get_me()).username
@@ -1762,12 +1762,12 @@ async def handle_invitation_details(chat_id: int, invite_code: str, app: Client)
 
         text = (
             f"📨 **ДЕТАЛИ ПРИГЛАШЕНИЯ**\n\n"
-            f"**Роль:** {role_emoji} {invite.role}\n"
+            f"**Роль:** {role_emoji} {invite.target_role}\n"
             f"**Код:** `{invite_code}`\n"
             f"**Статус:** {status_emoji} {status_text}\n"
             f"**Создатель:** {creator_name}\n"
             f"**Действителен до:** {expires_text}\n"
-            f"**Дата создания:** {invite.created_at[:10]}\n\n"
+            f"**Дата создания:** {invite.created_at.strftime("%d.%m.%Y") if isinstance(invite.created_at, datetime) else str(invite.created_at)[:10]}\n\n"
             f"**Ссылка:**\n{invite_link}\n\n"
             "Выберите действие:"
         )
@@ -1835,7 +1835,7 @@ async def handle_revoke_invitation(chat_id: int, invite_code: str, app: Client):
 
         text = (
             f"🗑 **АННУЛИРОВАНИЕ ПРИГЛАШЕНИЯ**\n\n"
-            f"Роль: {invite.role}\n"
+            f"Роль: {invite.target_role}\n"
             f"Код: `{invite_code[:16]}...`\n\n"
             "⚠️ После аннулирования ссылка перестанет работать.\n"
             "Это действие **НЕОБРАТИМО**.\n\n"
