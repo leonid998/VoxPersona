@@ -1390,7 +1390,7 @@ def register_handlers(app: Client):
         await message.reply_text(
             "✅ Username принят!\n\n"
             "Шаг 2/3: Введите пароль для вашего аккаунта:\n\n"
-            "_Требования: минимум 8 символов, содержит буквы и цифры_"
+            "_Требования: 5-8 символов, содержит буквы и цифры_"
         )
 
         logger.info(f"Username accepted: telegram_id={telegram_id}, username={username_input}")
@@ -1418,29 +1418,24 @@ def register_handlers(app: Client):
         except Exception as e:
             logger.warning(f"Failed to delete password message: {e}")
 
-        # Валидация пароля (базовая проверка)
-        if len(password_input) < 8:
-            await app.send_message(
-                chat_id,
-                "❌ **Пароль слишком короткий**\n\n"
-                "Минимальная длина: 8 символов.\n"
-                "Попробуйте еще раз:"
-            )
-            logger.debug(f"Password too short: telegram_id={telegram_id}")
+        # Валидация пароля через централизованный метод
+        # URGENT (Issue 1.3 + 1.4): Использование auth.security.validate_password()
+        # вместо дублирующей валидации
+        auth = get_auth_manager()
+        if not auth:
+            await app.send_message(chat_id, "⚠️ Система авторизации недоступна.")
             return
 
-        # Проверка наличия букв И цифр
-        has_letter = any(c.isalpha() for c in password_input)
-        has_digit = any(c.isdigit() for c in password_input)
+        is_valid, error_message = auth.security.validate_password(password_input)
 
-        if not (has_letter and has_digit):
+        if not is_valid:
             await app.send_message(
                 chat_id,
-                "❌ **Пароль слишком простой**\n\n"
-                "Пароль должен содержать как буквы, так и цифры.\n"
-                "Попробуйте еще раз:"
+                f"❌ **Пароль не прошёл валидацию**\n\n"
+                f"{error_message}\n\n"
+                f"Попробуйте еще раз:"
             )
-            logger.debug(f"Password too weak: telegram_id={telegram_id}")
+            logger.debug(f"Password validation failed: telegram_id={telegram_id}, reason={error_message}")
             return
 
         # ✅ Пароль валиден
