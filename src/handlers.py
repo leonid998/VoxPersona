@@ -23,8 +23,9 @@ from utils import run_loading_animation, openai_audio_filter, get_username_from_
 from constants import COMMAND_HISTORY, COMMAND_STATS, COMMAND_REPORTS
 from conversation_manager import conversation_manager
 from md_storage import md_storage_manager
-from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, validate_building_type
+from validators import validate_date_format, check_audio_file_size, check_state, check_file_detection, check_valid_data, validate_building_type, _validate_username
 from parser import parse_message_text, parse_building_type, parse_zone, parse_file_number, parse_place_name, parse_city, parse_name
+from auth_models import User, Invitation
 
 from storage import delete_tmp_params, safe_filename, find_real_filename
 from datamodels import mapping_building_names, REPORT_MAPPING, mapping_scenario_names
@@ -126,6 +127,8 @@ from access_handlers import (
     handle_revoke_invitation,
     handle_confirm_revoke,
     handle_security_menu,
+    handle_password_policy,
+    handle_cleanup_settings,
     handle_audit_log,
     handle_change_password_start,
     handle_password_change_current_input,
@@ -137,6 +140,11 @@ from access_handlers import (
     handle_filter_reset
 )
 # === КОНЕЦ AUTH ===
+
+# === КОНСТАНТЫ СООБЩЕНИЙ ===
+# SonarCloud: Define constants instead of duplicating literals
+MSG_AUTH_UNAVAILABLE = "⚠️ Система авторизации недоступна."
+# === КОНЕЦ КОНСТАНТЫ ===
 
 # Initialize MinIO manager
 minio_manager = get_minio_manager()
@@ -1125,6 +1133,13 @@ def register_handlers(app: Client):
         c_id = message.chat.id
         telegram_id = message.from_user.id
 
+        # K-01: Извлечение invite_code из deep link
+        # Формат: /start ABC123xyz456... (invite_code - все после пробела)
+        text_parts = message.text.strip().split(maxsplit=1)
+        invite_code = text_parts[1] if len(text_parts) > 1 else None
+
+        logger.debug(f"Deep link parsed: invite_code={'<present>' if invite_code else '<none>'}, telegram_id={telegram_id}")
+
         auth = get_auth_manager()
         if not auth:
             await message.reply_text("⚠️ Система авторизации недоступна. Попробуйте позже.")
@@ -1150,48 +1165,433 @@ def register_handlers(app: Client):
             )
             logger.info(f"Login prompt sent: telegram_id={telegram_id}, user_id={user.user_id}")
         else:
-            # User НЕ существует → доступ запрещен (требуется приглашение)
+            # K-01: User НЕ существует -> проверить invite_code
+            if not invite_code:
+                # Нет invite_code -> доступ запрещен
+                await message.reply_text(
+                    "❌ **Доступ запрещен**\n\n"
+                    "Для использования бота требуется приглашение от администратора.\n"
+                    "Обратитесь к администратору для получения доступа."
+                )
+                logger.warning(f"Access denied - no invite_code: telegram_id={telegram_id}")
+                return
+
+            # Валидация invite_code
+            invitation = auth.storage.validate_invitation(invite_code)
+
+            if not invitation:
+                # Недействительный invite_code
+                await message.reply_text(
+                    "❌ **Недействительное приглашение**\n\n"
+                    "Ссылка приглашения недействительна или истекла.\n"
+                    "Обратитесь к администратору для получения нового приглашения."
+                )
+                logger.warning(
+                    f"Invalid invite_code: telegram_id={telegram_id}, "
+                    f"invite_code={invite_code[:8]}..."
+                )
+
+                # Audit logging: попытка использования невалидного invite
+                auth.storage.log_auth_event(
+                    event_type="INVALID_INVITE_ATTEMPT",
+                    user_id=None,
+                    metadata={
+                        "telegram_id": telegram_id,
+                        "invite_code": invite_code,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+                return
+
+            # ✅ Валидный invite_code -> инициализация FSM регистрации
+            # K-03: FSM state для регистрации
+            user_states[c_id] = {
+                "step": "registration_username",  # Первый шаг FSM
+                "invite_code": invite_code,
+                "invited_role": invitation.role,
+                "telegram_id": telegram_id,
+                "created_at": datetime.now(),
+                "expires_at": datetime.now() + timedelta(minutes=10),  # timeout регистрации
+                "registration_data": {}  # Словарь для накопления данных
+            }
+
             await message.reply_text(
-                "❌ **Доступ запрещен**\n\n"
-                "Для использования бота требуется приглашение от администратора.\n"
-                "Обратитесь к администратору для получения доступа."
+                f"✨ **Добро пожаловать в VoxPersona!**\n\n"
+                f"Вы приглашены с ролью: **{invitation.role}**\n\n"
+                f"Давайте создадим ваш аккаунт.\n"
+                f"Шаг 1/3: Введите желаемое имя пользователя (username):\n\n"
+                f"_Требования: 3-32 символа, только буквы, цифры и подчеркивание_",
+                reply_markup=ReplyKeyboardRemove()  # Очистка reply-клавиатур
             )
-            logger.warning(f"Access denied - user not found: telegram_id={telegram_id}")
+
+            logger.info(
+                f"Registration initiated: telegram_id={telegram_id}, "
+                f"invite_code={invite_code[:8]}..., role={invitation.role}"
+            )
 
     @app.on_message(filters.text & ~filters.command("start") & ~auth_filter)  # type: ignore[misc,reportUntypedFunctionDecorator]
     async def handle_password_input(client: Client, message: Message):
         """
-        Обработчик ввода пароля для НЕавторизованных пользователей.
+        Обработчик ввода текста для НЕавторизованных пользователей.
+
+        ✅ ОБНОВЛЕНО (K-03): Добавлена обработка FSM регистрации:
+        - registration_username
+        - registration_password
+        - registration_confirm_password
+        - awaiting_password (существующий логин)
         """
         c_id = message.chat.id
         telegram_id = message.from_user.id
 
         # Проверить FSM state
-        if c_id not in user_states or user_states[c_id].get("step") != "awaiting_password":
-            # Неавторизованный пользователь отправил текст, но НЕ в состоянии ожидания пароля
+        if c_id not in user_states:
+            # Неавторизованный пользователь отправил текст БЕЗ FSM state
             await message.reply_text(
                 "❌ Вы не авторизованы. Отправьте /start для входа."
             )
             return
 
-        # W-03: Проверка истечения timeout (5 минут)
         state = user_states[c_id]
+        current_step = state.get("step")
+
+        # ==================== TIMEOUT ПРОВЕРКА (для ВСЕХ states) ====================
         if state.get("expires_at") and datetime.now() > state["expires_at"]:
             del user_states[c_id]
             await message.reply_text(
-                "⏱️ **Время ввода пароля истекло**\n\n"
+                "⏱️ **Время сессии истекло**\n\n"
                 "Отправьте /start заново для повторной попытки."
             )
-            logger.info(f"Login timeout expired: telegram_id={telegram_id}")
+            logger.info(f"Session timeout: telegram_id={telegram_id}, step={current_step}")
             return
+
+        # ==================== FSM РОУТИНГ ====================
+
+        # K-03: Регистрация - шаг 1: username
+        if current_step == "registration_username":
+            await handle_registration_username_input(c_id, message)
+            return
+
+        # K-03: Регистрация - шаг 2: password
+        elif current_step == "registration_password":
+            await handle_registration_password_input(c_id, message, client)
+            return
+
+        # K-03: Регистрация - шаг 3: confirm password
+        elif current_step == "registration_confirm_password":
+            await handle_registration_confirm_password_input(c_id, message, client)
+            return
+
+        # Существующая логика: awaiting_password (логин)
+        elif current_step == "awaiting_password":
+            await handle_login_password_input(c_id, message, client)
+            return
+
+        # Неизвестный state
+        else:
+            await message.reply_text(
+                "❌ Некорректное состояние сессии. Отправьте /start заново."
+            )
+            logger.error(f"Unknown FSM state: step={current_step}, chat_id={c_id}")
+            del user_states[c_id]
+            return
+
+    # === K-03: FSM HANDLERS ДЛЯ РЕГИСТРАЦИИ ===
+
+    async def handle_registration_username_input(chat_id: int, message: Message):
+        """
+        FSM: Обработка ввода username при регистрации.
+
+        State: registration_username → registration_password
+
+        Автор: agent-organizer
+        Дата: 2025-11-05
+        Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        telegram_id = message.from_user.id
+        state = user_states[chat_id]
+        username_input = message.text.strip()
+
+        # Валидация username
+        is_valid, error_msg = _validate_username(username_input)
+
+        if not is_valid:
+            await message.reply_text(
+                f"{error_msg}\n\n"
+                "Попробуйте еще раз:"
+            )
+            logger.debug(f"Username validation failed: telegram_id={telegram_id}, username={username_input[:10]}...")
+            return
+
+        # Проверка уникальности username
+        auth = get_auth_manager()
+        if not auth:
+            await message.reply_text(MSG_AUTH_UNAVAILABLE)
+            return
+
+        # Проверить что username еще не занят
+        existing_user = auth.storage.get_user_by_username(username_input)
+        if existing_user:
+            await message.reply_text(
+                "❌ **Username уже занят**\n\n"
+                "Пожалуйста, выберите другое имя пользователя:"
+            )
+            logger.debug(f"Username already taken: telegram_id={telegram_id}, username={username_input}")
+            return
+
+        # ✅ Username валиден и свободен
+        state["registration_data"]["username"] = username_input
+        state["step"] = "registration_password"
+
+        await message.reply_text(
+            "✅ Username принят!\n\n"
+            "Шаг 2/3: Введите пароль для вашего аккаунта:\n\n"
+            "_Требования: 5-8 символов, содержит буквы и цифры_"
+        )
+
+        logger.info(f"Username accepted: telegram_id={telegram_id}, username={username_input}")
+
+    async def handle_registration_password_input(chat_id: int, message: Message, app: Client):
+        """
+        FSM: Обработка ввода пароля при регистрации.
+
+        State: registration_password → registration_confirm_password
+
+        КРИТИЧНО: Удаляет сообщение с паролем из истории чата.
+
+        Автор: agent-organizer
+        Дата: 2025-11-05
+        Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        telegram_id = message.from_user.id
+        state = user_states[chat_id]
+        password_input = message.text.strip()
+
+        # КРИТИЧНО: Удалить сообщение с паролем из истории чата
+        try:
+            await message.delete()
+            logger.debug(f"Password message deleted: telegram_id={telegram_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete password message: {e}")
+
+        # Валидация пароля через централизованный метод
+        # URGENT (Issue 1.3 + 1.4): Использование auth.security.validate_password()
+        # вместо дублирующей валидации
+        auth = get_auth_manager()
+        if not auth:
+            await app.send_message(chat_id, MSG_AUTH_UNAVAILABLE)
+            return
+
+        is_valid, error_message = auth.security.validate_password(password_input)
+
+        if not is_valid:
+            await app.send_message(
+                chat_id,
+                f"❌ **Пароль не прошёл валидацию**\n\n"
+                f"{error_message}\n\n"
+                f"Попробуйте еще раз:"
+            )
+            logger.debug(f"Password validation failed: telegram_id={telegram_id}, reason={error_message}")
+            return
+
+        # ✅ Пароль валиден
+        state["registration_data"]["password"] = password_input
+        state["step"] = "registration_confirm_password"
+
+        await app.send_message(
+            chat_id,
+            "✅ Пароль принят!\n\n"
+            "Шаг 3/3: Подтвердите пароль (введите еще раз):"
+        )
+
+        logger.info(f"Password accepted: telegram_id={telegram_id}")
+
+    async def handle_registration_confirm_password_input(chat_id: int, message: Message, app: Client):
+        """
+        FSM: Подтверждение пароля и создание пользователя.
+
+        State: registration_confirm_password → registration_complete (cleanup)
+
+        КРИТИЧНО:
+        - Удаляет сообщение с паролем
+        - Создает пользователя
+        - Consume invitation
+        - Автологин
+        - Очищает FSM state в finally блоке
+
+        Автор: agent-organizer
+        Дата: 2025-11-05
+        Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        telegram_id = message.from_user.id
+        state = user_states[chat_id]
+        password_confirm = message.text.strip()
+
+        # КРИТИЧНО: Удалить сообщение с паролем из истории
+        try:
+            await message.delete()
+            logger.debug(f"Password confirmation message deleted: telegram_id={telegram_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete password confirmation: {e}")
+
+        # Проверка совпадения паролей
+        original_password = state["registration_data"].get("password")
+
+        if password_confirm != original_password:
+            await app.send_message(
+                chat_id,
+                "❌ **Пароли не совпадают**\n\n"
+                "Введите подтверждение пароля еще раз:"
+            )
+            logger.debug(f"Password mismatch: telegram_id={telegram_id}")
+            return
+
+        # ✅ Пароли совпадают -> создание пользователя
+        auth = get_auth_manager()
+        if not auth:
+            await app.send_message(chat_id, MSG_AUTH_UNAVAILABLE)
+            return
+
+        username = state["registration_data"]["username"]
+        password = state["registration_data"]["password"]
+        invite_code = state["invite_code"]
+        invited_role = state["invited_role"]
+
+        try:
+            # Создание нового пользователя
+            # HOTFIX (Issue 1.1): Создаём объект User перед передачей в create_user()
+            new_user_obj = User(
+                user_id=f"user_{telegram_id}_{int(datetime.now().timestamp())}",  # уникальный ID
+                telegram_id=telegram_id,
+                username=username,
+                password_hash=auth.security.hash_password(password),
+                role=invited_role,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+
+            success = auth.storage.create_user(new_user_obj)
+            if not success:
+                raise ValueError("Failed to create user")
+
+            # Consume invitation (пометить как использованное)
+            # HOTFIX (Issue 1.2): Исправлен параметр used_by → consumed_by_user_id
+            consume_success = auth.storage.consume_invitation(
+                code=invite_code,
+                consumed_by_user_id=new_user_obj.user_id
+            )
+
+            if not consume_success:
+                # URGENT (Issue 1.8): ROLLBACK - удалить созданного пользователя
+                # Если invitation не удалось consume, откатываем создание пользователя
+                logger.error(
+                    f"Failed to consume invitation: invite_code={invite_code}. "
+                    f"Rolling back user creation: user_id={new_user_obj.user_id}"
+                )
+                rollback_success = auth.storage.delete_user(new_user_obj.user_id)
+                if rollback_success:
+                    logger.info(f"Rollback successful: user_id={new_user_obj.user_id} deleted")
+                else:
+                    logger.critical(f"ROLLBACK FAILED: user_id={new_user_obj.user_id} not deleted!")
+
+                raise RuntimeError(f"Failed to consume invitation code: {invite_code}")
+
+            # Audit logging: успешная регистрация
+            auth.storage.log_auth_event(
+                event_type="USER_REGISTERED",
+                user_id=new_user_obj.user_id,
+                metadata={
+                    "username": username,
+                    "telegram_id": telegram_id,
+                    "role": invited_role,
+                    "invite_code": invite_code,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+
+            logger.info(
+                f"User registered successfully: user_id={new_user_obj.user_id}, "
+                f"username={username}, telegram_id={telegram_id}, role={invited_role}"
+            )
+
+            # ✅ Автоматический логин после регистрации
+            session = await auth.authenticate(telegram_id, password)
+
+            if not session:
+                # Не удалось создать сессию (странно, но обработаем)
+                await app.send_message(
+                    chat_id,
+                    "✅ **Регистрация завершена!**\n\n"
+                    f"Username: {username}\n"
+                    f"Роль: {invited_role}\n\n"
+                    "Войдите в систему с помощью /start"
+                )
+                logger.warning(f"Auto-login failed after registration: user_id={new_user_obj.user_id}")
+            else:
+                # Успешный автологин
+                await app.send_message(
+                    chat_id,
+                    "✅ **Регистрация завершена успешно!**\n\n"
+                    f"Username: {username}\n"
+                    f"Роль: {invited_role}\n\n"
+                    "Добро пожаловать в VoxPersona!"
+                )
+
+                # Отправить главное меню
+                await send_main_menu(chat_id, app)
+
+                logger.info(
+                    f"Auto-login successful: user_id={new_user_obj.user_id}, "
+                    f"session_id={session.session_id}"
+                )
+
+        except Exception as e:
+            logger.error(f"User registration failed: {e}")
+            await app.send_message(
+                chat_id,
+                "❌ **Ошибка при создании аккаунта**\n\n"
+                "Обратитесь к администратору или попробуйте позже."
+            )
+
+        finally:
+            # Очистка FSM state (в любом случае)
+            if chat_id in user_states:
+                del user_states[chat_id]
+            logger.debug(f"FSM state cleaned: chat_id={chat_id}")
+
+    async def handle_login_password_input(chat_id: int, message: Message, app: Client):
+        """
+        FSM: Обработка ввода пароля при логине существующего пользователя.
+
+        State: awaiting_password
+
+        Логика:
+        - Проверяет введенный пароль через auth.authenticate()
+        - При неверном пароле: увеличивает счетчик попыток, блокирует при превышении лимита
+        - При успешной аутентификации:
+          * Очищает FSM state
+          * Отправляет главное меню
+          * Логирует успешный вход
+
+        КРИТИЧНО: Удаляет сообщение с паролем из истории чата (security).
+
+        Args:
+            chat_id: Telegram chat ID пользователя
+            message: Pyrogram Message объект с введенным паролем
+            app: Pyrogram Client экземпляр
+
+        Автор: refactoring-specialist + agent-organizer
+        Дата: 2025-11-05
+        Задача: Issue 2.4 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        telegram_id = message.from_user.id
 
         auth = get_auth_manager()
         if not auth:
-            await message.reply_text("⚠️ Система авторизации недоступна.")
+            await message.reply_text(MSG_AUTH_UNAVAILABLE)
             return
 
         password = message.text.strip()
-        user_id = user_states[c_id].get("user_id")
+        user_id = user_states[chat_id].get("user_id")
 
         # КРИТИЧНО: Удалить сообщение с паролем из истории чата (W-02)
         try:
@@ -1205,7 +1605,7 @@ def register_handlers(app: Client):
 
         if session:
             # ✅ Успешная аутентификация
-            del user_states[c_id]  # Очистить FSM state
+            del user_states[chat_id]  # Очистить FSM state
 
             await message.reply_text(
                 "✅ **Вход выполнен успешно!**\n\n"
@@ -1213,17 +1613,17 @@ def register_handlers(app: Client):
             )
 
             # Отправить главное меню
-            await send_main_menu(c_id, client)
+            await send_main_menu(chat_id, app)
 
             logger.info(f"Login successful: telegram_id={telegram_id}, session_id={session.session_id}")
         else:
             # ❌ Неверный пароль
-            attempts = user_states[c_id].get("attempts", 0) + 1
-            user_states[c_id]["attempts"] = attempts
+            attempts = user_states[chat_id].get("attempts", 0) + 1
+            user_states[chat_id]["attempts"] = attempts
 
             if attempts >= 3:
                 # Блокировка после 3 неудачных попыток
-                del user_states[c_id]
+                del user_states[chat_id]
                 await message.reply_text(
                     "❌ **Превышено количество попыток**\n\n"
                     "Слишком много неудачных попыток входа.\n"
@@ -1237,6 +1637,7 @@ def register_handlers(app: Client):
                     f"Попытка {attempts} из 3. Попробуйте еще раз:"
                 )
                 logger.warning(f"Login failed - wrong password: telegram_id={telegram_id}, attempt={attempts}")
+
     # === КОНЕЦ AUTH LOGIN FLOW ===
 
     # === AUTH: Регистрация команды /change_password (ИЗМЕНЕНИЕ 4) ===
@@ -1615,11 +2016,29 @@ def register_handlers(app: Client):
 
             elif data.startswith("access_create_invite||"):
                 role = data.split("||")[1]  # admin или user
-                await handle_create_invitation(c_id, role, app)
+                # K-02: Дополнительная RBAC проверка на уровне роутинга
+                auth = get_auth_manager()
+                if auth:
+                    user = auth.storage.get_user_by_telegram_id(c_id)
+                    if user and user.role == "admin":
+                        await handle_create_invitation(c_id, role, app)
+                    else:
+                        # Отказ в доступе на уровне роутинга
+                        logger.warning(f"Callback RBAC violation: user_id={user.user_id if user else None}, action=create_invite")
+                        await track_and_send(chat_id=c_id, app=app, text="🚫 Доступ запрещен. Только администраторы могут создавать приглашения.", message_type="info_message")
 
             elif data.startswith("access_confirm_invite||"):
                 role = data.split("||")[1]
-                await handle_confirm_create_invite(c_id, role, app)
+                # K-02: Дополнительная RBAC проверка на уровне роутинга
+                auth = get_auth_manager()
+                if auth:
+                    user = auth.storage.get_user_by_telegram_id(c_id)
+                    if user and user.role == "admin":
+                        await handle_confirm_create_invite(c_id, role, app)
+                    else:
+                        # Отказ в доступе на уровне роутинга
+                        logger.warning(f"Callback RBAC violation: user_id={user.user_id if user else None}, action=confirm_create_invite")
+                        await track_and_send(chat_id=c_id, app=app, text="🚫 Доступ запрещен. Только администраторы могут создавать приглашения.", message_type="info_message")
 
             elif data == "access_list_invites":
                 await handle_list_invitations(c_id, 1, app)
@@ -1643,6 +2062,11 @@ def register_handlers(app: Client):
             # Безопасность
             elif data == "access_security_menu":
                 await handle_security_menu(c_id, app)
+n            elif data == "access_password_policy":
+                await handle_password_policy(c_id, app)
+
+            elif data == "access_cleanup_settings":
+                await handle_cleanup_settings(c_id, app)
 
             elif data == "access_audit_log":
                 await handle_audit_log(c_id, 1, app)

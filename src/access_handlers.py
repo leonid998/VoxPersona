@@ -26,7 +26,9 @@ import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from pyrogram import Client
-from pyrogram.types import CallbackQuery, Message
+from pyrogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from auth_models import Invitation
+from auth_security import AuthSecurityManager
 
 # Импорты из существующих модулей
 from config import get_auth_manager, user_states
@@ -49,6 +51,7 @@ from access_markups import (
     access_invite_type_markup,
     # Безопасность
     access_security_menu_markup,
+    access_password_policy_markup,
     access_audit_log_markup,
     access_cleanup_settings_markup,
     # Универсальные
@@ -1336,6 +1339,50 @@ async def handle_create_invitation(chat_id: int, role: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # K-02: RBAC проверка - получить пользователя и проверить роль
+        auth = get_auth_manager()
+        if not auth:
+            logger.error("AuthManager не инициализирован!")
+            return
+
+        current_user = auth.storage.get_user_by_telegram_id(chat_id)
+        if not current_user:
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="❌ Пользователь не найден.",
+                message_type="status_message"
+            )
+            return
+
+        # K-02: КРИТИЧНО - проверка роли
+        if current_user.role != "admin":
+            # Audit logging: попытка нарушения RBAC
+            auth.storage.log_auth_event(
+                event_type="RBAC_VIOLATION",
+                user_id=current_user.user_id,
+                metadata={
+                    "action": "create_invitation_request",
+                    "required_role": "admin",
+                    "actual_role": current_user.role,
+                    "telegram_id": chat_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+
+            logger.warning(
+                f"RBAC violation: user_id={current_user.user_id} "
+                f"(role={current_user.role}) attempted to create invitation"
+            )
+
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="❌ **Доступ запрещен**\n\nТолько администраторы могут создавать приглашения.",
+                message_type="status_message"
+            )
+            return
+
         # Валидация роли
         if role not in ["admin", "user"]:
             await track_and_send(
@@ -1415,24 +1462,55 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
             )
             return
 
+        # K-02: КРИТИЧНО - проверка роли
+        if admin_user.role != "admin":
+            # Audit logging: попытка нарушения RBAC
+            auth.storage.log_auth_event(
+                event_type="RBAC_VIOLATION",
+                user_id=admin_user.user_id,
+                metadata={
+                    "action": "create_invitation",
+                    "required_role": "admin",
+                    "actual_role": admin_user.role,
+                    "telegram_id": chat_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+
+            logger.warning(
+                f"RBAC violation: user_id={admin_user.user_id} "
+                f"(role={admin_user.role}) attempted to create invitation"
+            )
+
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="❌ **Доступ запрещен**\n\nТолько администраторы могут создавать приглашения.",
+                message_type="status_message"
+            )
+            return
+
         # Получить срок действия из FSM или использовать по умолчанию
         state = user_states.get(chat_id, {})
         expires_hours = state.get("expires_hours", 720)
         expires_at = datetime.now() + timedelta(hours=expires_hours)
 
-        # Генерировать invite_code через AuthSecurityManager
-        import secrets
-        import string
-        alphabet = string.ascii_letters + string.digits
-        invite_code = ''.join(secrets.choice(alphabet) for _ in range(32))
+        # K-05: Генерировать invite_code через AuthSecurityManager (рефакторинг)
+        invite_code = auth.security.generate_invite_code()
 
         # Создать приглашение через AuthManager
-        success = auth.storage.create_invitation(
+        # HOTFIX (Issue 1.5): Создаём объект Invitation перед передачей в create_invitation()
+        invitation_obj = Invitation(
             invite_code=invite_code,
-            role=role,
-            created_by=admin_user.user_id,
-            expires_at=expires_at.isoformat()
+            invite_type="user",  # по умолчанию для обычных приглашений
+            created_by_user_id=admin_user.user_id,
+            target_role=role,
+            created_at=datetime.now(),
+            expires_at=expires_at,  # уже datetime object
+            max_uses=1
         )
+
+        success = auth.storage.create_invitation(invitation_obj)
 
         if not success:
             await track_and_send(
@@ -1508,7 +1586,12 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=access_back_markup("access_invitations_menu"),
+            # K-04: Улучшенная клавиатура после создания приглашения
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("        ➕ Создать еще одно приглашение        ", callback_data="access_invitations_menu")],
+                [InlineKeyboardButton("        📋 Список приглашений        ", callback_data="access_list_invites")],
+                [InlineKeyboardButton("        « Главное меню        ", callback_data="menu_main")]
+            ]),
             message_type="menu"
         )
 
@@ -1846,7 +1929,7 @@ async def handle_confirm_revoke(chat_id: int, invite_code: str, app: Client):
 
 
 # ========================================
-# 4. БЕЗОПАСНОСТЬ (2 функции)
+# 4. БЕЗОПАСНОСТЬ (4 функции)
 # ========================================
 
 async def handle_security_menu(chat_id: int, app: Client):
@@ -1886,6 +1969,114 @@ async def handle_security_menu(chat_id: int, app: Client):
             chat_id=chat_id,
             app=app,
             text="❌ Произошла ошибка при загрузке меню безопасности.",
+            message_type="menu"
+        )
+
+
+
+async def handle_password_policy(chat_id: int, app: Client):
+    """
+    Меню просмотра политики паролей.
+
+    callback_data: "access_password_policy"
+
+    Отображает текущие требования к паролям в системе VoxPersona:
+    - Минимальная и максимальная длина
+    - Обязательные символы (буквы, цифры)
+
+    Args:
+        chat_id: Telegram chat_id
+        app: Pyrogram Client
+    """
+    try:
+        # Информация о политике паролей из AuthSecurityManager
+        text = (
+            "🔐 **ПОЛИТИКА ПАРОЛЕЙ**\n\n"
+            "Требования к паролю в системе VoxPersona:\n\n"
+            "📏 **Длина:**\n"
+            "• Минимум: 5 символов\n"
+            "• Максимум: 8 символов\n\n"
+            "🔤 **Обязательные символы:**\n"
+            "• Хотя бы одна буква (латинская или кириллица)\n"
+            "• Хотя бы одна цифра\n\n"
+            "✅ **Примеры корректных паролей:**\n"
+            "• abc123\n"
+            "• пароль1\n"
+            "• Test12\n\n"
+            "Эти требования применяются при:\n"
+            "- Регистрации нового пользователя\n"
+            "- Смене пароля\n"
+            "- Создании временного пароля администратором"
+        )
+
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text=text,
+            reply_markup=access_password_policy_markup(),
+            message_type="menu"
+        )
+
+        logger.info(f"Password policy shown to chat_id={chat_id}")
+
+    except Exception as e:
+        logger.error(f"Error in handle_password_policy: {e}")
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text="❌ Произошла ошибка при загрузке политики паролей.",
+            message_type="menu"
+        )
+
+
+async def handle_cleanup_settings(chat_id: int, app: Client):
+    """
+    Меню настроек автоочистки сообщений.
+
+    callback_data: "access_cleanup_settings"
+
+    Отображает информацию о системе автоматической очистки сообщений MessageTracker.
+    Текущая реализация: автоочистка при смене контекста.
+    Расширенные настройки (время, per-user) - в разработке.
+
+    Args:
+        chat_id: Telegram chat_id
+        app: Pyrogram Client
+    """
+    try:
+        text = (
+            "🕒 **АВТООЧИСТКА СООБЩЕНИЙ**\n\n"
+            "Система MessageTracker автоматически очищает устаревшие сообщения:\n\n"
+            "✅ **Текущая функциональность:**\n"
+            "• Автоматическая очистка старых меню при открытии нового\n"
+            "• Очистка запросов ввода при смене контекста\n"
+            "• Удаление подтверждающих диалогов после выбора\n"
+            "• Очистка статусных сообщений ('Думаю...', 'Обрабатываю...')\n\n"
+            "📋 **Правила очистки:**\n"
+            "• Новое меню → удаляет все предыдущие меню\n"
+            "• Новый запрос ввода → удаляет старые запросы\n"
+            "• Смена раздела → очищает всё\n\n"
+            "🔧 **Расширенные настройки:**\n"
+            "Дополнительные параметры (время жизни, per-user настройки) "
+            "будут доступны в следующих версиях."
+        )
+
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text=text,
+            reply_markup=access_cleanup_settings_markup(),
+            message_type="menu"
+        )
+
+        logger.info(f"Cleanup settings shown to chat_id={chat_id}")
+
+    except Exception as e:
+        logger.error(f"Error in handle_cleanup_settings: {e}")
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text="❌ Произошла ошибка при загрузке настроек автоочистки.",
             message_type="menu"
         )
 
