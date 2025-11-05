@@ -176,7 +176,7 @@ class TestPhase2RollbackMechanism:
 
             # RuntimeError должен быть выброшен
             with pytest.raises(RuntimeError) as exc_info:
-                raise RuntimeError(f"Failed to consume invitation code: TEST_CODE")
+                raise RuntimeError("Failed to consume invitation code: TEST_CODE")
 
             assert "Failed to consume invitation code" in str(exc_info.value)
 

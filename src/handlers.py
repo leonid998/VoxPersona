@@ -1266,7 +1266,7 @@ def register_handlers(app: Client):
 
         # K-03: Регистрация - шаг 1: username
         if current_step == "registration_username":
-            await handle_registration_username_input(c_id, message, client)
+            await handle_registration_username_input(c_id, message)
             return
 
         # K-03: Регистрация - шаг 2: password
@@ -1295,7 +1295,7 @@ def register_handlers(app: Client):
 
     # === K-03: FSM HANDLERS ДЛЯ РЕГИСТРАЦИИ ===
 
-    async def handle_registration_username_input(chat_id: int, message: Message, app: Client):
+    async def handle_registration_username_input(chat_id: int, message: Message):
         """
         FSM: Обработка ввода username при регистрации.
 
