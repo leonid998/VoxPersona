@@ -1002,8 +1002,6 @@ async def handle_confirm_block(chat_id: int, user_id: str, app: Client):
             message_type="status_message"
         )
 
-        # Подождать перед возвратом к меню
-        await asyncio.sleep(NOTIFICATION_DELETE_TIME)
         await handle_user_details(chat_id, user_id, app)
 
         logger.info(
@@ -1181,8 +1179,6 @@ async def handle_confirm_delete(chat_id: int, user_id: str, app: Client):
             message_type="status_message"
         )
 
-        # Подождать перед возвратом к списку пользователей
-        await asyncio.sleep(NOTIFICATION_DELETE_TIME)
         await handle_list_users(chat_id, 1, app)
 
         logger.info(
