@@ -1,4 +1,4 @@
-﻿"""
+"""
 AuthStorageManager - Storage Manager с threading.Lock для системы авторизации VoxPersona.
 
 Класс реализует CRUD операции для users/sessions/invitations с thread-safety
@@ -681,7 +681,7 @@ class AuthStorageManager(BaseStorageManager):
                 logger.error(f"Failed to consume invitation {code}: {e}")
                 return False
 
-    # ========== SESSION METHODS (4 метода) ==========
+    # ========== SESSION METHODS (5 методов) ==========
 
     def cleanup_expired_sessions(self, user_id: str) -> int:
         """
@@ -913,6 +913,54 @@ class AuthStorageManager(BaseStorageManager):
         except Exception as e:
             logger.error(f"Failed to revoke session {session_id}: {e}")
             return False
+
+    def delete_all_sessions(self, user_id: str) -> bool:
+        """
+        Удаляет все сессии пользователя (удаляет файл sessions.json).
+
+        Thread-safe операция с использованием per-user lock.
+        Используется при удалении пользователя для очистки всех его сеансов.
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            bool: True если удаление успешно (или файл уже удален), False при ошибке
+
+        Example:
+            >>> storage = AuthStorageManager(Path("auth_data"))
+            >>> success = storage.delete_all_sessions(user_id="12345")
+            >>> print(f"Все сессии удалены: {success}")
+
+        Автор: backend-developer
+        Дата: 6 ноября 2025
+        Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
+        """
+        lock = self._get_user_lock(user_id)
+
+        with lock:
+            user_dir = self.base_path / f"user_{user_id}"
+            sessions_file = user_dir / "sessions.json"
+
+            try:
+                # Проверка существования файла
+                if not self.file_exists(sessions_file):
+                    logger.debug(f"Sessions file already deleted or doesn't exist for user {user_id}")
+                    return True
+
+                # Удалить файл sessions.json
+                success = self.delete_file(sessions_file)
+
+                if success:
+                    logger.info(f"All sessions deleted for user {user_id}")
+                else:
+                    logger.error(f"Failed to delete sessions file for user {user_id}")
+
+                return success
+
+            except Exception as e:
+                logger.error(f"Failed to delete all sessions for user {user_id}: {e}")
+                return False
 
     # ========== AUDIT LOG METHOD (1 метод) ==========
 
@@ -1247,20 +1295,68 @@ class AuthStorageManager(BaseStorageManager):
         """
         Получить список событий из audit log.
 
-        TODO: Полная реализация audit log функциональности.
-        Текущая версия - заглушка, возвращает пустой список.
+        Читает auth_audit.log (JSON Lines формат) и возвращает последние события.
+        Сортирует по timestamp в обратном порядке (новые сверху).
+
+        Thread-safe операция с использованием global lock.
 
         Args:
-            limit: Максимальное количество событий для возврата
+            limit: Максимальное количество событий для возврата (0 или None = все события)
 
         Returns:
-            list: Список событий audit log (пока пустой)
+            list: Список словарей с событиями audit log, отсортированный по timestamp (DESC)
+
+        Example:
+            >>> storage = AuthStorageManager(Path("auth_data"))
+            >>> events = storage.get_audit_log(limit=50)
+            >>> for event in events:
+            ...     print(f"{event['timestamp']}: {event['action']} by {event['user_id']}")
+
+        Автор: backend-developer
+        Дата: 6 ноября 2025
+        Задача: K-03 (#00007_20251105_YEIJEG/01_bag_8563784537)
         """
-        logger.warning("get_audit_log() stub called - full implementation pending")
-        return []
+        with self._global_lock:
+            audit_file = self.base_path / "auth_audit.log"
+
+            # Проверка существования файла
+            if not audit_file.exists():
+                logger.debug("Audit log file not found, returning empty list")
+                return []
+
+            try:
+                events = []
+
+                # Читать файл построчно
+                with open(audit_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        try:
+                            # Парсить JSON для каждой строки
+                            event = json.loads(line)
+                            events.append(event)
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Invalid JSON in audit log line, skipping: {e}")
+                            continue
+
+                # Сортировать по timestamp в обратном порядке (новые сверху)
+                events.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+
+                # Ограничить количество событий
+                if limit and limit > 0:
+                    events = events[:limit]
+
+                logger.debug(f"Retrieved {len(events)} audit log events (limit={limit})")
+                return events
+
+            except Exception as e:
+                logger.error(f"Failed to read audit log: {e}")
+                return []
 
 
 # ========== ЭКСПОРТ ==========
 
 __all__ = ["AuthStorageManager"]
-

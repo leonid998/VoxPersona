@@ -30,7 +30,6 @@ from datetime import datetime, timedelta
 from pyrogram import Client
 from pyrogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from auth_models import Invitation, AuthAuditEvent
-from auth_security import AuthSecurityManager
 
 # Импорты из существующих модулей
 from config import get_auth_manager, user_states
@@ -307,12 +306,11 @@ async def handle_user_details(chat_id: int, user_id: str, app: Client):
 
         # Дата последнего входа
         last_login_text = "Никогда"
-        if user.last_login_at:
+        if user.last_login:
             try:
-                last_login = datetime.fromisoformat(user.last_login_at)
-                last_login_text = last_login.strftime("%d.%m.%Y %H:%M")
+                last_login_text = user.last_login.strftime("%d.%m.%Y %H:%M")
             except:
-                last_login_text = user.last_login_at
+                last_login_text = str(user.last_login)
 
         # Требуется ли смена пароля
         password_change_text = "🔒 Требуется" if user.must_change_password else "✅ Не требуется"
@@ -519,11 +517,10 @@ async def handle_confirm_role_change(chat_id: int, user_id: str, role: str, app:
         # Сохранить старую роль для логирования
         old_role = target_user.role
 
-        # Обновить роль через AuthManager
-        success = auth.storage.update_user(
-            user_id=user_id,
-            role=role
-        )
+        # Обновить роль: получить объект, изменить поле, сохранить
+        target_user.role = role
+        target_user.updated_at = datetime.now()
+        success = auth.storage.update_user(target_user)
 
         if not success:
             await track_and_send(
@@ -948,12 +945,11 @@ async def handle_confirm_block(chat_id: int, user_id: str, app: Client):
         new_blocked_status = not target_user.is_blocked
         new_active_status = not new_blocked_status  # is_active противоположен is_blocked
 
-        # Обновить статус через AuthManager
-        success = auth.storage.update_user(
-            user_id=user_id,
-            is_blocked=new_blocked_status,
-            is_active=new_active_status
-        )
+        # Обновить статус: изменить поля объекта и сохранить
+        target_user.is_blocked = new_blocked_status
+        target_user.is_active = new_active_status
+        target_user.updated_at = datetime.now()
+        success = auth.storage.update_user(target_user)
 
         if not success:
             await track_and_send(
@@ -2609,8 +2605,8 @@ async def handle_password_change_current_input(chat_id: int, password: str, app:
             user_states.pop(chat_id, None)
             return
 
-        # Валидация пароля через AuthManager
-        is_valid = auth.storage.verify_password(user_id, password)
+        # Валидация пароля через AuthSecurityManager
+        is_valid = auth.security.verify_password(password, user.password_hash)
 
         if is_valid:
             # Пароль верный → перейти к Шагу 3 (новый пароль)
