@@ -281,7 +281,7 @@ async def handle_user_details(chat_id: int, user_id: str, app: Client):
             return
 
         # Получить пользователя
-        user = auth.storage.get_user(user_id)
+        user = await asyncio.to_thread(auth.storage.get_user, user_id)
         if not user:
             await track_and_send(
                 chat_id=chat_id,
@@ -312,6 +312,17 @@ async def handle_user_details(chat_id: int, user_id: str, app: Client):
             except:
                 last_login_text = str(user.last_login)
 
+        # Дата создания
+        created_at_text = "Неизвестно"
+        if user.created_at:
+            try:
+                created_at_text = user.created_at.strftime("%Y-%m-%d")
+            except:
+                try:
+                    created_at_text = str(user.created_at)[:10]
+                except:
+                    created_at_text = "Ошибка формата"
+
         # Требуется ли смена пароля
         password_change_text = "🔒 Требуется" if user.must_change_password else "✅ Не требуется"
 
@@ -324,7 +335,7 @@ async def handle_user_details(chat_id: int, user_id: str, app: Client):
             f"**Статус:** {status_emoji} {status_text}\n"
             f"**Последний вход:** {last_login_text}\n"
             f"**Смена пароля:** {password_change_text}\n"
-            f"**Дата создания:** {user.created_at[:10]}\n\n"
+            f"**Дата создания:** {created_at_text}\n\n"
             "Выберите действие:"
         )
 
@@ -339,11 +350,12 @@ async def handle_user_details(chat_id: int, user_id: str, app: Client):
         logger.info(f"User details shown: chat_id={chat_id}, user_id={user_id}")
 
     except Exception as e:
-        logger.error(f"Error in handle_user_details: {e}")
+        logger.error(f"Error in handle_user_details: {e}", exc_info=True)
         await track_and_send(
             chat_id=chat_id,
             app=app,
-            text="❌ Произошла ошибка при загрузке деталей пользователя.",
+            text="❌ Ошибка загрузки деталей пользователя.\n\n_Попробуйте позже или обратитесь к администратору._",
+            reply_markup=access_back_markup("access_users_menu"),
             message_type="menu"
         )
 
