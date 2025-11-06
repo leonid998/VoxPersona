@@ -193,24 +193,26 @@ def access_user_settings_markup(user_id: str) -> InlineKeyboardMarkup:
     """
     Меню изменения настроек пользователя.
 
-    Доступные настройки:
-    - 🌐 Язык (ru/en)
-    - 🕒 Часовой пояс
-    - 🔔 Уведомления (вкл/выкл)
-    - ✅ Статус активности (активен/неактивен)
-    - 🚫 Блокировка (заблокирован/разблокирован)
+    TODO: Реализовать изменение настроек пользователя в следующей версии
+    Планируемые опции:
+    - 🌐 Изменить язык (access_setting_language)
+    - 🕒 Изменить часовой пояс (access_setting_timezone)
+    - 🔔 Переключить уведомления (access_setting_notifications)
+    - ✅ Переключить статус активности (access_setting_active)
 
     Args:
         user_id: Telegram user_id пользователя
 
     Returns:
-        InlineKeyboardMarkup с опциями изменения настроек
+        InlineKeyboardMarkup с кнопкой "Назад"
     """
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("        🌐 Изменить язык        ", callback_data=f"access_setting_language||{user_id}")],
-        [InlineKeyboardButton("        🕒 Изменить часовой пояс        ", callback_data=f"access_setting_timezone||{user_id}")],
-        [InlineKeyboardButton("        🔔 Переключить уведомления        ", callback_data=f"access_setting_notifications||{user_id}")],
-        [InlineKeyboardButton("        ✅ Переключить статус активности        ", callback_data=f"access_setting_active||{user_id}")],
+        # TODO: Реализовать изменение настроек пользователя в следующей версии
+        # Доступные опции:
+        # - 🌐 Изменить язык (access_setting_language)
+        # - 🕒 Изменить часовой пояс (access_setting_timezone)
+        # - 🔔 Переключить уведомления (access_setting_notifications)
+        # - ✅ Переключить статус активности (access_setting_active)
         [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data=f"access_edit_user||{user_id}")]
     ])
 

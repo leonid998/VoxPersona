@@ -1990,67 +1990,6 @@ def register_handlers(app: Client):
                 user_id = data.split("||")[1]
                 await handle_change_user_settings(c_id, user_id, app)
 
-            # Изменение конкретных настроек пользователя (заглушки)
-            elif data.startswith("access_setting_language||"):
-                user_id = data.split("||")[1]
-                await track_and_send(
-                    chat_id=c_id,
-                    app=app,
-                    text=(
-                        "🚧 **В РАЗРАБОТКЕ**\n\n"
-                        "Изменение языка пользователя будет доступно в следующей версии.\n"
-                        "Сейчас эта функция находится в разработке."
-                    ),
-                    message_type="status_message"
-                )
-                await asyncio.sleep(2)
-                await handle_change_user_settings(c_id, user_id, app)
-
-            elif data.startswith("access_setting_timezone||"):
-                user_id = data.split("||")[1]
-                await track_and_send(
-                    chat_id=c_id,
-                    app=app,
-                    text=(
-                        "🚧 **В РАЗРАБОТКЕ**\n\n"
-                        "Изменение часового пояса будет доступно в следующей версии.\n"
-                        "Сейчас эта функция находится в разработке."
-                    ),
-                    message_type="status_message"
-                )
-                await asyncio.sleep(2)
-                await handle_change_user_settings(c_id, user_id, app)
-
-            elif data.startswith("access_setting_notifications||"):
-                user_id = data.split("||")[1]
-                await track_and_send(
-                    chat_id=c_id,
-                    app=app,
-                    text=(
-                        "🚧 **В РАЗРАБОТКЕ**\n\n"
-                        "Переключение уведомлений будет доступно в следующей версии.\n"
-                        "Сейчас эта функция находится в разработке."
-                    ),
-                    message_type="status_message"
-                )
-                await asyncio.sleep(2)
-                await handle_change_user_settings(c_id, user_id, app)
-
-            elif data.startswith("access_setting_active||"):
-                user_id = data.split("||")[1]
-                await track_and_send(
-                    chat_id=c_id,
-                    app=app,
-                    text=(
-                        "🚧 **В РАЗРАБОТКЕ**\n\n"
-                        "Переключение статуса активности будет доступно в следующей версии.\n"
-                        "Сейчас эта функция находится в разработке."
-                    ),
-                    message_type="status_message"
-                )
-                await asyncio.sleep(2)
-                await handle_change_user_settings(c_id, user_id, app)
-
             elif data.startswith("access_confirm_reset||"):
                 user_id = data.split("||")[1]
                 await handle_confirm_reset_password(c_id, user_id, app)
