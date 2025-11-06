@@ -511,7 +511,6 @@ async def handle_confirm_role_change(chat_id: int, user_id: str, role: str, app:
                 text="⚠️ Вы не можете изменить собственную роль.",
                 message_type="status_message"
             )
-            await asyncio.sleep(ERROR_DELETE_TIME)
             await handle_edit_user(chat_id, user_id, app)
             return
 
@@ -949,7 +948,6 @@ async def handle_confirm_block(chat_id: int, user_id: str, app: Client):
                 text="⚠️ Вы не можете заблокировать себя.",
                 message_type="status_message"
             )
-            await asyncio.sleep(ERROR_DELETE_TIME)
             await handle_user_details(chat_id, user_id, app)
             return
 
@@ -1123,7 +1121,6 @@ async def handle_confirm_delete(chat_id: int, user_id: str, app: Client):
                 text="⚠️ Вы не можете удалить себя.",
                 message_type="status_message"
             )
-            await asyncio.sleep(ERROR_DELETE_TIME)
             await handle_user_details(chat_id, user_id, app)
             return
 
