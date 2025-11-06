@@ -111,6 +111,7 @@ from access_handlers import (
     handle_edit_user,
     handle_change_role,
     handle_confirm_role_change,
+    handle_change_user_settings,
     handle_reset_password,
     handle_confirm_reset_password,
     handle_toggle_block_user,
@@ -130,6 +131,9 @@ from access_handlers import (
     handle_security_menu,
     handle_password_policy,
     handle_cleanup_settings,
+    handle_set_cleanup_hours,
+    handle_cleanup_per_user,
+    handle_view_cleanup_schedule,
     handle_audit_log,
     handle_change_password_start,
     handle_password_change_current_input,
@@ -1982,6 +1986,71 @@ def register_handlers(app: Client):
                 user_id = data.split("||")[1]
                 await handle_reset_password(c_id, user_id, app)
 
+            elif data.startswith("access_change_settings||"):
+                user_id = data.split("||")[1]
+                await handle_change_user_settings(c_id, user_id, app)
+
+            # Изменение конкретных настроек пользователя (заглушки)
+            elif data.startswith("access_setting_language||"):
+                user_id = data.split("||")[1]
+                await track_and_send(
+                    chat_id=c_id,
+                    app=app,
+                    text=(
+                        "🚧 **В РАЗРАБОТКЕ**\n\n"
+                        "Изменение языка пользователя будет доступно в следующей версии.\n"
+                        "Сейчас эта функция находится в разработке."
+                    ),
+                    message_type="status_message"
+                )
+                await asyncio.sleep(2)
+                await handle_change_user_settings(c_id, user_id, app)
+
+            elif data.startswith("access_setting_timezone||"):
+                user_id = data.split("||")[1]
+                await track_and_send(
+                    chat_id=c_id,
+                    app=app,
+                    text=(
+                        "🚧 **В РАЗРАБОТКЕ**\n\n"
+                        "Изменение часового пояса будет доступно в следующей версии.\n"
+                        "Сейчас эта функция находится в разработке."
+                    ),
+                    message_type="status_message"
+                )
+                await asyncio.sleep(2)
+                await handle_change_user_settings(c_id, user_id, app)
+
+            elif data.startswith("access_setting_notifications||"):
+                user_id = data.split("||")[1]
+                await track_and_send(
+                    chat_id=c_id,
+                    app=app,
+                    text=(
+                        "🚧 **В РАЗРАБОТКЕ**\n\n"
+                        "Переключение уведомлений будет доступно в следующей версии.\n"
+                        "Сейчас эта функция находится в разработке."
+                    ),
+                    message_type="status_message"
+                )
+                await asyncio.sleep(2)
+                await handle_change_user_settings(c_id, user_id, app)
+
+            elif data.startswith("access_setting_active||"):
+                user_id = data.split("||")[1]
+                await track_and_send(
+                    chat_id=c_id,
+                    app=app,
+                    text=(
+                        "🚧 **В РАЗРАБОТКЕ**\n\n"
+                        "Переключение статуса активности будет доступно в следующей версии.\n"
+                        "Сейчас эта функция находится в разработке."
+                    ),
+                    message_type="status_message"
+                )
+                await asyncio.sleep(2)
+                await handle_change_user_settings(c_id, user_id, app)
+
             elif data.startswith("access_confirm_reset||"):
                 user_id = data.split("||")[1]
                 await handle_confirm_reset_password(c_id, user_id, app)
@@ -1994,7 +2063,7 @@ def register_handlers(app: Client):
                 parts = data.split("||")
                 await handle_confirm_block(c_id, parts[1], app)
 
-            elif data.startswith("access_delete_user||"):
+            elif data.startswith("access_delete_user_confirm||"):
                 user_id = data.split("||")[1]
                 await handle_delete_user(c_id, user_id, app)
 
@@ -2072,6 +2141,15 @@ def register_handlers(app: Client):
 
             elif data == "access_cleanup_settings":
                 await handle_cleanup_settings(c_id, app)
+
+            elif data == "access_set_cleanup_hours":
+                await handle_set_cleanup_hours(c_id, app)
+
+            elif data == "access_cleanup_per_user":
+                await handle_cleanup_per_user(c_id, app)
+
+            elif data == "access_view_cleanup_schedule":
+                await handle_view_cleanup_schedule(c_id, app)
 
             elif data == "access_audit_log":
                 await handle_audit_log(c_id, 1, app)
@@ -2186,6 +2264,32 @@ def register_handlers(app: Client):
                     await app.send_message(c_id, "❌ Нет активного чата.")
 
                 return
+
+            # === ОБРАБОТКА НЕИЗВЕСТНЫХ CALLBACKS ===
+            else:
+                # Неизвестный callback_data - логируем и информируем пользователя
+                logger.warning(
+                    f"Unknown callback_data received: '{data}' "
+                    f"from user_id={callback.from_user.id} ({callback.from_user.username}), "
+                    f"chat_id={c_id}"
+                )
+
+                # Отправить информативное сообщение пользователю
+                await track_and_send(
+                    chat_id=c_id,
+                    app=app,
+                    text=(
+                        "⚠️ **Неизвестное действие**\n\n"
+                        "Это действие больше не поддерживается или содержит ошибку в системе.\n"
+                        "Пожалуйста, вернитесь в главное меню и попробуйте снова.\n\n"
+                        f"Код ошибки: `{data[:50]}`"  # Ограничиваем длину для безопасности
+                    ),
+                    message_type="status_message"
+                )
+
+                # Предложить вернуться в главное меню
+                await asyncio.sleep(2)
+                await handle_main_menu(c_id, app)
 
 
         except ValueError as ve:
