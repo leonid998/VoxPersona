@@ -206,8 +206,8 @@ async def handle_list_users(chat_id: int, page: int = 1, app: Client = None, rol
             logger.error("AuthManager не инициализирован!")
             return
 
-        # Получить список всех пользователей
-        all_users = auth.storage.list_users()
+        # Получить список всех пользователей (включая заблокированных)
+        all_users = auth.storage.list_users(include_inactive=True)
 
         # Применить фильтр по роли если задан
         if role_filter and role_filter != "all":
@@ -955,11 +955,9 @@ async def handle_confirm_block(chat_id: int, user_id: str, app: Client):
 
         # Переключить статус блокировки
         new_blocked_status = not target_user.is_blocked
-        new_active_status = not new_blocked_status  # is_active противоположен is_blocked
 
         # Обновить статус: изменить поля объекта и сохранить
         target_user.is_blocked = new_blocked_status
-        target_user.is_active = new_active_status
         target_user.updated_at = datetime.now()
         success = auth.storage.update_user(target_user)
 
