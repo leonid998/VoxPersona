@@ -696,7 +696,7 @@ async def handle_reset_password(chat_id: int, user_id: str, app: Client):
             f"🔑 **СБРОС ПАРОЛЯ**\n\n"
             f"Пользователь: {user.username}\n"
             f"Telegram ID: `{user.telegram_id}`\n\n"
-            "⚠️ Будет сгенерирован новый временный пароль (16 символов).\n"
+            "⚠️ Будет сгенерирован новый временный пароль (5-8 символов).\n"
             "Пользователю будет необходимо сменить его при следующем входе.\n\n"
             "**Вы уверены?**"
         )
@@ -754,11 +754,12 @@ async def handle_confirm_reset_password(chat_id: int, user_id: str, app: Client)
             )
             return
 
-        # Генерировать новый временный пароль (16 символов)
+        # Генерировать новый временный пароль (5-8 символов)
         import secrets
         import string
+        import random
         alphabet = string.ascii_letters + string.digits
-        new_password = ''.join(secrets.choice(alphabet) for _ in range(16))
+        new_password = ''.join(secrets.choice(alphabet) for _ in range(random.randint(5, 8)))
 
         # Установить срок действия временного пароля (3 дня)
         expires_at = datetime.now() + timedelta(days=3)
