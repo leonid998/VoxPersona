@@ -1139,42 +1139,51 @@ async def handle_confirm_delete(chat_id: int, user_id: str, app: Client):
             await handle_user_details(chat_id, user_id, app)
             return
 
-        # Сохранить данные для логирования
+        # Сохранить данные для уведомления (до удаления)
         deleted_username = target_user.username
         deleted_role = target_user.role
 
-        # Удалить все сессии пользователя
+        # Шаг 1: Заблокировать пользователя перед удалением
+        # ВАЖНО: новый API delete_user() требует чтобы пользователь был уже soft-deleted (is_active=False)
         try:
-            auth.storage.delete_all_sessions(user_id)
-            logger.info(f"All sessions deleted for user_id={user_id}")
+            await auth.block_user(user_id, admin_user.user_id)
+            logger.info(f"User blocked before deletion: user_id={user_id}")
         except Exception as e:
-            logger.error(f"Failed to delete sessions for user_id={user_id}: {e}")
-
-        # Удалить пользователя через AuthManager
-        success = auth.storage.delete_user(user_id)
-
-        if not success:
+            logger.error(f"Failed to block user before deletion: {e}")
             await track_and_send(
                 chat_id=chat_id,
                 app=app,
-                text="❌ Не удалось удалить пользователя.",
+                text="❌ Не удалось заблокировать пользователя перед удалением.",
                 message_type="status_message"
             )
             return
 
-        # Audit logging
-        auth.storage.log_auth_event(
-            AuthAuditEvent(
-                event_id=str(uuid.uuid4()),
-                event_type="USER_DELETED",
-                user_id=user_id,
-                details={
-                    "admin_id": admin_user.user_id,
-                    "deleted_username": deleted_username,
-                    "deleted_role": deleted_role
-                }
+        # Шаг 2: Физически удалить пользователя через новый API
+        # Этот метод делает ВСЁ: удаляет сессии, создает audit log, физически удаляет директорию
+        try:
+            await auth.delete_user(user_id, admin_user.user_id)
+            logger.info(f"User permanently deleted: user_id={user_id} by admin={admin_user.user_id}")
+        except ValueError as e:
+            # Пользователь не найден или не заблокирован
+            logger.error(f"Cannot delete user {user_id}: {e}")
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text=f"❌ Ошибка: {str(e)}",
+                message_type="status_message"
             )
-        )
+            return
+        except RuntimeError as e:
+            # Ошибка при физическом удалении директории или базы данных
+            logger.error(f"Failed to physically delete user {user_id}: {e}")
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="❌ Не удалось физически удалить данные пользователя.",
+                message_type="status_message"
+            )
+            return
+
 
         # Уведомление о успехе
         await track_and_send(
