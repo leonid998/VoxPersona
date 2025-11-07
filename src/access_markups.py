@@ -121,7 +121,7 @@ def access_user_list_markup(users: List[Dict], page: int, total_pages: int) -> I
 
     return InlineKeyboardMarkup(buttons)
 
-def access_user_details_markup(user_id: str) -> InlineKeyboardMarkup:
+def access_user_details_markup(user, user_id: str) -> InlineKeyboardMarkup:
     """
     Детали пользователя с действиями.
 
@@ -136,12 +136,17 @@ def access_user_details_markup(user_id: str) -> InlineKeyboardMarkup:
     Returns:
         InlineKeyboardMarkup с кнопками действий
     """
+    # Динамическая кнопка на основе is_active (единый источник истины)
+    is_blocked = not user.is_active
+    block_button_text = "✅ Разблокировать" if is_blocked else "🚫 Заблокировать"
+    
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("        ✏️ Редактировать        ", callback_data=f"access_edit_user||{user_id}")],
-        [InlineKeyboardButton("        🚫 Заблокировать/Разблокировать        ", callback_data=f"access_toggle_block||{user_id}")],
+        [InlineKeyboardButton(f"        {block_button_text}        ", callback_data=f"access_toggle_block||{user_id}")],
         [InlineKeyboardButton("        🗑 Удалить        ", callback_data=f"access_delete_user_confirm||{user_id}")],
         [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="access_list_users")]
     ])
+
 
 def access_edit_user_markup(user_id: str) -> InlineKeyboardMarkup:
     """

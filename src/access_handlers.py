@@ -343,7 +343,7 @@ async def handle_user_details(chat_id: int, user_id: str, app: Client):
             chat_id=chat_id,
             app=app,
             text=text,
-            reply_markup=access_user_details_markup(user_id),
+            reply_markup=access_user_details_markup(user, user_id),
             message_type="menu"
         )
 
@@ -876,13 +876,19 @@ async def handle_toggle_block_user(chat_id: int, user_id: str, app: Client):
             return
 
         # Определить действие (блокировать или разблокировать)
-        action = "разблокировать" if user.is_blocked else "заблокировать"
-        emoji = "✅" if user.is_blocked else "🚫"
+        # Вычислить статус блокировки из is_active (единый источник истины)
+        is_blocked = not user.is_active
+        action = "разблокировать" if is_blocked else "заблокировать"
+        emoji = "✅" if is_blocked else "🚫"
+
+        # Подготовить тексты для f-string (избегаем backslash)
+        block_action = "РАЗБЛОКИРОВКА" if is_blocked else "БЛОКИРОВКА"
+        status_display = "🚫 Заблокирован" if is_blocked else "✅ Активен"
 
         text = (
-            f"{emoji} **{'РАЗБЛОКИРОВКА' if user.is_blocked else 'БЛОКИРОВКА'} ПОЛЬЗОВАТЕЛЯ**\n\n"
+            f"{emoji} **{block_action} ПОЛЬЗОВАТЕЛЯ**\n\n"
             f"Пользователь: {user.username}\n"
-            f"Текущий статус: {'🚫 Заблокирован' if user.is_blocked else '✅ Активен'}\n\n"
+            f"Текущий статус: {status_display}\n\n"
             f"⚠️ Вы хотите {action} этого пользователя?\n\n"
             "**Вы уверены?**"
         )
@@ -952,10 +958,14 @@ async def handle_confirm_block(chat_id: int, user_id: str, app: Client):
             return
 
         # Переключить статус блокировки
-        new_blocked_status = not target_user.is_blocked
+        # СИНХРОНИЗАЦИЯ: is_active и is_blocked должны быть инверсны
+        # Блокируем: is_active=False, is_blocked=True
+        # Разблокируем: is_active=True, is_blocked=False
+        new_active_status = target_user.is_blocked  # Инверсия: если был заблокирован → делаем активным
 
-        # Обновить статус: изменить поля объекта и сохранить
-        target_user.is_blocked = new_blocked_status
+        # Обновить оба поля синхронно (единый источник истины)
+        target_user.is_active = new_active_status
+        target_user.is_blocked = not new_active_status  # Инверсия is_active
         target_user.updated_at = datetime.now()
         success = auth.storage.update_user(target_user)
 
@@ -967,6 +977,9 @@ async def handle_confirm_block(chat_id: int, user_id: str, app: Client):
                 message_type="status_message"
             )
             return
+
+        # Вычислить новый статус блокировки для логирования (на основе is_active)
+        new_blocked_status = not target_user.is_active
 
         # Определить текст события для логирования
         event_type = "USER_BLOCKED" if new_blocked_status else "USER_UNBLOCKED"

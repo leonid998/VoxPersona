@@ -693,8 +693,10 @@ class AuthManager:
             logger.warning(f"Block user failed: user not found (user_id={user_id})")
             return False
 
-        # Установить is_blocked=True
+        # Установить is_blocked=True и синхронизировать is_active
+        # СИНХРОНИЗАЦИЯ: is_active и is_blocked должны быть инверсны
         user.is_blocked = True
+        user.is_active = False  # Блокировка = делаем неактивным
         user.updated_at = datetime.now()
 
         if not self.storage.update_user(user):
@@ -730,8 +732,10 @@ class AuthManager:
             logger.warning(f"Unblock user failed: user not found (user_id={user_id})")
             return False
 
-        # Установить is_blocked=False
+        # Установить is_blocked=False и синхронизировать is_active
+        # СИНХРОНИЗАЦИЯ: is_active и is_blocked должны быть инверсны
         user.is_blocked = False
+        user.is_active = True  # Разблокировка = делаем активным
         user.updated_at = datetime.now()
 
         if not self.storage.update_user(user):
