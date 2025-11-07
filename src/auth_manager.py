@@ -703,27 +703,57 @@ class AuthManager:
             logger.error(f"Failed to update user during block (user_id={user_id})")
             return False
 
+        # Завершить все активные сессии заблокированного пользователя
+        # ВАЖНО: Удаление сессий предотвращает технический долг в БД (sessions.json)
+        # - Уменьшает размер файла sessions.json
+        # - Исключает путаницу при отладке ("почему у заблокированного пользователя есть сессии?")
+        # - Соблюдает принцип "чистой БД" (нет висячих записей)
+        #
+        # Примечание: Даже если сессии останутся, auth_filter будет блокировать доступ
+        # (проверка is_blocked при каждом запросе), но удаление сессий — правильная
+        # практика управления жизненным циклом данных.
+        try:
+            sessions_deleted = self.storage.delete_all_sessions(user_id)
+            logger.info(f"Deleted {sessions_deleted} session(s) for blocked user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete sessions for blocked user {user_id}: {e}")
+            sessions_deleted = 0
+
         # Audit log
         event = AuthAuditEvent(
             event_id=str(uuid4()),
             event_type="USER_BLOCKED",
             user_id=user_id,
-            details={"blocked_by": blocked_by_user_id}
+            details={
+                "blocked_by": blocked_by_user_id,
+                "sessions_deleted": sessions_deleted  # Добавляем в audit trail
+            }
         )
         self.storage.log_auth_event(event)
 
-        logger.info(f"User blocked: {user_id} (blocked_by={blocked_by_user_id})")
+        logger.info(
+            f"User blocked: {user_id} (blocked_by={blocked_by_user_id}, "
+            f"sessions_deleted={sessions_deleted})"
+        )
         return True
 
     async def unblock_user(self, user_id: str) -> bool:
         """
         Разблокирует пользователя.
 
+        ВАЖНО: Сессии НЕ создаются автоматически после разблокировки.
+        Пользователь должен заново войти в систему через /login для создания новой сессии.
+        Это сделано намеренно для безопасности - разблокировка не означает автоматический вход.
+
         Args:
             user_id: ID пользователя для разблокировки
 
         Returns:
             bool: True если разблокировка успешна, False при ошибке
+
+        Note:
+            После разблокировки пользователь может войти через команду /login.
+            Auth filter будет пропускать запросы только после создания новой сессии при входе.
         """
         # Получить пользователя
         user = self.storage.get_user(user_id)
