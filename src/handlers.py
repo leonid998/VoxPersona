@@ -1249,6 +1249,7 @@ def register_handlers(app: Client):
         """
         c_id = message.chat.id
         telegram_id = message.from_user.id
+        app = client  # Алиас для единообразия с другими FSM обработчиками
 
         # Проверить FSM state
         if c_id not in user_states:
@@ -1280,17 +1281,36 @@ def register_handlers(app: Client):
 
         # K-03: Регистрация - шаг 2: password
         elif current_step == "registration_password":
-            await handle_registration_password_input(c_id, message, client)
+            await handle_registration_password_input(c_id, message, app)
             return
 
         # K-03: Регистрация - шаг 3: confirm password
         elif current_step == "registration_confirm_password":
-            await handle_registration_confirm_password_input(c_id, message, client)
+            await handle_registration_confirm_password_input(c_id, message, app)
             return
 
         # Существующая логика: awaiting_password (логин)
         elif current_step == "awaiting_password":
-            await handle_login_password_input(c_id, message, client)
+            await handle_login_password_input(c_id, message, app)
+            return
+
+        # K-08: Смена пароля - шаг 1: текущий пароль
+        # Делегирование в access_handlers.py для валидации текущего пароля
+        elif current_step == "password_change_current":
+            await handle_password_change_current_input(c_id, message.text.strip(), app)
+            return
+
+        # K-08: Смена пароля - шаг 2: новый пароль
+        # Делегирование в access_handlers.py для валидации нового пароля
+        elif current_step == "password_change_new":
+            await handle_password_change_new_input(c_id, message.text.strip(), app)
+            return
+
+        # K-08: Смена пароля - шаг 3: подтверждение пароля
+        # Делегирование в access_handlers.py для финализации смены пароля
+        # Исправляет ошибку "Unknown FSM state: step=password_change_confirm"
+        elif current_step == "password_change_confirm":
+            await handle_password_change_confirm_input(c_id, message.text.strip(), app)
             return
 
         # Неизвестный state
