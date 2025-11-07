@@ -23,6 +23,7 @@ AuthStorageManager - Storage Manager с threading.Lock для системы а�
 
 import json
 import logging
+import shutil
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -373,6 +374,58 @@ class AuthStorageManager(BaseStorageManager):
 
             except Exception as e:
                 logger.error(f"Failed to soft delete user {user_id}: {e}")
+                return False
+
+    def hard_delete_user(self, user_id: str) -> bool:
+        """
+        Полностью удаляет пользователя (физически удаляет все файлы и директорию).
+
+        КРИТИЧНО:
+        - Удаляет user.json
+        - Удаляет sessions.json
+        - Удаляет audit_log.json
+        - Удаляет директорию user_{user_id}/ рекурсивно
+
+        Thread-safe операция с использованием per-user lock.
+
+        Args:
+            user_id: ID пользователя для удаления
+
+        Returns:
+            bool: True если удаление успешно, False при ошибке
+
+        Автор: backend-developer
+        Дата: 2025-11-07
+        Задача: Исправление ошибки удаления пользователя (#00007_20251105_YEIJEG/08_del_user)
+        Причина: Существующий delete_user() делает soft delete, нужно физическое удаление
+        """
+        lock = self._get_user_lock(user_id)
+
+        with lock:
+            user_dir = self.base_path / f"user_{user_id}"
+
+            # Проверка: директория должна существовать
+            if not user_dir.exists():
+                logger.warning(f"Cannot hard delete non-existent user: {user_id}")
+                return False
+
+            try:
+                # ФИЗИЧЕСКОЕ УДАЛЕНИЕ: удалить всю директорию рекурсивно
+                # Используем shutil.rmtree для удаления директории со всем содержимым
+                # Это удалит user.json, sessions.json, audit_log.json и саму директорию
+                shutil.rmtree(user_dir)
+
+                logger.info(f"User hard deleted (physical): {user_id}, directory removed: {user_dir}")
+                return True
+
+            except PermissionError as e:
+                # Ошибка прав доступа - не можем удалить файлы
+                logger.error(f"Permission denied to hard delete user {user_id}: {e}")
+                return False
+
+            except Exception as e:
+                # Любая другая ошибка при удалении
+                logger.error(f"Failed to hard delete user {user_id}: {e}")
                 return False
 
     def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
