@@ -1118,6 +1118,89 @@ async def handle_menu_dialog(chat_id: int, app: Client):
         make_dialog_markup()
     )
 
+# === AUTH: Проверка авторизации для callback_query ===
+
+async def verify_callback_auth(telegram_id: int, callback_data: str = "") -> tuple[bool, str, str | None]:
+    """
+    Проверка авторизации для callback_query.
+
+    КРИТИЧНО: Callback_query НЕ поддерживает filters в Pyrogram,
+    поэтому требуется ручная проверка авторизации.
+
+    Блокирует:
+    - Удаленных пользователей (не найден в БД)
+    - Неактивных пользователей (is_active=False)
+    - Заблокированных пользователей (is_blocked=True)
+    - Пользователей без активной сессии
+
+    Args:
+        telegram_id: Telegram ID пользователя
+        callback_data: Данные callback для логирования (опционально)
+
+    Returns:
+        tuple[bool, str, str | None]: (разрешено, сообщение_ошибки, user_id)
+            - разрешено: True если все проверки пройдены
+            - сообщение_ошибки: Текст ошибки для пользователя (если не разрешено)
+            - user_id: ID пользователя в системе (если найден)
+
+    Example:
+        >>> allowed, error_msg, user_id = await verify_callback_auth(123456789)
+        >>> if not allowed:
+        ...     await callback.answer(error_msg, show_alert=True)
+        ...     return
+    """
+    auth = get_auth_manager()
+
+    if not auth:
+        logger.error("verify_callback_auth: auth_manager not initialized!")
+        return False, "❌ Ошибка авторизации", None
+
+    # Получить пользователя из БД
+    user = auth.storage.get_user_by_telegram_id(telegram_id)
+
+    # Проверка 1: Пользователь существует
+    if not user:
+        logger.warning(
+            f"Callback blocked: user not found "
+            f"(telegram_id={telegram_id}, callback_data={callback_data})"
+        )
+        return False, "❌ Доступ запрещен. Пользователь не найден.", None
+
+    # Проверка 2: Пользователь активен
+    if not user.is_active:
+        logger.warning(
+            f"Callback blocked: user inactive "
+            f"(user_id={user.user_id}, telegram_id={telegram_id})"
+        )
+        return False, "❌ Доступ запрещен. Аккаунт деактивирован.", user.user_id
+
+    # Проверка 3: Пользователь не заблокирован
+    if user.is_blocked:
+        logger.warning(
+            f"Callback blocked: user blocked "
+            f"(user_id={user.user_id}, telegram_id={telegram_id})"
+        )
+        return False, "🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.", user.user_id
+
+    # Проверка 4: Активная сессия существует
+    active_session = auth.storage.get_active_session_by_telegram_id(telegram_id)
+    if not active_session:
+        logger.warning(
+            f"Callback blocked: no active session "
+            f"(telegram_id={telegram_id})"
+        )
+        return False, "❌ Сессия истекла. Войдите заново через /login", user.user_id
+
+    # ==================== АВТОРИЗАЦИЯ ПРОЙДЕНА ====================
+    logger.debug(
+        f"Callback authorized successfully "
+        f"(user_id={user.user_id}, telegram_id={telegram_id}, data={callback_data})"
+    )
+
+    return True, "", user.user_id
+
+# === КОНЕЦ AUTH ===
+
 def register_handlers(app: Client):
     """
     Регистрируем все хендлеры Pyrogram.
@@ -1899,75 +1982,18 @@ def register_handlers(app: Client):
         data = callback.data
 
         # ==================== ПРОВЕРКА АВТОРИЗАЦИИ ====================
-        # КРИТИЧНО: Callback_query НЕ поддерживает filters, требуется ручная проверка
-        # Блокирует удаленных, заблокированных, неактивных пользователей и без сессии
-
+        # Вызов verify_callback_auth() для проверки авторизации
+        # (рефакторинг: вынесено в отдельную функцию для тестируемости)
         telegram_id = callback.from_user.id
-        auth = get_auth_manager()
 
-        if not auth:
-            logger.error("Callback handler: auth_manager not initialized!")
-            await callback.answer("❌ Ошибка авторизации", show_alert=True)
-            return
+        allowed, error_message, user_id = await verify_callback_auth(telegram_id, data)
 
-        # Получить пользователя из БД
-        user = auth.storage.get_user_by_telegram_id(telegram_id)
-
-        # Проверка 1: Пользователь существует
-        if not user:
-            logger.warning(
-                f"Callback blocked: user not found "
-                f"(telegram_id={telegram_id}, callback_data={data})"
-            )
-            await callback.answer(
-                "❌ Доступ запрещен. Пользователь не найден.",
-                show_alert=True
-            )
-            return
-
-        # Проверка 2: Пользователь активен
-        if not user.is_active:
-            logger.warning(
-                f"Callback blocked: user inactive "
-                f"(user_id={user.user_id}, telegram_id={telegram_id})"
-            )
-            await callback.answer(
-                "❌ Доступ запрещен. Аккаунт деактивирован.",
-                show_alert=True
-            )
-            return
-
-        # Проверка 3: Пользователь не заблокирован
-        if user.is_blocked:
-            logger.warning(
-                f"Callback blocked: user blocked "
-                f"(user_id={user.user_id}, telegram_id={telegram_id})"
-            )
-            await callback.answer(
-                "🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.",
-                show_alert=True
-            )
-            return
-
-        # Проверка 4: Активная сессия существует
-        active_session = auth.storage.get_active_session_by_telegram_id(telegram_id)
-        if not active_session:
-            logger.warning(
-                f"Callback blocked: no active session "
-                f"(telegram_id={telegram_id})"
-            )
-            await callback.answer(
-                "❌ Сессия истекла. Войдите заново через /login",
-                show_alert=True
-            )
+        if not allowed:
+            await callback.answer(error_message, show_alert=True)
             return
 
         # ==================== АВТОРИЗАЦИЯ ПРОЙДЕНА ====================
-        # Продолжить обработку callback
-        logger.debug(
-            f"Callback authorized successfully "
-            f"(user_id={user.user_id}, telegram_id={telegram_id}, data={data})"
-        )
+        # Продолжить обработку callback (user_id доступен из verify_callback_auth)
 
         # ============ MENU CRAWLER PROTECTION ============
         # Защита от опасных действий для тестового пользователя
