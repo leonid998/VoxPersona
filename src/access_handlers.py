@@ -281,7 +281,7 @@ async def handle_user_details(chat_id: int, user_id: str, app: Client):
             return
 
         # Получить пользователя
-        user = await asyncio.to_thread(auth.storage.get_user, user_id)
+        user = auth.storage.get_user(user_id)
         if not user:
             await track_and_send(
                 chat_id=chat_id,
