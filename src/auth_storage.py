@@ -385,6 +385,8 @@ class AuthStorageManager(BaseStorageManager):
         - Удаляет sessions.json
         - Удаляет audit_log.json
         - Удаляет директорию user_{user_id}/ рекурсивно
+        - Проверяет что пользователь был soft-deleted (is_active=False) перед удалением
+        - Защищен от path traversal атак
 
         Thread-safe операция с использованием per-user lock.
 
@@ -394,20 +396,66 @@ class AuthStorageManager(BaseStorageManager):
         Returns:
             bool: True если удаление успешно, False при ошибке
 
-        Автор: backend-developer
+        Автор: backend-developer, code-reviewer
         Дата: 2025-11-07
         Задача: Исправление ошибки удаления пользователя (#00007_20251105_YEIJEG/08_del_user)
         Причина: Существующий delete_user() делает soft delete, нужно физическое удаление
+        Обновлено: Исправлены критические проблемы безопасности (path traversal, memory leak)
         """
+        # ВАЛИДАЦИЯ: защита от path traversal атак
+        # user_id не должен содержать path separators или parent directory references
+        if "/" in user_id or "\\" in user_id or ".." in user_id:
+            logger.error(f"Invalid user_id detected (path traversal attempt?): {user_id}")
+            return False
+
         lock = self._get_user_lock(user_id)
 
         with lock:
             user_dir = self.base_path / f"user_{user_id}"
 
+            # БЕЗОПАСНОСТЬ: убедиться что user_dir находится внутри base_path
+            # Это дополнительная защита от path traversal
+            try:
+                user_dir_resolved = user_dir.resolve()
+                base_path_resolved = self.base_path.resolve()
+
+                if not str(user_dir_resolved).startswith(str(base_path_resolved)):
+                    logger.error(f"Security violation: user_dir outside base_path: {user_dir_resolved}")
+                    return False
+            except Exception as e:
+                logger.error(f"Path resolution failed for user {user_id}: {e}")
+                return False
+
             # Проверка: директория должна существовать
             if not user_dir.exists():
                 logger.warning(f"Cannot hard delete non-existent user: {user_id}")
                 return False
+
+            # ПРОВЕРКА WORKFLOW: пользователь должен быть soft-deleted перед hard delete
+            # Это предотвращает случайное удаление активных пользователей
+            user_file = user_dir / "user.json"
+            if user_file.exists():
+                try:
+                    user_data = self.atomic_read(user_file)
+                    if user_data and user_data.get("is_active", True):
+                        logger.error(
+                            f"Cannot hard delete active user: {user_id}. "
+                            f"Use delete_user() first to soft-delete (set is_active=False)."
+                        )
+                        return False
+                except Exception as e:
+                    logger.error(f"Failed to read user.json for validation: {user_id}: {e}")
+                    return False
+
+            # Подсчитать количество файлов для audit trail
+            try:
+                files_count = sum(1 for _ in user_dir.rglob("*") if _.is_file())
+            except Exception:
+                files_count = 0  # Не критично если не удалось подсчитать
+
+            logger.info(
+                f"Hard deleting user {user_id}: directory={user_dir}, files_count={files_count}"
+            )
 
             try:
                 # ФИЗИЧЕСКОЕ УДАЛЕНИЕ: удалить всю директорию рекурсивно
@@ -415,7 +463,18 @@ class AuthStorageManager(BaseStorageManager):
                 # Это удалит user.json, sessions.json, audit_log.json и саму директорию
                 shutil.rmtree(user_dir)
 
-                logger.info(f"User hard deleted (physical): {user_id}, directory removed: {user_dir}")
+                logger.info(
+                    f"User hard deleted (physical): {user_id}, "
+                    f"directory removed: {user_dir}, files deleted: {files_count}"
+                )
+
+                # КРИТИЧНО: Очистить per-user lock из памяти после удаления
+                # Это предотвращает memory leak при множественных удалениях
+                with self._lock_manager:
+                    if user_id in self._user_locks:
+                        del self._user_locks[user_id]
+                        logger.debug(f"Removed lock for deleted user: {user_id}")
+
                 return True
 
             except PermissionError as e:
@@ -423,11 +482,27 @@ class AuthStorageManager(BaseStorageManager):
                 logger.error(f"Permission denied to hard delete user {user_id}: {e}")
                 return False
 
+            except FileNotFoundError as e:
+                # TOCTOU race: директория удалена между проверкой и удалением
+                # Это не ошибка - цель достигнута (директория удалена)
+                logger.warning(f"User directory already deleted (TOCTOU race): {user_id}: {e}")
+
+                # Очистить lock даже в этом случае
+                with self._lock_manager:
+                    if user_id in self._user_locks:
+                        del self._user_locks[user_id]
+
+                return True
+
+            except OSError as e:
+                # Файл заблокирован другим процессом, диск только для чтения, и т.д.
+                logger.error(f"OS error during hard delete user {user_id}: {e}")
+                return False
+
             except Exception as e:
                 # Любая другая ошибка при удалении
                 logger.error(f"Failed to hard delete user {user_id}: {e}")
                 return False
-
     def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
         """
         Получает пользователя по telegram_id.
