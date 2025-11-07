@@ -645,7 +645,7 @@ class AuthManager:
 
         return role.permissions.copy()
 
-    # ========== 4. УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ (7 методов) ==========
+    # ========== 4. УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ (8 методов) ==========
 
     async def list_users(self, include_inactive: bool = False) -> List[User]:
         """
@@ -955,6 +955,102 @@ class AuthManager:
 
         # 6. Вернуть временный пароль
         return new_password
+
+
+    async def delete_user(self, user_id: str, deleted_by_user_id: str) -> None:
+        """
+        Безвозвратно удаляет пользователя и все его данные.
+
+        ВАЖНО: Можно удалить только soft-deleted пользователей (is_active=False).
+        Для удаления активного пользователя сначала используйте block_user().
+
+        Операции (в порядке выполнения):
+        1. Проверка существования пользователя
+        2. Проверка что пользователь уже заблокирован (is_active=False)
+        3. Сохранение данных для audit log
+        4. Удаление всех сессий
+        5. Запись audit event
+        6. Физическое удаление директории пользователя
+
+        Args:
+            user_id: ID удаляемого пользователя
+            deleted_by_user_id: ID администратора, выполняющего удаление
+
+        Raises:
+            ValueError: Если пользователь не найден или активен
+            RuntimeError: Если не удалось физически удалить данные
+
+        Returns:
+            None
+        """
+        # 1. Проверка существования пользователя
+        # Получаем объект пользователя из хранилища для валидации его существования
+        user = self.storage.get_user(user_id)
+        if not user:
+            # Логируем ошибку и выбрасываем исключение, т.к. нельзя удалить несуществующего пользователя
+            logger.error(f"Delete user failed: user not found (user_id={user_id})")
+            raise ValueError(f"Пользователь не найден: {user_id}")
+
+        # 2. Проверка что пользователь soft-deleted (is_active=False)
+        # КРИТИЧНО: Безопасность - запрещаем удаление активных пользователей
+        # Это защищает от случайного удаления работающих учетных записей
+        # Требуем сначала блокировку через block_user(), что создает audit trail
+        if user.is_active:
+            logger.warning(
+                f"Delete user failed: user is active (user_id={user_id}, is_active={user.is_active})"
+            )
+            raise ValueError(
+                f"Нельзя удалить активного пользователя. Используйте block_user() сначала."
+            )
+
+        # 3. Сохранение данных пользователя для audit log
+        # КРИТИЧНО: Сохраняем ПЕРЕД удалением, т.к. после удаления данные будут потеряны
+        # Эти данные необходимы для audit trail и возможного восстановления информации
+        user_data = {
+            "username": user.username,
+            "role": user.role,
+            "telegram_id": user.telegram_id,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        }
+
+        # 4. Удаление всех сессий
+        # Очищаем все активные сессии перед удалением пользователя
+        # Это предотвращает "зависшие" сессии и освобождает ресурсы
+        sessions_deleted = self.storage.delete_all_sessions(user_id)
+        logger.info(f"Deleted sessions for user {user_id}: {sessions_deleted}")
+
+        # 5. Запись audit event (ПЕРЕД физическим удалением!)
+        # КРИТИЧНО: Записываем событие ПЕРЕД удалением, чтобы гарантировать его сохранение
+        # Если удаление не удастся, у нас будет запись о попытке
+        # Если удаление удастся, у нас будет полная история с данными пользователя
+        event = AuthAuditEvent(
+            event_id=str(uuid4()),
+            event_type="USER_DELETED",  # Новый тип события для физического удаления
+            user_id=user_id,
+            details={
+                "deleted_by": deleted_by_user_id,  # Кто выполнил удаление (для accountability)
+                "user_data": user_data,  # Сохраненные данные пользователя
+                "sessions_deleted": sessions_deleted  # Количество удаленных сессий
+            }
+        )
+        self.storage.log_auth_event(event)
+
+        # 6. Вызов физического удаления
+        # Физически удаляем директорию пользователя и все его данные
+        # Это необратимая операция - после этого данные восстановить невозможно
+        success = self.storage.hard_delete_user(user_id)
+        if not success:
+            # Логируем критическую ошибку и выбрасываем RuntimeError
+            # Это означает проблемы с файловой системой или правами доступа
+            logger.error(f"Failed to physically delete user {user_id}")
+            raise RuntimeError(f"Не удалось физически удалить пользователя {user_id}")
+
+        # 7. Финальное логирование
+        # Подтверждаем успешное завершение операции с полным контекстом
+        logger.info(
+            f"User permanently deleted: {user_id} (deleted_by={deleted_by_user_id}, "
+            f"username={user_data['username']})"
+        )
 
     # ========== 5. УПРАВЛЕНИЕ ПРИГЛАШЕНИЯМИ (2 метода) ==========
 
