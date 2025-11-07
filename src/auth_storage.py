@@ -315,7 +315,7 @@ class AuthStorageManager(BaseStorageManager):
             bool: True если успешно
         """
         from auth_security import auth_security
-        from utils import iso_to_datetime
+        from auth_models import iso_to_datetime
         from datetime import datetime
 
         user = self.get_user(user_id)
