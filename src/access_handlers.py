@@ -757,9 +757,9 @@ async def handle_confirm_reset_password(chat_id: int, user_id: str, app: Client)
         # Генерировать новый временный пароль (5-8 символов)
         import secrets
         import string
-        import random
         alphabet = string.ascii_letters + string.digits
-        new_password = ''.join(secrets.choice(alphabet) for _ in range(random.randint(5, 8)))
+        password_length = secrets.randbelow(4) + 5  # Криптографически безопасная случайная длина 5-8
+        new_password = ''.join(secrets.choice(alphabet) for _ in range(password_length))
 
         # Установить срок действия временного пароля (3 дня)
         expires_at = datetime.now() + timedelta(days=3)
@@ -790,7 +790,8 @@ async def handle_confirm_reset_password(chat_id: int, user_id: str, app: Client)
                 details={
                     "admin_id": admin_user.user_id,
                     "reset_by_admin": True,
-                    "expires_at": expires_at.isoformat()
+                    "expires_at": expires_at.isoformat(),
+                    "password_length": password_length  # Для анализа статистики
                 }
             )
         )
