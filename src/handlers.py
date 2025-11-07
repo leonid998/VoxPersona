@@ -103,6 +103,7 @@ from handlers_my_reports_v2 import (
 
 # === AUTH: Импорты для управления доступом ===
 from auth_filters import auth_filter
+from config import get_auth_manager
 from access_handlers import (
     handle_access_menu,
     handle_users_menu,
@@ -1896,10 +1897,77 @@ def register_handlers(app: Client):
     async def callback_query_handler(client: Client, callback: CallbackQuery):
         c_id = callback.message.chat.id
         data = callback.data
-        try:
-            await callback.answer()
-        except:
-            pass
+
+        # ==================== ПРОВЕРКА АВТОРИЗАЦИИ ====================
+        # КРИТИЧНО: Callback_query НЕ поддерживает filters, требуется ручная проверка
+        # Блокирует удаленных, заблокированных, неактивных пользователей и без сессии
+
+        telegram_id = callback.from_user.id
+        auth = get_auth_manager()
+
+        if not auth:
+            logger.error("Callback handler: auth_manager not initialized!")
+            await callback.answer("❌ Ошибка авторизации", show_alert=True)
+            return
+
+        # Получить пользователя из БД
+        user = auth.storage.get_user_by_telegram_id(telegram_id)
+
+        # Проверка 1: Пользователь существует
+        if not user:
+            logger.warning(
+                f"Callback blocked: user not found "
+                f"(telegram_id={telegram_id}, callback_data={data})"
+            )
+            await callback.answer(
+                "❌ Доступ запрещен. Пользователь не найден.",
+                show_alert=True
+            )
+            return
+
+        # Проверка 2: Пользователь активен
+        if not user.is_active:
+            logger.warning(
+                f"Callback blocked: user inactive "
+                f"(user_id={user.user_id}, telegram_id={telegram_id})"
+            )
+            await callback.answer(
+                "❌ Доступ запрещен. Аккаунт деактивирован.",
+                show_alert=True
+            )
+            return
+
+        # Проверка 3: Пользователь не заблокирован
+        if user.is_blocked:
+            logger.warning(
+                f"Callback blocked: user blocked "
+                f"(user_id={user.user_id}, telegram_id={telegram_id})"
+            )
+            await callback.answer(
+                "🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.",
+                show_alert=True
+            )
+            return
+
+        # Проверка 4: Активная сессия существует
+        active_session = auth.storage.get_active_session_by_telegram_id(telegram_id)
+        if not active_session:
+            logger.warning(
+                f"Callback blocked: no active session "
+                f"(telegram_id={telegram_id})"
+            )
+            await callback.answer(
+                "❌ Сессия истекла. Войдите заново через /login",
+                show_alert=True
+            )
+            return
+
+        # ==================== АВТОРИЗАЦИЯ ПРОЙДЕНА ====================
+        # Продолжить обработку callback
+        logger.debug(
+            f"Callback authorized successfully "
+            f"(user_id={user.user_id}, telegram_id={telegram_id}, data={data})"
+        )
 
         # ============ MENU CRAWLER PROTECTION ============
         # Защита от опасных действий для тестового пользователя
