@@ -2755,15 +2755,75 @@ async def handle_password_change_new_input(chat_id: int, password: str, app: Cli
         old_password = state.get("old_password")
         skip_current = state.get("skip_current", False)
 
+        # ИСПРАВЛЕНИЕ: Автоматическое восстановление FSM из БД при его отсутствии
+        # Причина: Если FSM потерян (перезапуск сервера, сбой, timeout), пользователь
+        # с must_change_password=True попадает в deadlock и не может сменить пароль
+        # Решение: Попытаться восстановить FSM из БД по telegram_id
         if not user_id:
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="❌ Ошибка состояния. Пожалуйста, начните заново: /change_password",
-                message_type="status_message"
-            )
-            user_states.pop(chat_id, None)
-            return
+            logger.warning(f"FSM state missing for password change, attempting recovery: chat_id={chat_id}")
+
+            # Попытка получить пользователя по telegram_id для восстановления FSM
+            auth = get_auth_manager()
+            if auth:
+                user = auth.storage.get_user_by_telegram_id(chat_id)
+
+                # Восстановление возможно только если пользователь найден И требует смены пароля
+                if user and user.must_change_password:
+                    # Восстановить FSM из БД с текущими данными пользователя
+                    user_states[chat_id] = {
+                        "step": "password_change_new",
+                        "user_id": user.user_id,
+                        "skip_current": True,  # Пропускаем проверку старого пароля при восстановлении
+                        "recovered": True,  # Флаг для отслеживания восстановленных сессий
+                        "created_at": datetime.now(),
+                        "expires_at": datetime.now() + timedelta(minutes=10)
+                    }
+
+                    # Обновить локальные переменные для продолжения обработки пароля
+                    # КРИТИЧНО: НЕ делать return, а продолжить выполнение функции
+                    user_id = user.user_id
+                    skip_current = True
+
+                    logger.info(
+                        f"FSM state successfully recovered from DB: "
+                        f"chat_id={chat_id}, user_id={user_id}, must_change_password={user.must_change_password}"
+                    )
+
+                    # НЕ ВОЗВРАЩАТЬСЯ! Продолжить обработку нового пароля в основном коде ниже
+                else:
+                    # Восстановление не удалось: пользователь не найден ИЛИ не требует смены пароля
+                    error_msg = "❌ **Ошибка состояния**\n\n"
+
+                    if not user:
+                        error_msg += "Пользователь не найден в системе.\n\n"
+                        logger.warning(f"FSM recovery failed: user not found for chat_id={chat_id}")
+                    elif not user.must_change_password:
+                        error_msg += "Смена пароля не требуется для вашей учетной записи.\n\n"
+                        logger.warning(
+                            f"FSM recovery failed: user found but must_change_password=False "
+                            f"(chat_id={chat_id}, user_id={user.user_id})"
+                        )
+
+                    error_msg += "Начните заново: /change_password"
+
+                    await track_and_send(
+                        chat_id=chat_id,
+                        app=app,
+                        text=error_msg,
+                        message_type="status_message"
+                    )
+                    user_states.pop(chat_id, None)
+                    return
+            else:
+                # AuthManager не инициализирован - критическая ошибка системы
+                await track_and_send(
+                    chat_id=chat_id,
+                    app=app,
+                    text="❌ Ошибка системы. Попробуйте позже.",
+                    message_type="status_message"
+                )
+                logger.error(f"AuthManager not initialized during FSM recovery: chat_id={chat_id}")
+                return
 
         # Валидация нового пароля
         import re
