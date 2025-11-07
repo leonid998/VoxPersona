@@ -569,8 +569,8 @@ async def handle_confirm_role_change(chat_id: int, user_id: str, role: str, app:
             message_type="status_message"
         )
 
-        # Подождать перед возвратом к меню
-        await asyncio.sleep(NOTIFICATION_DELETE_TIME)
+        # ИСПРАВЛЕНО K-03-1: Удален блокирующий sleep - MessageTracker автоудалит уведомление в фоне
+        # Немедленный возврат в меню улучшает UX (пользователь не видит "зависание" бота)
         await handle_user_details(chat_id, user_id, app)
 
         logger.info(
@@ -829,8 +829,8 @@ async def handle_confirm_reset_password(chat_id: int, user_id: str, app: Client)
             message_type="status_message"
         )
 
-        # Подождать перед возвратом к меню
-        await asyncio.sleep(NOTIFICATION_DELETE_TIME)
+        # ИСПРАВЛЕНО K-03-1: Удален блокирующий sleep - MessageTracker автоудалит уведомление в фоне
+        # Немедленный возврат в меню улучшает UX (пользователь не видит "зависание" бота)
         await handle_user_details(chat_id, user_id, app)
 
         logger.info(
@@ -2046,8 +2046,8 @@ async def handle_confirm_revoke(chat_id: int, invite_code: str, app: Client):
             message_type="status_message"
         )
 
-        # Подождать перед возвратом к списку приглашений
-        await asyncio.sleep(NOTIFICATION_DELETE_TIME)
+        # ИСПРАВЛЕНО K-03-1: Удален блокирующий sleep - MessageTracker автоудалит уведомление в фоне
+        # Немедленный возврат в меню улучшает UX (пользователь не видит "зависание" бота)
         await handle_list_invitations(chat_id, 1, app)
 
         logger.info(
@@ -2922,9 +2922,8 @@ async def handle_password_change_confirm_input(chat_id: int, password: str, app:
             message_type="status_message"
         )
 
-        # Подождать перед возвратом к главному меню
-        await asyncio.sleep(NOTIFICATION_DELETE_TIME)
-
+        # ИСПРАВЛЕНО K-03-1: Удален блокирующий sleep - MessageTracker автоудалит уведомление в фоне
+        # Немедленный возврат в меню улучшает UX (пользователь не видит "зависание" бота)
         # Импорт главного меню
         from menus import send_main_menu
         await send_main_menu(chat_id, app)
