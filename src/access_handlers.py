@@ -1146,14 +1146,25 @@ async def handle_confirm_delete(chat_id: int, user_id: str, app: Client):
         # Шаг 1: Заблокировать пользователя перед удалением
         # ВАЖНО: новый API delete_user() требует чтобы пользователь был уже soft-deleted (is_active=False)
         try:
-            await auth.block_user(user_id, admin_user.user_id)
+            blocked = await auth.block_user(user_id, admin_user.user_id)
+            if not blocked:
+                # block_user() вернул False - операция не удалась
+                logger.error(f"Failed to block user before deletion: user_id={user_id}")
+                await track_and_send(
+                    chat_id=chat_id,
+                    app=app,
+                    text="❌ Не удалось заблокировать пользователя перед удалением.",
+                    message_type="status_message"
+                )
+                return
             logger.info(f"User blocked before deletion: user_id={user_id}")
         except Exception as e:
-            logger.error(f"Failed to block user before deletion: {e}")
+            # Непредвиденная ошибка (не должна происходить в нормальной ситуации)
+            logger.error(f"Unexpected error blocking user: {e}")
             await track_and_send(
                 chat_id=chat_id,
                 app=app,
-                text="❌ Не удалось заблокировать пользователя перед удалением.",
+                text="❌ Неожиданная ошибка при блокировке пользователя.",
                 message_type="status_message"
             )
             return
