@@ -98,6 +98,7 @@ RUN mkdir -p /app/logs
 COPY src/ ./src/
 COPY prompts/ ./prompts/
 COPY prompts-by-scenario/ ./prompts-by-scenario/
+COPY Description/ ./Description/
 
 # Only copy sql_scripts if it exists (conditional copy)
 COPY sql_scripts* ./sql_scripts/

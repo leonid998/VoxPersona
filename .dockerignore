@@ -37,6 +37,7 @@ htmlcov/
 *.md
 !README.md
 !DEPLOYMENT_GUIDE.md
+!Description/descry.md
 
 # Environment and configuration
 .env
