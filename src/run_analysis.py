@@ -17,6 +17,7 @@ from menu_manager import send_menu
 from message_tracker import track_and_send
 from analysis import analyze_methodology, classify_query, extract_from_chunk_parallel, aggregate_citations, classify_report_type, generate_db_answer, extract_from_chunk_parallel_async
 from storage import save_user_input_to_db, build_reports_grouped, create_db_in_memory
+from query_expander import expand_query
 
 
 def init_rags(existing_rags: dict | None = None) -> dict:
@@ -118,13 +119,76 @@ def run_deep_search(content: str, text: str, chat_id: int, app: Client, category
 
     return aggregated_answer
 
+async def show_expanded_query_menu(
+    chat_id: int,
+    app: Client,
+    original: str,
+    expanded: str,
+    conversation_id: str,
+    deep_search: bool
+):
+    """
+    Показывает оригинальный и улучшенный вопрос пользователю.
+
+    Args:
+        chat_id: ID чата Telegram
+        app: Pyrogram клиент
+        original: Исходный вопрос пользователя
+        expanded: Улучшенный вопрос
+        conversation_id: ID мультичата (может быть None)
+        deep_search: True = глубокое исследование, False = быстрый поиск
+    """
+    from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    # Формируем текст сообщения
+    text = (
+        f"📝 **Ваш вопрос:**\n"
+        f"_{original}_\n\n"
+        f"🔍 **Улучшенный вопрос:**\n"
+        f"*{expanded}*\n\n"
+        f"Отправить улучшенный вопрос в {'глубокое исследование' if deep_search else 'быстрый поиск'}?"
+    )
+
+    # ВРЕМЕННАЯ клавиатура (в ФАЗЕ 4 заменим на полноценную с hash и user_states)
+    # TODO ФАЗА 4: Заменить на make_query_expansion_markup()
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📤 Отправить в поиск", callback_data="expand_send_temp")],
+        [InlineKeyboardButton("🔄 Уточнить еще раз", callback_data="expand_refine_temp")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="menu_dialog")]
+    ])
+
+    # Отправляем меню
+    await send_menu(chat_id, app, text, markup)
+
 async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None):
     # Извлекаем данные из message
     text = message.text
     chat_id = message.chat.id
 
+    # ============ НАЧАЛО НОВОГО КОДА: QUERY EXPANSION ============
+    # Улучшение вопроса через Query Expansion
+    expansion_result = expand_query(text)
+
+    # Проверка: использован ли descry.md и улучшен ли вопрос
+    if expansion_result["used_descry"] and expansion_result["expanded"] != text:
+        # Показать пользователю улучшенный вопрос с опциями
+        await show_expanded_query_menu(
+            chat_id=chat_id,
+            app=app,
+            original=expansion_result["original"],
+            expanded=expansion_result["expanded"],
+            conversation_id=conversation_id,
+            deep_search=deep_search
+        )
+        return  # Ожидаем callback от пользователя
+
+    # Если улучшение не применено - используем исходный вопрос
+    text_to_search = expansion_result.get("expanded", text)
+    # ============ КОНЕЦ НОВОГО КОДА: QUERY EXPANSION ============
+
     try:
-        category = classify_query(text)
+        # Классифицируем УЛУЧШЕННЫЙ вопрос (вместо исходного)
+        category = classify_query(text_to_search)
         logging.info(f"Сценарий: {category}")
 
         if category.lower() == "дизайн":
@@ -144,6 +208,7 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
         username = await get_username_from_chat(chat_id, app)
 
         # Сохраняем вопрос пользователя в conversations (если передан conversation_id)
+        # ВАЖНО: Сохраняем ИСХОДНЫЙ вопрос пользователя, а не улучшенный
         if conversation_id:
             from conversation_manager import conversation_manager
             from conversations import ConversationMessage
@@ -153,7 +218,7 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
                 timestamp=datetime.now().isoformat(),
                 message_id=message.id,  # Используем реальный Telegram message ID
                 type="user_question",
-                text=text,
+                text=text,  # Сохраняем ИСХОДНЫЙ текст пользователя
                 tokens=0,  # Токены вопроса не считаем
                 sent_as=None,
                 file_path=None,
@@ -176,11 +241,13 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
             )
             logging.info("Запущено Глубокое исследование")
 
-            # report_type_code = classify_report_type(text, prompt_name=prompt_name)
+            # report_type_code = classify_report_type(text_to_search, prompt_name=prompt_name)
             # report_type = CLASSIFY_INTERVIEW[report_type_code] if scenario_name == "Интервью" else CLASSIFY_DESIGN[report_type_code]
             # content = rags[report_type]
             # logging.info(f"Тип отчета: {report_type}")
-            answer = run_deep_search(content, text=text, chat_id=chat_id, app=app, category=category)
+
+            # Используем УЛУЧШЕННЫЙ вопрос для глубокого поиска
+            answer = run_deep_search(content, text=text_to_search, chat_id=chat_id, app=app, category=category)
         else:
             # Отправляем системное сообщение-статус через MessageTracker
             await track_and_send(
@@ -194,17 +261,20 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
             # content = build_reports_grouped(scenario_name=scenario_name, report_type=None)
             # content = grouped_reports_to_string(content)
             # rag = rags[scenario_name]
-            answer = run_fast_search(text=text, rag=rag)
+
+            # Используем УЛУЧШЕННЫЙ вопрос для быстрого поиска
+            answer = run_fast_search(text=text_to_search, rag=rag)
 
         formatted_response = f"*Категория запроса:* {category}\n\n{answer}"
 
         # Используем умную отправку с автоматическим выбором между сообщением и MD файлом
+        # В вопросе отображаем ИСХОДНЫЙ текст пользователя
         await smart_send_text_unified(
             text=formatted_response,
             chat_id=chat_id,
             app=app,
             username=username,
-            question=text,
+            question=text,  # Отображаем ИСХОДНЫЙ вопрос пользователя
             search_type="deep" if deep_search else "fast",
             parse_mode=ParseMode.MARKDOWN,
             conversation_id=conversation_id
