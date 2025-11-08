@@ -16,7 +16,7 @@
 
 import os
 from typing import Dict
-from .analysis import send_msg_to_model
+from analysis import send_msg_to_model
 
 # Константа: путь к файлу с описанием БД (индексы)
 DESCRY_PATH = "Description/descry.md"
