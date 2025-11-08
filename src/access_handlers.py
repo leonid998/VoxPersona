@@ -68,6 +68,73 @@ from access_markups import (
 logger = logging.getLogger(__name__)
 
 # ========================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ========================================
+
+async def check_role_access(chat_id: int, allowed_roles: list, app: Client = None):
+    """
+    Проверяет что пользователь имеет одну из требуемых ролей.
+
+    Args:
+        chat_id: Telegram ID пользователя
+        allowed_roles: Список допустимых ролей (например: ["admin", "super_admin"])
+        app: Pyrogram Client (для отправки сообщения об ошибке)
+
+    Returns:
+        Tuple[bool, Optional[User]] - (доступ разрешен, объект пользователя)
+
+    Example:
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено
+
+    Комментарий:
+        Эта функция используется для проверки прав доступа на уровне бизнес-логики.
+        Защищает от прямого вызова callback минуя UI (например через /test_callback).
+        Отправляет понятное сообщение пользователю при отказе в доступе.
+    """
+    auth = get_auth_manager()
+    if not auth:
+        if app:
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="❌ Ошибка: система авторизации недоступна.",
+                message_type="menu"
+            )
+        return False, None
+
+    user = auth.storage.get_user_by_telegram_id(chat_id)
+    if not user:
+        if app:
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text="❌ Пользователь не найден.",
+                message_type="menu"
+            )
+        return False, None
+
+    if user.role not in allowed_roles:
+        if app:
+            # Формируем читаемый список ролей для сообщения
+            role_names = {
+                "super_admin": "Суперадминистратор",
+                "admin": "Администратор",
+                "user": "Пользователь"
+            }
+            roles_str = " или ".join([role_names.get(r, r) for r in allowed_roles])
+            await track_and_send(
+                chat_id=chat_id,
+                app=app,
+                text=f"❌ Доступ запрещен. Требуется роль: {roles_str}.",
+                message_type="menu"
+            )
+        return False, None
+
+    return True, user
+
+# ========================================
 # КОНСТАНТЫ
 # ========================================
 
@@ -98,27 +165,11 @@ async def handle_access_menu(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
-        auth = get_auth_manager()
-        if not auth:
-            logger.error("AuthManager не инициализирован!")
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="❌ Ошибка: система авторизации недоступна.",
-                message_type="menu"
-            )
-            return
-
-        # Получить информацию о пользователе
-        user = auth.storage.get_user_by_telegram_id(chat_id)
-        if not user:
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="❌ Пользователь не найден.",
-                message_type="menu"
-            )
-            return
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
 
         text = (
             "🔐 **НАСТРОЙКИ ДОСТУПА**\n\n"
@@ -155,6 +206,7 @@ async def handle_users_menu(chat_id: int, app: Client):
     """
     Меню управления пользователями.
 
+    Доступ: только super_admin
     callback_data: "access_users_menu"
 
     Args:
@@ -162,6 +214,12 @@ async def handle_users_menu(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         text = (
             "👥 **УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ**\n\n"
             "Выберите действие:"
@@ -191,6 +249,8 @@ async def handle_list_users(chat_id: int, page: int = 1, app: Client = None, rol
     """
     Список пользователей с пагинацией (10 на страницу).
 
+    Доступ: только super_admin
+
     callback_data: "access_list_users" или "access_list_users||page||{num}"
     Источник: 01_menu_structure.md:336-357, 02_menu_navigation.md:186-242
 
@@ -201,6 +261,12 @@ async def handle_list_users(chat_id: int, page: int = 1, app: Client = None, rol
         role_filter: Фильтр по роли (super_admin/admin/user/guest/all)
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -266,6 +332,8 @@ async def handle_user_details(chat_id: int, user_id: str, app: Client):
     """
     Детали пользователя с действиями.
 
+    Доступ: только super_admin
+
     callback_data: "access_user_details||{user_id}"
     Источник: 02_menu_navigation.md:188-228
 
@@ -275,6 +343,12 @@ async def handle_user_details(chat_id: int, user_id: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user_admin = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -364,6 +438,8 @@ async def handle_edit_user(chat_id: int, user_id: str, app: Client):
     """
     Меню редактирования пользователя.
 
+    Доступ: только super_admin
+
     callback_data: "access_edit_user||{user_id}"
     Источник: 01_menu_structure.md:360-377
 
@@ -373,6 +449,12 @@ async def handle_edit_user(chat_id: int, user_id: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user_admin = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -420,6 +502,8 @@ async def handle_change_role(chat_id: int, user_id: str, app: Client):
     """
     Запустить FSM смены роли пользователя (Шаг 1: выбор роли).
 
+    Доступ: только super_admin
+
     callback_data: "access_change_role||{user_id}"
     Источник: 02_menu_navigation.md:194-200
 
@@ -429,6 +513,12 @@ async def handle_change_role(chat_id: int, user_id: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user_admin = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -476,6 +566,8 @@ async def handle_confirm_role_change(chat_id: int, user_id: str, role: str, app:
     """
     Установить роль пользователя (Шаг 2: подтверждение).
 
+    Доступ: только super_admin
+
     callback_data: "access_set_role||{user_id}||{role}"
 
     Args:
@@ -485,13 +577,18 @@ async def handle_confirm_role_change(chat_id: int, user_id: str, role: str, app:
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, admin_user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
             return
 
-        # Получить администратора и пользователя
-        admin_user = auth.storage.get_user_by_telegram_id(chat_id)
+        # Получить пользователя
         target_user = auth.storage.get_user(user_id)
 
         if not admin_user or not target_user:
@@ -592,6 +689,8 @@ async def handle_change_user_settings(chat_id: int, user_id: str, app: Client):
     """
     Меню изменения настроек пользователя.
 
+    Доступ: только super_admin
+
     callback_data: "access_change_settings||{user_id}"
     Фаза: 2.2.1 (Обработчики изменения настроек)
 
@@ -607,6 +706,12 @@ async def handle_change_user_settings(chat_id: int, user_id: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user_admin = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -667,6 +772,8 @@ async def handle_reset_password(chat_id: int, user_id: str, app: Client):
     """
     Запросить подтверждение сброса пароля (Шаг 1: подтверждение).
 
+    Доступ: только super_admin
+
     callback_data: "access_reset_password||{user_id}"
     Источник: 02_menu_navigation.md:208-212
 
@@ -676,6 +783,12 @@ async def handle_reset_password(chat_id: int, user_id: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user_admin = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -728,6 +841,8 @@ async def handle_confirm_reset_password(chat_id: int, user_id: str, app: Client)
     """
     Сбросить пароль пользователя (Шаг 2: генерация нового).
 
+    Доступ: только super_admin
+
     callback_data: "access_confirm_reset||{user_id}"
 
     Args:
@@ -736,13 +851,18 @@ async def handle_confirm_reset_password(chat_id: int, user_id: str, app: Client)
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, admin_user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
             return
 
-        # Получить администратора и пользователя
-        admin_user = auth.storage.get_user_by_telegram_id(chat_id)
+        # Получить пользователя
         target_user = auth.storage.get_user(user_id)
 
         if not admin_user or not target_user:
@@ -852,6 +972,8 @@ async def handle_toggle_block_user(chat_id: int, user_id: str, app: Client):
     """
     Запросить подтверждение блокировки/разблокировки (Шаг 1: подтверждение).
 
+    Доступ: только super_admin
+
     callback_data: "access_toggle_block||{user_id}"
     Источник: 02_menu_navigation.md:216-220
 
@@ -861,6 +983,12 @@ async def handle_toggle_block_user(chat_id: int, user_id: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user_admin = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -922,6 +1050,8 @@ async def handle_confirm_block(chat_id: int, user_id: str, app: Client):
     """
     Заблокировать/разблокировать пользователя (Шаг 2: изменение статуса).
 
+    Доступ: только super_admin
+
     callback_data: "access_confirm_block||{user_id}"
 
     Args:
@@ -930,13 +1060,18 @@ async def handle_confirm_block(chat_id: int, user_id: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, admin_user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
             return
 
-        # Получить администратора и пользователя
-        admin_user = auth.storage.get_user_by_telegram_id(chat_id)
+        # Получить пользователя
         target_user = auth.storage.get_user(user_id)
 
         if not admin_user or not target_user:
@@ -1034,6 +1169,8 @@ async def handle_delete_user(chat_id: int, user_id: str, app: Client):
     """
     Запросить подтверждение удаления пользователя (Шаг 1: подтверждение).
 
+    Доступ: только super_admin
+
     Вызывается при нажатии кнопки "Удалить" в деталях пользователя.
     Показывает предупреждение с кнопками подтверждения/отмены.
 
@@ -1047,6 +1184,12 @@ async def handle_delete_user(chat_id: int, user_id: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user_admin = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -1102,6 +1245,8 @@ async def handle_confirm_delete(chat_id: int, user_id: str, app: Client):
     """
     Удалить пользователя (Шаг 2: удаление).
 
+    Доступ: только super_admin
+
     callback_data: "access_confirm_delete||{user_id}"
 
     Args:
@@ -1110,13 +1255,18 @@ async def handle_confirm_delete(chat_id: int, user_id: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, admin_user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
             return
 
-        # Получить администратора и пользователя
-        admin_user = auth.storage.get_user_by_telegram_id(chat_id)
+        # Получить пользователя
         target_user = auth.storage.get_user(user_id)
 
         if not admin_user or not target_user:
@@ -1230,6 +1380,8 @@ async def handle_filter_users_by_role(chat_id: int, app: Client):
     """
     Фильтр по ролям для списка пользователей.
 
+    Доступ: только super_admin
+
     callback_data: "access_filter_roles"
     Источник: 02_menu_navigation.md:231-238
 
@@ -1238,6 +1390,12 @@ async def handle_filter_users_by_role(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         text = (
             "🎭 **ФИЛЬТР ПО РОЛЯМ**\n\n"
             "Выберите роль для фильтрации списка пользователей:"
@@ -1267,6 +1425,8 @@ async def handle_search_user(chat_id: int, app: Client):
     """
     FSM: поиск пользователя (Шаг 1: запрос ввода имени/ID).
 
+    Доступ: только super_admin
+
     callback_data: "access_search_user"
     Источник: 02_menu_navigation.md:230, 712-713
 
@@ -1275,6 +1435,12 @@ async def handle_search_user(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         # Установить FSM состояние
         user_states[chat_id] = {
             "step": "access_search_user_input",
@@ -1314,6 +1480,8 @@ async def handle_search_user_input(chat_id: int, query: str, app: Client):
     """
     Обработать ввод поискового запроса (Шаг 2: показ результатов).
 
+    Доступ: только super_admin
+
     FSM step: "access_search_user_input"
 
     Args:
@@ -1322,6 +1490,12 @@ async def handle_search_user_input(chat_id: int, query: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -1418,6 +1592,8 @@ async def handle_invitations_menu(chat_id: int, app: Client):
     """
     Меню управления приглашениями.
 
+    Доступ: admin или super_admin
+
     callback_data: "access_invitations_menu"
     Источник: 01_menu_structure.md:380-397
 
@@ -1426,6 +1602,12 @@ async def handle_invitations_menu(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: admin ИЛИ super_admin
+        # Доступ к приглашениям имеют администраторы и выше (согласно K-04)
+        has_access, user = await check_role_access(chat_id, ["admin", "super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         text = (
             "📨 **УПРАВЛЕНИЕ ПРИГЛАШЕНИЯМИ**\n\n"
             "Создавайте пригласительные ссылки для новых пользователей.\n\n"
@@ -1456,6 +1638,8 @@ async def handle_create_invitation(chat_id: int, role: str, app: Client):
     """
     Создать приглашение для указанной роли.
 
+    Доступ: admin или super_admin
+
     Триггер: callback_data "access_create_invite||{role}" (role: admin или user)
     Источник: 02_menu_navigation.md:251-259
 
@@ -1465,51 +1649,11 @@ async def handle_create_invitation(chat_id: int, role: str, app: Client):
         app: Pyrogram Client
     """
     try:
-        # K-02: RBAC проверка - получить пользователя и проверить роль
-        auth = get_auth_manager()
-        if not auth:
-            logger.error("AuthManager не инициализирован!")
-            return
-
-        current_user = auth.storage.get_user_by_telegram_id(chat_id)
-        if not current_user:
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="❌ Пользователь не найден.",
-                message_type="status_message"
-            )
-            return
-
-        # K-02: КРИТИЧНО - проверка роли (super_admin и admin могут создавать приглашения)
-        if current_user.role not in ["super_admin", "admin"]:
-            # Audit logging: попытка нарушения RBAC
-            auth.storage.log_auth_event(
-                AuthAuditEvent(
-                    event_id=str(uuid.uuid4()),
-                    event_type="RBAC_VIOLATION",
-                    user_id=current_user.user_id,
-                    details={
-                        "action": "create_invitation_request",
-                        "required_roles": ["super_admin", "admin"],
-                        "actual_role": current_user.role,
-                        "telegram_id": chat_id
-                    }
-                )
-            )
-
-            logger.warning(
-                f"RBAC violation: user_id={current_user.user_id} "
-                f"(role={current_user.role}) attempted to create invitation"
-            )
-
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="❌ **Доступ запрещен**\n\nТолько администраторы могут создавать приглашения.",
-                message_type="status_message"
-            )
-            return
+        # ✅ ПРОВЕРКА РОЛИ: admin ИЛИ super_admin
+        # Доступ к приглашениям имеют администраторы и выше (согласно K-04)
+        has_access, current_user = await check_role_access(chat_id, ["admin", "super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
 
         # Валидация роли
         if role not in ["admin", "user"]:
@@ -1566,6 +1710,8 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
     """
     Создать приглашение (Шаг 2: генерация).
 
+    Доступ: admin или super_admin
+
     callback_data: "access_confirm_create_invite||{role}"
 
     Args:
@@ -1574,50 +1720,15 @@ async def handle_confirm_create_invite(chat_id: int, role: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: admin ИЛИ super_admin
+        # Доступ к приглашениям имеют администраторы и выше (согласно K-04)
+        has_access, admin_user = await check_role_access(chat_id, ["admin", "super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
-            return
-
-        # Получить администратора
-        admin_user = auth.storage.get_user_by_telegram_id(chat_id)
-        if not admin_user:
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="❌ Администратор не найден.",
-                message_type="status_message"
-            )
-            return
-
-        # K-02: КРИТИЧНО - проверка роли (super_admin и admin могут создавать приглашения)
-        if admin_user.role not in ["super_admin", "admin"]:
-            # Audit logging: попытка нарушения RBAC
-            auth.storage.log_auth_event(
-                AuthAuditEvent(
-                    event_id=str(uuid.uuid4()),
-                    event_type="RBAC_VIOLATION",
-                    user_id=admin_user.user_id,
-                    details={
-                        "action": "create_invitation",
-                        "required_roles": ["super_admin", "admin"],
-                        "actual_role": admin_user.role,
-                        "telegram_id": chat_id
-                    }
-                )
-            )
-
-            logger.warning(
-                f"RBAC violation: user_id={admin_user.user_id} "
-                f"(role={admin_user.role}) attempted to create invitation"
-            )
-
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="❌ **Доступ запрещен**\n\nТолько администраторы могут создавать приглашения.",
-                message_type="status_message"
-            )
             return
 
         # Получить срок действия из FSM или использовать по умолчанию
@@ -1746,6 +1857,8 @@ async def handle_list_invitations(chat_id: int, page: int = 1, app: Client = Non
     """
     Список активных приглашений с пагинацией.
 
+    Доступ: admin или super_admin
+
     callback_data: "access_list_invites" или "access_list_invites||page||{num}"
     Источник: 02_menu_navigation.md:265-279
 
@@ -1755,6 +1868,12 @@ async def handle_list_invitations(chat_id: int, page: int = 1, app: Client = Non
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: admin ИЛИ super_admin
+        # Доступ к приглашениям имеют администраторы и выше (согласно K-04)
+        has_access, user = await check_role_access(chat_id, ["admin", "super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -1837,6 +1956,8 @@ async def handle_invitation_details(chat_id: int, invite_code: str, app: Client)
     """
     Детали приглашения с действиями.
 
+    Доступ: admin или super_admin
+
     callback_data: "access_invite_details||{invite_code}"
     Источник: 02_menu_navigation.md:267-276
 
@@ -1846,6 +1967,12 @@ async def handle_invitation_details(chat_id: int, invite_code: str, app: Client)
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: admin ИЛИ super_admin
+        # Доступ к приглашениям имеют администраторы и выше (согласно K-04)
+        has_access, user = await check_role_access(chat_id, ["admin", "super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -1933,6 +2060,8 @@ async def handle_revoke_invitation(chat_id: int, invite_code: str, app: Client):
     """
     Запросить подтверждение аннулирования приглашения (Шаг 1: подтверждение).
 
+    Доступ: admin или super_admin
+
     callback_data: "access_revoke_invite||{invite_code}"
     Источник: 02_menu_navigation.md:270-274
 
@@ -1942,6 +2071,12 @@ async def handle_revoke_invitation(chat_id: int, invite_code: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: admin ИЛИ super_admin
+        # Доступ к приглашениям имеют администраторы и выше (согласно K-04)
+        has_access, user = await check_role_access(chat_id, ["admin", "super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
@@ -2006,6 +2141,8 @@ async def handle_confirm_revoke(chat_id: int, invite_code: str, app: Client):
     """
     Аннулировать приглашение (Шаг 2: аннулирование).
 
+    Доступ: admin или super_admin
+
     callback_data: "access_confirm_revoke||{invite_code}"
 
     Args:
@@ -2014,20 +2151,15 @@ async def handle_confirm_revoke(chat_id: int, invite_code: str, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: admin ИЛИ super_admin
+        # Доступ к приглашениям имеют администраторы и выше (согласно K-04)
+        has_access, admin_user = await check_role_access(chat_id, ["admin", "super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
-            return
-
-        # Получить администратора
-        admin_user = auth.storage.get_user_by_telegram_id(chat_id)
-        if not admin_user:
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="❌ Администратор не найден.",
-                message_type="status_message"
-            )
             return
 
         # Деактивировать приглашение через AuthManager
@@ -2093,6 +2225,8 @@ async def handle_security_menu(chat_id: int, app: Client):
     """
     Меню настроек безопасности.
 
+    Доступ: только super_admin
+
     callback_data: "access_security_menu"
     Источник: 01_menu_structure.md:400-417
 
@@ -2101,6 +2235,12 @@ async def handle_security_menu(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         text = (
             "🔐 **НАСТРОЙКИ БЕЗОПАСНОСТИ**\n\n"
             "Управление безопасностью системы:\n"
@@ -2135,6 +2275,8 @@ async def handle_password_policy(chat_id: int, app: Client):
     """
     Меню просмотра политики паролей.
 
+    Доступ: только super_admin
+
     callback_data: "access_password_policy"
 
     Отображает текущие требования к паролям в системе VoxPersona:
@@ -2146,6 +2288,12 @@ async def handle_password_policy(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         # Информация о политике паролей из AuthSecurityManager
         text = (
             "🔐 **ПОЛИТИКА ПАРОЛЕЙ**\n\n"
@@ -2190,6 +2338,8 @@ async def handle_cleanup_settings(chat_id: int, app: Client):
     """
     Меню настроек автоочистки сообщений.
 
+    Доступ: только super_admin
+
     callback_data: "access_cleanup_settings"
 
     Отображает информацию о системе автоматической очистки сообщений MessageTracker.
@@ -2201,6 +2351,12 @@ async def handle_cleanup_settings(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         text = (
             "🕒 **АВТООЧИСТКА СООБЩЕНИЙ**\n\n"
             "Система MessageTracker автоматически очищает устаревшие сообщения:\n\n"
@@ -2242,6 +2398,7 @@ async def handle_set_cleanup_hours(chat_id: int, app: Client):
     """
     Установка времени автоочистки сообщений (1-48 часов).
 
+    Доступ: только super_admin
     callback_data: "access_set_cleanup_hours"
 
     Функция в разработке. Позволит настраивать TTL для различных типов сообщений.
@@ -2251,6 +2408,12 @@ async def handle_set_cleanup_hours(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         text = (
             "⏱ **УСТАНОВИТЬ ВРЕМЯ АВТООЧИСТКИ**\n\n"
             "⏳ **Функция в разработке**\n\n"
@@ -2296,6 +2459,7 @@ async def handle_cleanup_per_user(chat_id: int, app: Client):
     """
     Настройка параметров автоочистки для каждого пользователя.
 
+    Доступ: только super_admin
     callback_data: "access_cleanup_per_user"
 
     Функция в разработке. Позволит настраивать индивидуальные правила очистки.
@@ -2305,6 +2469,12 @@ async def handle_cleanup_per_user(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         text = (
             "👥 **НАСТРОЙКА ДЛЯ ПОЛЬЗОВАТЕЛЕЙ**\n\n"
             "⏳ **Функция в разработке**\n\n"
@@ -2353,6 +2523,7 @@ async def handle_view_cleanup_schedule(chat_id: int, app: Client):
     """
     Просмотр расписания автоочистки сообщений.
 
+    Доступ: только super_admin
     callback_data: "access_view_cleanup_schedule"
 
     Функция в разработке. Позволит просматривать запланированную очистку.
@@ -2362,6 +2533,12 @@ async def handle_view_cleanup_schedule(chat_id: int, app: Client):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # Защита от прямого вызова callback минуя UI
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         text = (
             "📅 **РАСПИСАНИЕ АВТООЧИСТКИ**\n\n"
             "⏳ **Функция в разработке**\n\n"
@@ -2412,6 +2589,7 @@ async def handle_audit_log(chat_id: int, page: int = 1, app: Client = None):
     """
     Меню журнала действий (audit log).
 
+    Доступ: только super_admin
     callback_data: "access_audit_log" или "access_audit_log||page||{num}"
     Источник: 02_menu_navigation.md:317-323
 
@@ -2421,6 +2599,12 @@ async def handle_audit_log(chat_id: int, page: int = 1, app: Client = None):
         app: Pyrogram Client
     """
     try:
+        # ✅ ПРОВЕРКА РОЛИ: ТОЛЬКО super_admin
+        # КРИТИЧНО: Audit log содержит конфиденциальные данные о действиях администраторов
+        has_access, user = await check_role_access(chat_id, ["super_admin"], app)
+        if not has_access:
+            return  # Сообщение об ошибке уже отправлено пользователю
+
         auth = get_auth_manager()
         if not auth:
             logger.error("AuthManager не инициализирован!")
