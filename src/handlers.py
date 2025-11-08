@@ -2385,6 +2385,173 @@ def register_handlers(app: Client):
         except Exception as e:
             logging.exception(f"Ошибка в callback_query_handler: {e}")
 
+# ============ QUERY EXPANSION HANDLERS (ФАЗА 4) ============
+
+async def handle_expand_send(callback: CallbackQuery, app: Client):
+    """
+    Обработка кнопки 'Отправить в поиск'.
+    Запускает обычный поиск с улучшенным вопросом.
+    
+    ФАЗА 4: Query Expansion - Отправка улучшенного вопроса
+    
+    Workflow:
+    1. Извлекаем данные из user_states по hash
+    2. Логируем улучшение в conversation (как system_info)
+    3. Создаем mock message с улучшенным вопросом
+    4. Запускаем run_dialog_mode() с expanded question
+    5. Удаляем временные данные из user_states
+    """
+    chat_id = callback.message.chat.id
+    
+    # Парсим callback_data: expand_send||{hash}
+    parts = callback.data.split("||")
+    if len(parts) < 2:
+        await callback.answer("⚠️ Ошибка формата данных", show_alert=True)
+        return
+    
+    query_hash = parts[1]
+    
+    # Извлекаем данные из user_states
+    temp_key = f"expansion_{query_hash}"
+    expansion_data = user_states.get(temp_key)
+    
+    if not expansion_data:
+        await callback.answer("⚠️ Сессия истекла, попробуйте еще раз", show_alert=True)
+        return
+    
+    expanded_question = expansion_data["expanded"]
+    conversation_id = expansion_data["conversation_id"]
+    deep_search = expansion_data["deep_search"]
+    original_question = expansion_data["original"]
+    
+    # Логирование улучшения (если есть conversation_id)
+    if conversation_id:
+        from conversation_manager import conversation_manager
+        from conversations import ConversationMessage
+        from datetime import datetime
+        
+        # Сохраняем как системное сообщение
+        system_message = ConversationMessage(
+            timestamp=datetime.now().isoformat(),
+            message_id=0,  # Системное сообщение не имеет Telegram ID
+            type="system_info",
+            text=f"[Query Expansion] {original_question} → {expanded_question}",
+            tokens=0,
+            sent_as=None,
+            file_path=None,
+            search_type=None
+        )
+        
+        conversation_manager.add_message(
+            user_id=chat_id,
+            conversation_id=conversation_id,
+            message=system_message
+        )
+    
+    # Создаем mock message с улучшенным вопросом
+    # (для совместимости с run_dialog_mode)
+    class MockMessage:
+        def __init__(self, text_val, chat_id_val):
+            self.text = text_val
+            self.id = 0
+            self.chat = type('Chat', (), {'id': chat_id_val})()
+    
+    mock_message = MockMessage(expanded_question, chat_id)
+    
+    # Удаляем временные данные
+    del user_states[temp_key]
+    
+    # Запускаем обычный поиск
+    from run_analysis import run_dialog_mode, init_rags
+    
+    # Получаем rags (предполагается, что они уже инициализированы в config)
+    from config import rag_indices
+    rags = rag_indices if rag_indices else init_rags()
+    
+    await run_dialog_mode(
+        message=mock_message,
+        app=app,
+        rags=rags,
+        deep_search=deep_search,
+        conversation_id=conversation_id
+    )
+    
+    await callback.answer("✅ Отправлено в поиск")
+
+async def handle_expand_refine(callback: CallbackQuery, app: Client):
+    """
+    Обработка кнопки 'Уточнить еще раз'.
+    Рекурсивно запускает улучшение вопроса.
+    
+    ФАЗА 4: Query Expansion - Рекурсивное уточнение
+    
+    Защита от зацикливания: максимум 3 попытки.
+    
+    Workflow:
+    1. Проверяем счетчик попыток (refine_count)
+    2. Если >= 3 → отказ с alert
+    3. Удаляем старые данные из user_states
+    4. Рекурсивно вызываем expand_query() с исходным вопросом
+    5. Показываем новое меню с инкрементированным счетчиком
+    """
+    chat_id = callback.message.chat.id
+    
+    # Парсим callback_data
+    parts = callback.data.split("||")
+    if len(parts) < 2:
+        await callback.answer("⚠️ Ошибка формата данных", show_alert=True)
+        return
+    
+    query_hash = parts[1]
+    
+    # Извлекаем данные
+    temp_key = f"expansion_{query_hash}"
+    expansion_data = user_states.get(temp_key)
+    
+    if not expansion_data:
+        await callback.answer("⚠️ Сессия истекла, попробуйте еще раз", show_alert=True)
+        return
+    
+    # Проверка счетчика попыток (защита от зацикливания)
+    refine_count = expansion_data.get("refine_count", 0)
+    if refine_count >= 3:
+        await callback.answer(
+            "⚠️ Достигнут лимит уточнений (3). Отправьте вопрос как есть или начните заново.",
+            show_alert=True
+        )
+        return
+    
+    original_question = expansion_data["original"]
+    conversation_id = expansion_data["conversation_id"]
+    deep_search = expansion_data["deep_search"]
+    
+    # Удаляем старые данные
+    del user_states[temp_key]
+    
+    # Рекурсивно вызываем expand_query (с исходным вопросом!)
+    from query_expander import expand_query
+    expansion_result = expand_query(original_question)
+    
+    # Увеличиваем счетчик попыток
+    expansion_result["refine_count"] = refine_count + 1
+    
+    # Показываем новый улучшенный вопрос
+    from run_analysis import show_expanded_query_menu
+    
+    await show_expanded_query_menu(
+        chat_id=chat_id,
+        app=app,
+        original=expansion_result["original"],
+        expanded=expansion_result["expanded"],
+        conversation_id=conversation_id,
+        deep_search=deep_search
+    )
+    
+    await callback.answer(f"🔄 Уточнено (попытка {refine_count + 1}/3)")
+
+# ============ END QUERY EXPANSION HANDLERS ============
+
+
     # ============ TEST CALLBACK HANDLER FOR MENU CRAWLER ============
     @app.on_message(filters.command("test_callback"))  # type: ignore[misc,reportUntypedFunctionDecorator]
     async def test_callback_handler(client: Client, message: Message):

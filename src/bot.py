@@ -665,6 +665,54 @@ async def handle_design_reports(c_id: int, data: str) -> bool:
 
     return False
 
+
+async def handle_query_expansion(c_id: int, data: str) -> bool:
+    """
+    Обработка Query Expansion callbacks.
+    
+    ФАЗА 4: Роутер для callback кнопок query expansion
+    
+    Обрабатывает:
+    - expand_send||{hash}: Отправить улучшенный вопрос в поиск
+    - expand_refine||{hash}: Уточнить вопрос еще раз
+    
+    Args:
+        c_id: ID чата Telegram
+        data: callback_data из кнопки
+        
+    Returns:
+        True если обработано, False если не наш callback
+    """
+    if data.startswith("expand_send"):
+        # Создаем mock callback для совместимости с handlers
+        class MockCallback:
+            def __init__(self, chat_id_val, data_val):
+                self.data = data_val
+                self.message = type('Message', (), {'chat': type('Chat', (), {'id': chat_id_val})()})()
+            
+            async def answer(self, text="", show_alert=False):
+                pass
+        
+        mock_callback = MockCallback(c_id, data)
+        from handlers import handle_expand_send
+        await handle_expand_send(mock_callback, app)
+        return True
+    
+    if data.startswith("expand_refine"):
+        class MockCallback:
+            def __init__(self, chat_id_val, data_val):
+                self.data = data_val
+                self.message = type('Message', (), {'chat': type('Chat', (), {'id': chat_id_val})()})()
+            
+            async def answer(self, text="", show_alert=False):
+                pass
+        
+        mock_callback = MockCallback(c_id, data)
+        from handlers import handle_expand_refine
+        await handle_expand_refine(mock_callback, app)
+        return True
+    
+    return False
 async def callback_query_handler(_: Client, callback: CallbackQuery) -> None:
     """Обработчик callback запросов с явной типизацией"""
     c_id = callback.message.chat.id
@@ -683,7 +731,8 @@ async def callback_query_handler(_: Client, callback: CallbackQuery) -> None:
             handle_file_operations,
             handle_mode_selection,
             handle_interview_reports,
-            handle_design_reports
+            handle_design_reports,
+            handle_query_expansion  # Добавлено для Query Expansion
         ]
         for handler in async_handlers:
             if await handler(c_id, data):

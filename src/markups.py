@@ -335,3 +335,57 @@ def design_menu_markup():
         [InlineKeyboardButton("    3) Структурированный отчет аудита    ", callback_data="report_design_structured")],
         [InlineKeyboardButton(f"        {BUTTON_BACK}        ", callback_data="menu_main")]
     ])
+
+def make_query_expansion_markup(
+    original_question: str,
+    expanded_question: str,
+    conversation_id: str,
+    deep_search: bool
+) -> InlineKeyboardMarkup:
+    """
+    Создает клавиатуру для выбора: отправить улучшенный вопрос или уточнить.
+
+    ФАЗА 4: Query Expansion UI Components
+
+    Callback data format: "команда||hash"
+    - expand_send||{hash}: Отправить улучшенный вопрос в поиск
+    - expand_refine||{hash}: Уточнить вопрос еще раз
+
+    Args:
+        original_question: Исходный вопрос пользователя
+        expanded_question: Улучшенный вопрос после query expansion
+        conversation_id: ID мультичата для сохранения истории
+        deep_search: True = глубокое исследование, False = быстрый поиск
+
+    Returns:
+        InlineKeyboardMarkup с 3 кнопками (Отправить, Уточнить, Назад)
+    """
+    # ВАЖНО: callback_data в Telegram ограничен 64 байтами!
+    # Не передаем полный вопрос, используем временное хранилище
+
+    # Генерируем короткий ID для хранения в user_states
+    import hashlib
+    query_hash = hashlib.md5(expanded_question.encode()).hexdigest()[:8]
+
+    # Сохраняем в глобальное хранилище (user_states)
+    from config import user_states
+
+    # Создаем ключ для временного хранения
+    temp_key = f"expansion_{query_hash}"
+    user_states[temp_key] = {
+        "original": original_question,
+        "expanded": expanded_question,
+        "conversation_id": conversation_id,
+        "deep_search": deep_search,
+        "refine_count": 0  # Счетчик попыток уточнения (защита от зацикливания)
+    }
+
+    # callback_data: команда||hash
+    send_data = f"expand_send||{query_hash}"
+    refine_data = f"expand_refine||{query_hash}"
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📤 Отправить в поиск", callback_data=send_data)],
+        [InlineKeyboardButton("🔄 Уточнить еще раз", callback_data=refine_data)],
+        [InlineKeyboardButton("◀️ Назад", callback_data="menu_dialog")]
+    ])

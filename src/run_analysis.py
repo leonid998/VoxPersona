@@ -130,6 +130,8 @@ async def show_expanded_query_menu(
     """
     Показывает оригинальный и улучшенный вопрос пользователю.
 
+    ФАЗА 4: Обновлено - использует make_query_expansion_markup()
+
     Args:
         chat_id: ID чата Telegram
         app: Pyrogram клиент
@@ -138,8 +140,6 @@ async def show_expanded_query_menu(
         conversation_id: ID мультичата (может быть None)
         deep_search: True = глубокое исследование, False = быстрый поиск
     """
-    from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
     # Формируем текст сообщения
     text = (
         f"📝 **Ваш вопрос:**\n"
@@ -149,16 +149,18 @@ async def show_expanded_query_menu(
         f"Отправить улучшенный вопрос в {'глубокое исследование' if deep_search else 'быстрый поиск'}?"
     )
 
-    # ВРЕМЕННАЯ клавиатура (в ФАЗЕ 4 заменим на полноценную с hash и user_states)
-    # TODO ФАЗА 4: Заменить на make_query_expansion_markup()
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📤 Отправить в поиск", callback_data="expand_send_temp")],
-        [InlineKeyboardButton("🔄 Уточнить еще раз", callback_data="expand_refine_temp")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="menu_dialog")]
-    ])
+    # Полноценная клавиатура с hash и user_states
+    from markups import make_query_expansion_markup
+    markup = make_query_expansion_markup(
+        original_question=original,
+        expanded_question=expanded,
+        conversation_id=conversation_id or "",
+        deep_search=deep_search
+    )
 
     # Отправляем меню
     await send_menu(chat_id, app, text, markup)
+
 
 async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None):
     # Извлекаем данные из message
