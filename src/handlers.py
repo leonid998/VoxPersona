@@ -2427,65 +2427,67 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
     if not expansion_data:
         await callback.answer("⚠️ Сессия истекла, попробуйте еще раз", show_alert=True)
         return
-    
-    expanded_question = expansion_data["expanded"]
-    conversation_id = expansion_data["conversation_id"]
-    deep_search = expansion_data["deep_search"]
-    original_question = expansion_data["original"]
-    
-    # Логирование улучшения (если есть conversation_id)
-    if conversation_id:
-        from conversation_manager import conversation_manager
-        from conversations import ConversationMessage
-        from datetime import datetime
-        
-        # Сохраняем как системное сообщение
-        system_message = ConversationMessage(
-            timestamp=datetime.now().isoformat(),
-            message_id=0,  # Системное сообщение не имеет Telegram ID
-            type="system_info",
-            text=f"[Query Expansion] {original_question} → {expanded_question}",
-            tokens=0,
-            sent_as=None,
-            file_path=None,
-            search_type=None
+
+    try:
+        expanded_question = expansion_data["expanded"]
+        conversation_id = expansion_data["conversation_id"]
+        deep_search = expansion_data["deep_search"]
+        original_question = expansion_data["original"]
+
+        # Логирование улучшения (если есть conversation_id)
+        if conversation_id:
+            from conversation_manager import conversation_manager
+            from conversations import ConversationMessage
+            from datetime import datetime
+
+            # Сохраняем как системное сообщение
+            system_message = ConversationMessage(
+                timestamp=datetime.now().isoformat(),
+                message_id=0,  # Системное сообщение не имеет Telegram ID
+                type="system_info",
+                text=f"[Query Expansion] {original_question} → {expanded_question}",
+                tokens=0,
+                sent_as=None,
+                file_path=None,
+                search_type=None
+            )
+
+            conversation_manager.add_message(
+                user_id=chat_id,
+                conversation_id=conversation_id,
+                message=system_message
+            )
+
+        # Создаем mock message с улучшенным вопросом
+        # (для совместимости с run_dialog_mode)
+        class MockMessage:
+            def __init__(self, text_val, chat_id_val):
+                self.text = text_val
+                self.id = 0
+                self.chat = type('Chat', (), {'id': chat_id_val})()
+
+        mock_message = MockMessage(expanded_question, chat_id)
+
+        # Запускаем обычный поиск
+        from run_analysis import run_dialog_mode, init_rags
+
+        # Получаем rags (предполагается, что они уже инициализированы в config)
+        from config import rag_indices
+        rags = rag_indices if rag_indices else init_rags()
+
+        await run_dialog_mode(
+            message=mock_message,
+            app=app,
+            rags=rags,
+            deep_search=deep_search,
+            conversation_id=conversation_id
         )
-        
-        conversation_manager.add_message(
-            user_id=chat_id,
-            conversation_id=conversation_id,
-            message=system_message
-        )
-    
-    # Создаем mock message с улучшенным вопросом
-    # (для совместимости с run_dialog_mode)
-    class MockMessage:
-        def __init__(self, text_val, chat_id_val):
-            self.text = text_val
-            self.id = 0
-            self.chat = type('Chat', (), {'id': chat_id_val})()
-    
-    mock_message = MockMessage(expanded_question, chat_id)
-    
-    # Удаляем временные данные
-    del user_states[temp_key]
-    
-    # Запускаем обычный поиск
-    from run_analysis import run_dialog_mode, init_rags
-    
-    # Получаем rags (предполагается, что они уже инициализированы в config)
-    from config import rag_indices
-    rags = rag_indices if rag_indices else init_rags()
-    
-    await run_dialog_mode(
-        message=mock_message,
-        app=app,
-        rags=rags,
-        deep_search=deep_search,
-        conversation_id=conversation_id
-    )
-    
-    await callback.answer("✅ Отправлено в поиск")
+
+        await callback.answer("✅ Отправлено в поиск")
+
+    finally:
+        # Гарантированная очистка временных данных (даже при ошибках)
+        user_states.pop(temp_key, None)
 
 async def handle_expand_refine(callback: CallbackQuery, app: Client):
     """
@@ -2529,34 +2531,36 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
             show_alert=True
         )
         return
-    
-    original_question = expansion_data["original"]
-    conversation_id = expansion_data["conversation_id"]
-    deep_search = expansion_data["deep_search"]
-    
-    # Удаляем старые данные
-    del user_states[temp_key]
-    
-    # Рекурсивно вызываем expand_query (с исходным вопросом!)
-    from query_expander import expand_query
-    expansion_result = expand_query(original_question)
-    
-    # Увеличиваем счетчик попыток
-    expansion_result["refine_count"] = refine_count + 1
-    
-    # Показываем новый улучшенный вопрос
-    from run_analysis import show_expanded_query_menu
-    
-    await show_expanded_query_menu(
-        chat_id=chat_id,
-        app=app,
-        original=expansion_result["original"],
-        expanded=expansion_result["expanded"],
-        conversation_id=conversation_id,
-        deep_search=deep_search
-    )
-    
-    await callback.answer(f"🔄 Уточнено (попытка {refine_count + 1}/3)")
+
+    try:
+        original_question = expansion_data["original"]
+        conversation_id = expansion_data["conversation_id"]
+        deep_search = expansion_data["deep_search"]
+
+        # Рекурсивно вызываем expand_query (с исходным вопросом!)
+        from query_expander import expand_query
+        expansion_result = expand_query(original_question)
+
+        # Увеличиваем счетчик попыток
+        expansion_result["refine_count"] = refine_count + 1
+
+        # Показываем новый улучшенный вопрос
+        from run_analysis import show_expanded_query_menu
+
+        await show_expanded_query_menu(
+            chat_id=chat_id,
+            app=app,
+            original=expansion_result["original"],
+            expanded=expansion_result["expanded"],
+            conversation_id=conversation_id,
+            deep_search=deep_search
+        )
+
+        await callback.answer(f"🔄 Уточнено (попытка {refine_count + 1}/3)")
+
+    finally:
+        # Гарантированная очистка временных данных (даже при ошибках)
+        user_states.pop(temp_key, None)
 
 # ============ END QUERY EXPANSION HANDLERS ============
 
