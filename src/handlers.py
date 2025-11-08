@@ -2083,6 +2083,15 @@ def register_handlers(app: Client):
                 return
             # === КОНЕЦ МУЛЬТИЧАТЫ ===
 
+            # === QUERY EXPANSION ===
+            elif data.startswith("expand_send||"):
+                await handle_expand_send(callback, app)
+                return
+
+            elif data.startswith("expand_refine||"):
+                await handle_expand_refine(callback, app)
+                return
+            # === КОНЕЦ QUERY EXPANSION ===
 
             # Главное меню
             if data == "menu_main":
