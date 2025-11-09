@@ -1,0 +1,622 @@
+{
+  "test_info": {
+    "project": "VoxPersona Phase 2 Authorization",
+    "test_type": "Callback Routing Validation",
+    "markups_file": "C:\\Users\\l0934\\Projects\\VoxPersona\\src\\access_markups.py",
+    "handlers_file": "C:\\Users\\l0934\\Projects\\VoxPersona\\src\\handlers.py"
+  },
+  "statistics": {
+    "total_buttons": 39,
+    "total_handlers": 29,
+    "total_issues": 24,
+    "dead_buttons_count": 6,
+    "unused_handlers_count": 18
+  },
+  "issues": {
+    "dead_buttons": [
+      {
+        "issue_type": "dead_button",
+        "callback_data": "menu_system",
+        "details": "Кнопка в access_main_menu_markup, но нет обработчика в handlers.py"
+      },
+      {
+        "issue_type": "dead_button",
+        "callback_data": "access_cleanup_settings",
+        "details": "Кнопка в access_security_menu_markup, но нет обработчика в handlers.py"
+      },
+      {
+        "issue_type": "dead_button",
+        "callback_data": "access_password_policy",
+        "details": "Кнопка в access_security_menu_markup, но нет обработчика в handlers.py"
+      },
+      {
+        "issue_type": "dead_button",
+        "callback_data": "access_set_cleanup_hours",
+        "details": "Кнопка в access_cleanup_settings_markup, но нет обработчика в handlers.py"
+      },
+      {
+        "issue_type": "dead_button",
+        "callback_data": "access_cleanup_per_user",
+        "details": "Кнопка в access_cleanup_settings_markup, но нет обработчика в handlers.py"
+      },
+      {
+        "issue_type": "dead_button",
+        "callback_data": "access_view_cleanup_schedule",
+        "details": "Кнопка в access_cleanup_settings_markup, но нет обработчика в handlers.py"
+      }
+    ],
+    "unused_handlers": [
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_list_users||page||",
+        "details": "Обработчик Unknown (line 1374), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_user_details||",
+        "details": "Обработчик Unknown (line 1378), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_edit_user||",
+        "details": "Обработчик Unknown (line 1382), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_change_role||",
+        "details": "Обработчик Unknown (line 1386), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_set_role||",
+        "details": "Обработчик Unknown (line 1390), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_reset_password||",
+        "details": "Обработчик Unknown (line 1394), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_confirm_reset||",
+        "details": "Обработчик Unknown (line 1398), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_toggle_block||",
+        "details": "Обработчик Unknown (line 1402), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_confirm_block||",
+        "details": "Обработчик Unknown (line 1406), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_delete_user||",
+        "details": "Обработчик Unknown (line 1410), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_confirm_delete||",
+        "details": "Обработчик Unknown (line 1414), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_filter_reset",
+        "details": "Обработчик Unknown (line 1422), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_confirm_invite||",
+        "details": "Обработчик Unknown (line 1439), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_list_invites||page||",
+        "details": "Обработчик Unknown (line 1446), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_invite_details||",
+        "details": "Обработчик Unknown (line 1450), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_revoke_invite||",
+        "details": "Обработчик Unknown (line 1454), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_confirm_revoke||",
+        "details": "Обработчик Unknown (line 1458), но нет кнопки"
+      },
+      {
+        "issue_type": "unused_handler",
+        "callback_data": "access_audit_log||page||",
+        "details": "Обработчик Unknown (line 1469), но нет кнопки"
+      }
+    ]
+  },
+  "navigation_graph": {
+    "access_main_menu_markup": [
+      "access_users_menu",
+      "access_invitations_menu",
+      "access_security_menu",
+      "menu_system"
+    ],
+    "access_users_menu_markup": [
+      "access_list_users",
+      "access_search_user",
+      "access_filter_roles",
+      "menu_access"
+    ],
+    "access_user_list_markup": [
+      "access_page_info",
+      "access_users_menu"
+    ],
+    "access_user_details_markup": [
+      "access_list_users"
+    ],
+    "access_filter_roles_markup": [
+      "access_filter||all",
+      "access_filter||super_admin",
+      "access_filter||admin",
+      "access_filter||user",
+      "access_filter||guest",
+      "access_users_menu"
+    ],
+    "access_invitations_menu_markup": [
+      "access_create_invite||admin",
+      "access_create_invite||user",
+      "access_list_invites",
+      "menu_access"
+    ],
+    "access_invite_list_markup": [
+      "access_page_info",
+      "access_invitations_menu"
+    ],
+    "access_invite_details_markup": [
+      "access_list_invites"
+    ],
+    "access_invite_type_markup": [
+      "access_create_invite||admin",
+      "access_create_invite||user",
+      "access_invitations_menu"
+    ],
+    "access_security_menu_markup": [
+      "access_audit_log",
+      "access_cleanup_settings",
+      "access_password_policy",
+      "menu_access"
+    ],
+    "access_audit_log_markup": [
+      "access_page_info",
+      "access_security_menu"
+    ],
+    "access_pagination_markup": [
+      "access_page_info"
+    ],
+    "access_search_result_markup": [
+      "access_users_menu"
+    ],
+    "access_cleanup_settings_markup": [
+      "access_set_cleanup_hours",
+      "access_cleanup_per_user",
+      "access_view_cleanup_schedule",
+      "access_security_menu"
+    ]
+  },
+  "buttons": [
+    {
+      "callback_data": "access_users_menu",
+      "source_function": "access_main_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_users_menu"
+    },
+    {
+      "callback_data": "access_invitations_menu",
+      "source_function": "access_main_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_invitations_menu"
+    },
+    {
+      "callback_data": "access_security_menu",
+      "source_function": "access_main_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_security_menu"
+    },
+    {
+      "callback_data": "menu_system",
+      "source_function": "access_main_menu_markup",
+      "is_dynamic": false,
+      "pattern": "menu_system"
+    },
+    {
+      "callback_data": "access_list_users",
+      "source_function": "access_users_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_list_users"
+    },
+    {
+      "callback_data": "access_search_user",
+      "source_function": "access_users_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_search_user"
+    },
+    {
+      "callback_data": "access_filter_roles",
+      "source_function": "access_users_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_filter_roles"
+    },
+    {
+      "callback_data": "menu_access",
+      "source_function": "access_users_menu_markup",
+      "is_dynamic": false,
+      "pattern": "menu_access"
+    },
+    {
+      "callback_data": "access_page_info",
+      "source_function": "access_user_list_markup",
+      "is_dynamic": false,
+      "pattern": "access_page_info"
+    },
+    {
+      "callback_data": "access_users_menu",
+      "source_function": "access_user_list_markup",
+      "is_dynamic": false,
+      "pattern": "access_users_menu"
+    },
+    {
+      "callback_data": "access_list_users",
+      "source_function": "access_user_details_markup",
+      "is_dynamic": false,
+      "pattern": "access_list_users"
+    },
+    {
+      "callback_data": "access_filter||all",
+      "source_function": "access_filter_roles_markup",
+      "is_dynamic": true,
+      "pattern": "access_filter||"
+    },
+    {
+      "callback_data": "access_filter||super_admin",
+      "source_function": "access_filter_roles_markup",
+      "is_dynamic": true,
+      "pattern": "access_filter||"
+    },
+    {
+      "callback_data": "access_filter||admin",
+      "source_function": "access_filter_roles_markup",
+      "is_dynamic": true,
+      "pattern": "access_filter||"
+    },
+    {
+      "callback_data": "access_filter||user",
+      "source_function": "access_filter_roles_markup",
+      "is_dynamic": true,
+      "pattern": "access_filter||"
+    },
+    {
+      "callback_data": "access_filter||guest",
+      "source_function": "access_filter_roles_markup",
+      "is_dynamic": true,
+      "pattern": "access_filter||"
+    },
+    {
+      "callback_data": "access_users_menu",
+      "source_function": "access_filter_roles_markup",
+      "is_dynamic": false,
+      "pattern": "access_users_menu"
+    },
+    {
+      "callback_data": "access_create_invite||admin",
+      "source_function": "access_invitations_menu_markup",
+      "is_dynamic": true,
+      "pattern": "access_create_invite||"
+    },
+    {
+      "callback_data": "access_create_invite||user",
+      "source_function": "access_invitations_menu_markup",
+      "is_dynamic": true,
+      "pattern": "access_create_invite||"
+    },
+    {
+      "callback_data": "access_list_invites",
+      "source_function": "access_invitations_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_list_invites"
+    },
+    {
+      "callback_data": "menu_access",
+      "source_function": "access_invitations_menu_markup",
+      "is_dynamic": false,
+      "pattern": "menu_access"
+    },
+    {
+      "callback_data": "access_page_info",
+      "source_function": "access_invite_list_markup",
+      "is_dynamic": false,
+      "pattern": "access_page_info"
+    },
+    {
+      "callback_data": "access_invitations_menu",
+      "source_function": "access_invite_list_markup",
+      "is_dynamic": false,
+      "pattern": "access_invitations_menu"
+    },
+    {
+      "callback_data": "access_list_invites",
+      "source_function": "access_invite_details_markup",
+      "is_dynamic": false,
+      "pattern": "access_list_invites"
+    },
+    {
+      "callback_data": "access_create_invite||admin",
+      "source_function": "access_invite_type_markup",
+      "is_dynamic": true,
+      "pattern": "access_create_invite||"
+    },
+    {
+      "callback_data": "access_create_invite||user",
+      "source_function": "access_invite_type_markup",
+      "is_dynamic": true,
+      "pattern": "access_create_invite||"
+    },
+    {
+      "callback_data": "access_invitations_menu",
+      "source_function": "access_invite_type_markup",
+      "is_dynamic": false,
+      "pattern": "access_invitations_menu"
+    },
+    {
+      "callback_data": "access_audit_log",
+      "source_function": "access_security_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_audit_log"
+    },
+    {
+      "callback_data": "access_cleanup_settings",
+      "source_function": "access_security_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_cleanup_settings"
+    },
+    {
+      "callback_data": "access_password_policy",
+      "source_function": "access_security_menu_markup",
+      "is_dynamic": false,
+      "pattern": "access_password_policy"
+    },
+    {
+      "callback_data": "menu_access",
+      "source_function": "access_security_menu_markup",
+      "is_dynamic": false,
+      "pattern": "menu_access"
+    },
+    {
+      "callback_data": "access_page_info",
+      "source_function": "access_audit_log_markup",
+      "is_dynamic": false,
+      "pattern": "access_page_info"
+    },
+    {
+      "callback_data": "access_security_menu",
+      "source_function": "access_audit_log_markup",
+      "is_dynamic": false,
+      "pattern": "access_security_menu"
+    },
+    {
+      "callback_data": "access_page_info",
+      "source_function": "access_pagination_markup",
+      "is_dynamic": false,
+      "pattern": "access_page_info"
+    },
+    {
+      "callback_data": "access_users_menu",
+      "source_function": "access_search_result_markup",
+      "is_dynamic": false,
+      "pattern": "access_users_menu"
+    },
+    {
+      "callback_data": "access_set_cleanup_hours",
+      "source_function": "access_cleanup_settings_markup",
+      "is_dynamic": false,
+      "pattern": "access_set_cleanup_hours"
+    },
+    {
+      "callback_data": "access_cleanup_per_user",
+      "source_function": "access_cleanup_settings_markup",
+      "is_dynamic": false,
+      "pattern": "access_cleanup_per_user"
+    },
+    {
+      "callback_data": "access_view_cleanup_schedule",
+      "source_function": "access_cleanup_settings_markup",
+      "is_dynamic": false,
+      "pattern": "access_view_cleanup_schedule"
+    },
+    {
+      "callback_data": "access_security_menu",
+      "source_function": "access_cleanup_settings_markup",
+      "is_dynamic": false,
+      "pattern": "access_security_menu"
+    }
+  ],
+  "handlers": [
+    {
+      "callback_pattern": "menu_access",
+      "handler_function": "Unknown",
+      "line_number": 1364,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_users_menu",
+      "handler_function": "Unknown",
+      "line_number": 1368,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_list_users",
+      "handler_function": "Unknown",
+      "line_number": 1371,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_list_users||page||",
+      "handler_function": "Unknown",
+      "line_number": 1374,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_user_details||",
+      "handler_function": "Unknown",
+      "line_number": 1378,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_edit_user||",
+      "handler_function": "Unknown",
+      "line_number": 1382,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_change_role||",
+      "handler_function": "Unknown",
+      "line_number": 1386,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_set_role||",
+      "handler_function": "Unknown",
+      "line_number": 1390,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_reset_password||",
+      "handler_function": "Unknown",
+      "line_number": 1394,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_confirm_reset||",
+      "handler_function": "Unknown",
+      "line_number": 1398,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_toggle_block||",
+      "handler_function": "Unknown",
+      "line_number": 1402,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_confirm_block||",
+      "handler_function": "Unknown",
+      "line_number": 1406,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_delete_user||",
+      "handler_function": "Unknown",
+      "line_number": 1410,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_confirm_delete||",
+      "handler_function": "Unknown",
+      "line_number": 1414,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_filter||",
+      "handler_function": "Unknown",
+      "line_number": 1418,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_filter_reset",
+      "handler_function": "Unknown",
+      "line_number": 1422,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_search_user",
+      "handler_function": "Unknown",
+      "line_number": 1425,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_filter_roles",
+      "handler_function": "Unknown",
+      "line_number": 1428,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_invitations_menu",
+      "handler_function": "Unknown",
+      "line_number": 1432,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_create_invite||",
+      "handler_function": "Unknown",
+      "line_number": 1435,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_confirm_invite||",
+      "handler_function": "Unknown",
+      "line_number": 1439,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_list_invites",
+      "handler_function": "Unknown",
+      "line_number": 1443,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_list_invites||page||",
+      "handler_function": "Unknown",
+      "line_number": 1446,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_invite_details||",
+      "handler_function": "Unknown",
+      "line_number": 1450,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_revoke_invite||",
+      "handler_function": "Unknown",
+      "line_number": 1454,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_confirm_revoke||",
+      "handler_function": "Unknown",
+      "line_number": 1458,
+      "is_dynamic": true
+    },
+    {
+      "callback_pattern": "access_security_menu",
+      "handler_function": "Unknown",
+      "line_number": 1463,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_audit_log",
+      "handler_function": "Unknown",
+      "line_number": 1466,
+      "is_dynamic": false
+    },
+    {
+      "callback_pattern": "access_audit_log||page||",
+      "handler_function": "Unknown",
+      "line_number": 1469,
+      "is_dynamic": true
+    }
+  ]
+}

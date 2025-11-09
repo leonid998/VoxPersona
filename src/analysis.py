@@ -11,7 +11,7 @@ import anthropic
 from pydub import AudioSegment
 import json
 import re
-from anthropic import RateLimitError 
+from anthropic import RateLimitError
 from typing import Any
 from langchain_community.vectorstores import FAISS
 
@@ -30,7 +30,7 @@ def analyze_methodology(text: str, prompt_list: list[tuple[str, int]]) -> str | 
     :return: Финальный ответ модели после обработки всех промптов
     """
     current_response = None
-    
+
     for prompt, _ in prompt_list:
         if current_response == CLAUDE_ERROR_MESSAGE:
             raise ValueError(f"{CLAUDE_ERROR_MESSAGE}")
@@ -139,15 +139,15 @@ def extract_from_chunk(text: str, chunk: str, extract_prompt: str) -> str:
         logging.error(f"Ошибка при извлечении из чанка: {str(e)}")
         logging.error(f"Ошибка при извлечении из чанка: {str(e)}")
         return "##not_found##"
-    
-def generate_db_answer(query: str,    
+
+def generate_db_answer(query: str,
                        db_index: FAISS, # векторная база знаний
                        k: int=15,      # используемое к-во чанков
                        verbose: bool=True, # выводить ли на экран выбранные чанки
                        model: str | None=REPORT_MODEL_NAME
                        ):
     system_prompt = """Перед тобой отчеты из бд, касающиеся анализа проведенных интервью с клиентами, а также анализа аудитов дизайна различных
-    объектов (зоны отеля, рестораны, центры здоровья (СПА)) от нескольких разных дизайнеров . Это малая часть отчетов, которые 
+    объектов (зоны отеля, рестораны, центры здоровья (СПА)) от нескольких разных дизайнеров . Это малая часть отчетов, которые
     подобраны при помощи поиска по релевантности из большого набора отчетов. Пользователем задан вопрос. Тебе нужно как можно более
     четко и понятно ответить на данный вопрос. Если в данных тебе отчетах ты не видишь ответ на вопрос пользователя, именно так и скажи
     не надо ничего придумывать от себя."""
@@ -156,19 +156,19 @@ def generate_db_answer(query: str,
     message_content = re.sub(r'\n{2}', ' ', '\n '.join(
         [f'Отчет № {i+1}:\n' + doc.page_content
         for i, doc in enumerate(similar_documents)]))
-    
+
     # Подсчитываем токены для системного промпта
     system_tokens = count_tokens(system_prompt)
-    
+
     # Подсчитываем токены для найденных документов
     docs_tokens = count_tokens(message_content)
-    
+
     # Подсчитываем токены для запроса пользователя
     query_tokens = count_tokens(query)
-    
+
     # Общее количество токенов
     total_tokens = system_tokens + docs_tokens + query_tokens
-    
+
     if verbose:
         logging.info("\nНайденные релевантные отчеты:")
         logging.info("-"*100)
@@ -181,8 +181,9 @@ def generate_db_answer(query: str,
         logging.info("-"*100)
 
     messages = [{"role": "user", "content": f'Вопрос пользователя: {query}'}]
-    
-    response = send_msg_to_model(messages=messages, model=model or REPORT_MODEL_NAME or "claude-sonnet-4-20250514", system=f'{system_prompt} Вот наиболее релевантные отчеты из бд: \n{message_content}')
+
+    # Используется актуальная модель Claude Sonnet 4.5 (fallback если model/REPORT_MODEL_NAME не заданы)
+    response = send_msg_to_model(messages=messages, model=model or REPORT_MODEL_NAME or "claude-sonnet-4-5-20250929", system=f'{system_prompt} Вот наиболее релевантные отчеты из бд: \n{message_content}')
     return response
 
 async def send_msg_to_model_async(
@@ -234,12 +235,12 @@ async def send_msg_to_model_async(
 
 def _calculate_rate_limits():
     """Вычисляет лимиты скорости для токенов и запросов."""
-    token_limits_per_min = [80000, 20000, 20000, 20000, 20000, 20000, 20000]  
-    req_limits_per_min =   [2000,    50,    50,    50,    50,    50,    50]   
-    
+    token_limits_per_min = [80000, 20000, 20000, 20000, 20000, 20000, 20000]
+    req_limits_per_min =   [2000,    50,    50,    50,    50,    50,    50]
+
     token_rates = [tl / 60.0 for tl in token_limits_per_min]
     req_rates = [rl / 60.0 for rl in req_limits_per_min]
-    
+
     return token_rates, req_rates
 
 def _calculate_delay(tokens: int, token_rate: float, req_rate: float) -> float:
@@ -276,15 +277,15 @@ async def _process_single_chunk_async(
             f"delay={delay:.1f}s"
         )
 
-        async with model_semaphore:  
-            await asyncio.sleep(delay)  
+        async with model_semaphore:
+            await asyncio.sleep(delay)
 
         messages = [{"role": "user", "content": user_content}]
         response = await send_msg_to_model_async(
             session=session,
             messages=messages,
             system=extract_prompt,
-            model=REPORT_MODEL_NAME or "claude-sonnet-4-20250514",
+            model=REPORT_MODEL_NAME or "claude-sonnet-4-5-20250929",  # Исправлено: актуальная модель Claude Sonnet 4.5
             api_key=api_key,
             err=f"Ошибка при извлечении чанка #{idx}"
         )
@@ -304,7 +305,7 @@ async def extract_from_chunk_parallel_async(
     Чанки равномерно распределяются между моделями через очередь.
     """
     token_rates, req_rates = _calculate_rate_limits()
-    
+
     q = asyncio.Queue()
     for idx, chunk in enumerate(chunks):
         await q.put((idx, chunk))
@@ -322,7 +323,7 @@ async def extract_from_chunk_parallel_async(
     ]
 
     await q.join()
-    
+
     for task in workers:
         _ = task.cancel()
 
@@ -363,7 +364,7 @@ def _process_single_chunk_sync(
             messages=[{"role": "user", "content": user_content}],
             system=extract_prompt,
             err=f"Ошибка при извлечении чанка #{idx}",
-            model=REPORT_MODEL_NAME or "claude-sonnet-4-20250514",
+            model=REPORT_MODEL_NAME or "claude-sonnet-4-5-20250929",  # Исправлено: актуальная модель Claude Sonnet 4.5
             api_key=api_key
         )
         results[idx] = resp
@@ -388,7 +389,7 @@ def extract_from_chunk_parallel(
     Для каждого чанка вычисляем токен-задержку и запрос-задержку, берём max.
     """
     token_rates, req_rates = _calculate_rate_limits()
-    
+
     q: queue.Queue[tuple[int, str]] = queue.Queue()
     for idx, chunk in enumerate(chunks):
         q.put((idx, chunk))
@@ -400,7 +401,7 @@ def extract_from_chunk_parallel(
         if not q.empty():
             t = threading.Thread(
                 target=_process_single_chunk_sync,
-                args=(q, text, extract_prompt, m, api_keys[m], 
+                args=(q, text, extract_prompt, m, api_keys[m],
                       token_rates[m], req_rates[m], results),
                 daemon=True
             )
@@ -421,7 +422,7 @@ def classify_report_type(text: str, prompt_name: str) -> int | None:
         for char in classification_result:
             if char.isdigit():
                 subcategory = int(char)
-                return subcategory        
+                return subcategory
         logging.error(f"Не удалось найти номер подкатегории в ответе: {classification_result}")
         return None
     except ValueError as e:
@@ -445,7 +446,7 @@ def classify_query(text: str) -> str:
 def send_msg_to_model(
         messages: list[dict[str, Any]],
         system: str | None = None,
-        err: str=CLAUDE_ERROR_MESSAGE, 
+        err: str=CLAUDE_ERROR_MESSAGE,
         max_tokens: int=20000,
         model: str | None=REPORT_MODEL_NAME,
         api_key: str | None=ANTHROPIC_API_KEY
@@ -453,11 +454,12 @@ def send_msg_to_model(
 
     client = anthropic.Anthropic(api_key=api_key or "")
 
-    # Установим значение по умолчанию для модели если None
+    # Fallback на актуальную модель Claude Sonnet 4.5 если model не задана
+    # Исправлено: ранее использовалась несуществующая модель claude-sonnet-4-20250514
     if model is None:
-        model = "claude-sonnet-4-20250514"
+        model = "claude-sonnet-4-5-20250929"
 
-        
+
     model_args = {
     "model": model,
     "max_tokens": max_tokens,

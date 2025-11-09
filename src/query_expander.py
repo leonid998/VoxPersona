@@ -207,14 +207,13 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
         logger.info(f"[Query Expansion] Prompt sent to Claude (first 500 chars): {prompt[:500]}...")
 
         # Отправляем в Claude через существующую функцию из analysis.py
-        # ВАЖНО: Явно указываем модель claude-sonnet-4-20250514 (та же что в RAG системе)
-        # Это гарантирует консистентность качества улучшения вопросов между
-        # Query Expansion и RAG поиском (обе системы работают на одной модели)
-        # Без явного указания использовалась бы REPORT_MODEL_NAME из .env
+        # ВАЖНО: Используется актуальная модель Claude Sonnet 4.5 (исправлено: ранее была несуществующая модель claude-sonnet-4-20250514)
+        # Это гарантирует корректную работу API без ошибок 400
+        # Модель указывается явно для консистентности с RAG системой
         expanded = send_msg_to_model(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1000,  # Улучшенный вопрос редко превышает 200 токенов
-            model="claude-sonnet-4-20250514"  # Явно указываем модель (не из .env)
+            model="claude-sonnet-4-5-20250929"  # Claude Sonnet 4.5 (актуальная версия из CLAUDE.md)
         )
 
         # Логирование полного ответа Claude
