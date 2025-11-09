@@ -3,6 +3,7 @@ from datamodels import mapping_scenario_names
 from constants import BUTTON_BACK, BUTTON_BACK_WITH_ARROW
 from conversation_manager import conversation_manager
 from conversations import ConversationMetadata
+import time  # ✅ Добавлен импорт для TTL механизма
 
 def main_menu_markup():
     """Главное меню с расширенными кнопками."""
@@ -340,7 +341,8 @@ def make_query_expansion_markup(
     original_question: str,
     expanded_question: str,
     conversation_id: str,
-    deep_search: bool
+    deep_search: bool,
+    refine_count: int = 0  # ✅ ШАГ 1: Добавлен параметр refine_count
 ) -> InlineKeyboardMarkup:
     """
     Создает клавиатуру для выбора: отправить улучшенный вопрос или уточнить.
@@ -356,6 +358,7 @@ def make_query_expansion_markup(
         expanded_question: Улучшенный вопрос после query expansion
         conversation_id: ID мультичата для сохранения истории
         deep_search: True = глубокое исследование, False = быстрый поиск
+        refine_count: Текущее количество попыток уточнения (защита от зацикливания)
 
     Returns:
         InlineKeyboardMarkup с 3 кнопками (Отправить, Уточнить, Назад)
@@ -377,7 +380,9 @@ def make_query_expansion_markup(
         "expanded": expanded_question,
         "conversation_id": conversation_id,
         "deep_search": deep_search,
-        "refine_count": 0  # Счетчик попыток уточнения (защита от зацикливания)
+        "refine_count": refine_count,  # ✅ ШАГ 1: Сохраняем переданное значение счетчика
+        "created_at": time.time(),  # ✅ Время создания сессии (Unix timestamp)
+        "ttl": 3600  # ✅ TTL: 1 час (3600 секунд)
     }
 
     # callback_data: команда||hash

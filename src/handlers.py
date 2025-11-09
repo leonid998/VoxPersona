@@ -7,6 +7,7 @@ import logging
 import asyncio
 import uuid
 import json
+import time  # ✅ Для TTL механизма сессий
 from pathlib import Path
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, Document, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
@@ -2395,6 +2396,44 @@ def register_handlers(app: Client):
             logging.exception(f"Ошибка в callback_query_handler: {e}")
 
 # ============ QUERY EXPANSION HANDLERS (ФАЗА 4) ============
+def check_session_ttl(temp_key: str) -> tuple[bool, dict | None]:
+    """
+    Проверяет существование и валидность сессии query expansion.
+
+    Предотвращает утечку памяти путем автоматического удаления истекших сессий.
+
+    Args:
+        temp_key: Ключ сессии в user_states (формат: expansion_{hash})
+
+    Returns:
+        (valid, data):
+            - (True, данные) если сессия существует и не истекла
+            - (False, None) если сессия не существует или истекла (автоматически удаляется)
+
+    Example:
+        >>> valid, data = check_session_ttl("expansion_abc123")
+        >>> if valid:
+        ...     print(f"Сессия активна: {data['expanded']}")
+        ... else:
+        ...     print("Сессия истекла или не найдена")
+    """
+    expansion_data = user_states.get(temp_key)
+
+    if not expansion_data:
+        return False, None
+
+    # Проверка TTL
+    created_at = expansion_data.get("created_at", 0)
+    ttl = expansion_data.get("ttl", 3600)  # По умолчанию 1 час
+
+    # Если время жизни истекло - удалить сессию
+    if (time.time() - created_at) > ttl:
+        user_states.pop(temp_key, None)
+        return False, None
+
+    return True, expansion_data
+
+
 
 async def handle_expand_send(callback: CallbackQuery, app: Client):
     """
@@ -2420,12 +2459,12 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
     
     query_hash = parts[1]
     
-    # Извлекаем данные из user_states
+    # Извлекаем данные из user_states с проверкой TTL
     temp_key = f"expansion_{query_hash}"
-    expansion_data = user_states.get(temp_key)
+    valid, expansion_data = check_session_ttl(temp_key)
     
-    if not expansion_data:
-        await callback.answer("⚠️ Сессия истекла, попробуйте еще раз", show_alert=True)
+    if not valid:
+        await callback.answer("⚠️ Сессия истекла (прошло более 1 часа), попробуйте еще раз", show_alert=True)
         return
 
     try:
@@ -2471,14 +2510,15 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
         # Запускаем обычный поиск
         from run_analysis import run_dialog_mode, init_rags
 
-        # Получаем rags (предполагается, что они уже инициализированы в config)
-        from config import rag_indices
-        rags = rag_indices if rag_indices else init_rags()
+        # Используем глобальную переменную rags из handlers.py (строка 163)
+        # вместо несуществующей rag_indices из config
+        global rags
+        current_rags = rags if rags else init_rags()
 
         await run_dialog_mode(
             message=mock_message,
             app=app,
-            rags=rags,
+            rags=current_rags,
             deep_search=deep_search,
             conversation_id=conversation_id
         )
@@ -2515,12 +2555,12 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
     
     query_hash = parts[1]
     
-    # Извлекаем данные
+    # Извлекаем данные с проверкой TTL
     temp_key = f"expansion_{query_hash}"
-    expansion_data = user_states.get(temp_key)
+    valid, expansion_data = check_session_ttl(temp_key)
     
-    if not expansion_data:
-        await callback.answer("⚠️ Сессия истекла, попробуйте еще раз", show_alert=True)
+    if not valid:
+        await callback.answer("⚠️ Сессия истекла (прошло более 1 часа), попробуйте еще раз", show_alert=True)
         return
     
     # Проверка счетчика попыток (защита от зацикливания)
@@ -2553,26 +2593,27 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
             original=expansion_result["original"],
             expanded=expansion_result["expanded"],
             conversation_id=conversation_id,
-            deep_search=deep_search
+            deep_search=deep_search,
+            refine_count=refine_count + 1  # ✅ ШАГ 4: Передаем инкрементированный счетчик
         )
 
         await callback.answer(f"🔄 Уточнено (попытка {refine_count + 1}/3)")
 
     finally:
-        # Гарантированная очистка временных данных (даже при ошибках)
-        user_states.pop(temp_key, None)
+        # Очистка не требуется для этого обработчика
+        pass
 
 # ============ END QUERY EXPANSION HANDLERS ============
 
 
-    # ============ TEST CALLBACK HANDLER FOR MENU CRAWLER ============
-    # TEMPORARILY DISABLED: callback_query_handler is not accessible from here
-    # (it's a nested function inside register_handlers)
-    # TODO: Refactor if this debug feature is needed
-    #
-    # @app.on_message(filters.command("test_callback"))
-    # async def test_callback_handler(client: Client, message: Message):
-    #     """Debug handler - DISABLED due to architectural limitations"""
-    #     await message.reply("⚠️ /test_callback temporarily disabled")
-    # ============ END TEST CALLBACK HANDLER ============
+# ============ TEST CALLBACK HANDLER FOR MENU CRAWLER ============
+# TEMPORARILY DISABLED: callback_query_handler is not accessible from here
+# (it's a nested function inside register_handlers)
+# TODO: Refactor if this debug feature is needed
+#
+# @app.on_message(filters.command("test_callback"))
+# async def test_callback_handler(client: Client, message: Message):
+#     """Debug handler - DISABLED due to architectural limitations"""
+#     await message.reply("⚠️ /test_callback temporarily disabled")
+# ============ END TEST CALLBACK HANDLER ============
 

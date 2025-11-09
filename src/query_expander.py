@@ -15,8 +15,12 @@
 """
 
 import os
+import logging
 from typing import Dict
 from analysis import send_msg_to_model
+
+# Настройка логгера для диагностики работы модуля
+logger = logging.getLogger(__name__)
 
 # Константа: путь к файлу с описанием БД (индексы)
 DESCRY_PATH = "Description/descry.md"
@@ -159,6 +163,7 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
     # Шаг 1: Валидация входного вопроса
     # Проверяем что вопрос не пустой и имеет минимальную длину
     if not question or len(question.strip()) < 3:
+        logger.warning(f"[Query Expansion] Empty or too short question: {repr(question)}")
         return {
             "original": question,
             "expanded": question,
@@ -197,21 +202,35 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
         # Формируем промпт с вопросом и описанием БД
         prompt = build_expansion_prompt(question, descry_content)
 
+        # Логирование для диагностики промптов
+        logger.info(f"[Query Expansion] User question: {question}")
+        logger.info(f"[Query Expansion] Prompt sent to Claude (first 500 chars): {prompt[:500]}...")
+
         # Отправляем в Claude через существующую функцию из analysis.py
-        # Используем max_tokens=1000 (достаточно для улучшенного вопроса)
-        # Это экономит токены и ускоряет ответ
+        # ВАЖНО: Явно указываем модель claude-sonnet-4-20250514 (та же что в RAG системе)
+        # Это гарантирует консистентность качества улучшения вопросов между
+        # Query Expansion и RAG поиском (обе системы работают на одной модели)
+        # Без явного указания использовалась бы REPORT_MODEL_NAME из .env
         expanded = send_msg_to_model(
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000  # Улучшенный вопрос редко превышает 200 токенов
+            max_tokens=1000,  # Улучшенный вопрос редко превышает 200 токенов
+            model="claude-sonnet-4-20250514"  # Явно указываем модель (не из .env)
         )
+
+        # Логирование полного ответа Claude
+        logger.info(f"[Query Expansion] Claude response: {expanded}")
 
         # Шаг 6: Очистка и валидация ответа
         # Удаляем лишние пробелы и переносы строк
         expanded_clean = expanded.strip()
 
+        # Логирование очищенного ответа
+        logger.info(f"[Query Expansion] Cleaned response: {expanded_clean}")
+
         # Проверяем что Claude вернул корректный ответ
         # Если ответ пустой или идентичен исходному - это проблема
         if not expanded_clean or expanded_clean == question:
+            logger.warning(f"[Query Expansion] Claude returned empty or unchanged answer")
             return {
                 "original": question,
                 "expanded": question,
@@ -221,6 +240,7 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
 
         # Шаг 7: Успешное улучшение
         # Возвращаем улучшенный вопрос без ошибок
+        logger.info(f"[Query Expansion] Successfully expanded question")
         return {
             "original": question,
             "expanded": expanded_clean,
@@ -232,6 +252,7 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
         # Шаг 8: Обработка ошибок (fallback)
         # При любой ошибке API или обработки - возвращаем исходный вопрос
         # Это гарантирует что бот продолжит работать даже при проблемах
+        logger.error(f"[Query Expansion] API Error: {str(e)}", exc_info=True)
         return {
             "original": question,
             "expanded": question,

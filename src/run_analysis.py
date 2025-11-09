@@ -125,7 +125,8 @@ async def show_expanded_query_menu(
     original: str,
     expanded: str,
     conversation_id: str,
-    deep_search: bool
+    deep_search: bool,
+    refine_count: int = 0  # ✅ ШАГ 2: Добавлен параметр refine_count
 ):
     """
     Показывает оригинальный и улучшенный вопрос пользователю.
@@ -139,6 +140,7 @@ async def show_expanded_query_menu(
         expanded: Улучшенный вопрос
         conversation_id: ID мультичата (может быть None)
         deep_search: True = глубокое исследование, False = быстрый поиск
+        refine_count: Текущее количество попыток уточнения (защита от зацикливания)
     """
     # Формируем текст сообщения
     text = (
@@ -155,7 +157,8 @@ async def show_expanded_query_menu(
         original_question=original,
         expanded_question=expanded,
         conversation_id=conversation_id or "",
-        deep_search=deep_search
+        deep_search=deep_search,
+        refine_count=refine_count  # ✅ ШАГ 2: Передаем счетчик в markup
     )
 
     # Отправляем меню
@@ -180,7 +183,8 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
             original=expansion_result["original"],
             expanded=expansion_result["expanded"],
             conversation_id=conversation_id,
-            deep_search=deep_search
+            deep_search=deep_search,
+            refine_count=0  # ✅ ШАГ 3: Первая попытка - счетчик = 0
         )
         return  # Ожидаем callback от пользователя
 
