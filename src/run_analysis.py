@@ -142,12 +142,34 @@ async def show_expanded_query_menu(
         deep_search: True = глубокое исследование, False = быстрый поиск
         refine_count: Текущее количество попыток уточнения (защита от зацикливания)
     """
-    # Формируем текст сообщения
+    # FIX (2025-11-09): Защита от MESSAGE_TOO_LONG
+    # ЗАЧЕМ: Telegram лимит 4096 символов на текстовое сообщение
+    # ПОЧЕМУ 3900: Безопасный лимит с запасом для markdown форматирования и кнопок (4096 - 196 overhead)
+    # TODO (P2): В будущем добавить кнопку "Показать полностью" → отправка файлом при обрезке
+    # Связь: TASKS/2025-11-09_query_expansion_errors/inspection.md (РЕШЕНИЕ 3 - гибридный подход)
+
+    MAX_TELEGRAM_TEXT = 3900  # Telegram limit 4096 - overhead для форматирования
+    expanded_display = expanded
+
+    # Проверяем длину улучшенного вопроса
+    if len(expanded) > MAX_TELEGRAM_TEXT:
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            f"[Query Expansion] Expanded question too long: {len(expanded)} chars, "
+            f"truncating to {MAX_TELEGRAM_TEXT} chars. Chat ID: {chat_id}"
+        )
+        # Обрезаем с предупреждением для пользователя
+        expanded_display = (
+            expanded[:MAX_TELEGRAM_TEXT] +
+            "\n\n⚠️ _(Вопрос обрезан из-за ограничения длины Telegram)_"
+        )
+
+    # Формируем текст сообщения с обработанным expanded_question
     text = (
         f"📝 **Ваш вопрос:**\n"
         f"_{original}_\n\n"
         f"🔍 **Улучшенный вопрос:**\n"
-        f"*{expanded}*\n\n"
+        f"*{expanded_display}*\n\n"
         f"Отправить улучшенный вопрос в {'глубокое исследование' if deep_search else 'быстрый поиск'}?"
     )
 
@@ -155,14 +177,33 @@ async def show_expanded_query_menu(
     from markups import make_query_expansion_markup
     markup = make_query_expansion_markup(
         original_question=original,
-        expanded_question=expanded,
+        expanded_question=expanded,  # Передаем ПОЛНЫЙ вопрос в callback_data
         conversation_id=conversation_id or "",
         deep_search=deep_search,
         refine_count=refine_count  # ✅ ШАГ 2: Передаем счетчик в markup
     )
 
-    # Отправляем меню
-    await send_menu(chat_id, app, text, markup)
+    # Отправляем меню с защитой от MESSAGE_TOO_LONG
+    try:
+        await send_menu(chat_id, app, text, markup)
+    except Exception as e:
+        # Если всё равно превышен лимит (например, из-за original вопроса) - используем fallback
+        if "MESSAGE_TOO_LONG" in str(e):
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"[Query Expansion] MESSAGE_TOO_LONG even after truncation! "
+                f"Text length: {len(text)} chars. Chat ID: {chat_id}. "
+                f"Sending minimal fallback message."
+            )
+            # Минимальное сообщение-fallback
+            fallback_text = (
+                f"✅ Вопрос улучшен.\n\n"
+                f"Отправить в {'глубокое исследование' if deep_search else 'быстрый поиск'}?"
+            )
+            await send_menu(chat_id, app, fallback_text, markup)
+        else:
+            # Прокидываем другие исключения наверх
+            raise
 
 
 async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None):
