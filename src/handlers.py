@@ -2507,12 +2507,19 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
         # Читаем глобальную переменную без global (только чтение, не присваивание)
         current_rags = rags if rags else init_rags()
 
+
+        # FIX (2025-11-09 Session 6): Пропуск Query Expansion для уже улучшенных вопросов
+        # ЗАЧЕМ: expanded_question УЖЕ содержит улучшенный вопрос из expand_query
+        # БЫЛО: run_dialog_mode вызывал expand_query СНОВА → бесконечный цикл меню
+        # СТАЛО: skip_expansion=True → прямой переход к RAG поиску
+        # Связь: TASKS/.../inspection.md (Session 6 - РЕШЕНИЕ)
         await run_dialog_mode(
             message=mock_message,
             app=app,
             rags=current_rags,
             deep_search=deep_search,
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
+            skip_expansion=True  # ← НОВЫЙ ПАРАМЕТР: пропускаем повторное улучшение
         )
 
         await callback.answer("✅ Отправлено в поиск")

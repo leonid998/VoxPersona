@@ -206,31 +206,43 @@ async def show_expanded_query_menu(
             raise
 
 
-async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None):
+async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = False, conversation_id: str = None, skip_expansion: bool = False):
     # Извлекаем данные из message
     text = message.text
     chat_id = message.chat.id
 
     # ============ НАЧАЛО НОВОГО КОДА: QUERY EXPANSION ============
-    # Улучшение вопроса через Query Expansion
-    expansion_result = expand_query(text)
+    # FIX (2025-11-09 Session 6): Добавлена поддержка пропуска expand_query
+    # ЗАЧЕМ: При нажатии "Отправить в поиск" вопрос УЖЕ улучшен, повторный expand не нужен
+    # БЫЛО: Двойное улучшение → бесконечный цикл меню
+    # СТАЛО: skip_expansion=True → прямой переход к RAG поиску
+    # Связь: TASKS/2025-11-09_query_expansion_errors/inspection.md (Session 6 - КОРЕНЬ ПРОБЛЕМЫ)
 
-    # Проверка: использован ли descry.md и улучшен ли вопрос
-    if expansion_result["used_descry"] and expansion_result["expanded"] != text:
-        # Показать пользователю улучшенный вопрос с опциями
-        await show_expanded_query_menu(
-            chat_id=chat_id,
-            app=app,
-            original=expansion_result["original"],
-            expanded=expansion_result["expanded"],
-            conversation_id=conversation_id,
-            deep_search=deep_search,
-            refine_count=0  # ✅ ШАГ 3: Первая попытка - счетчик = 0
-        )
-        return  # Ожидаем callback от пользователя
+    if not skip_expansion:
+        # Улучшение вопроса через Query Expansion
+        expansion_result = expand_query(text)
 
-    # Если улучшение не применено - используем исходный вопрос
-    text_to_search = expansion_result.get("expanded", text)
+        # Проверка: использован ли descry.md и улучшен ли вопрос
+        if expansion_result["used_descry"] and expansion_result["expanded"] != text:
+            # Показать пользователю улучшенный вопрос с опциями
+            await show_expanded_query_menu(
+                chat_id=chat_id,
+                app=app,
+                original=expansion_result["original"],
+                expanded=expansion_result["expanded"],
+                conversation_id=conversation_id,
+                deep_search=deep_search,
+                refine_count=0  # ✅ ШАГ 3: Первая попытка - счетчик = 0
+            )
+            return  # Ожидаем callback от пользователя
+
+        # Если улучшение не применено - используем исходный вопрос
+        text_to_search = expansion_result.get("expanded", text)
+    else:
+        # Пропуск Query Expansion - используем вопрос как есть
+        # Этот путь используется при skip_expansion=True (например, из handle_expand_send)
+        text_to_search = text
+
     # ============ КОНЕЦ НОВОГО КОДА: QUERY EXPANSION ============
 
     try:
