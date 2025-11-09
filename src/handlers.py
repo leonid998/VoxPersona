@@ -2510,9 +2510,9 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
         # Запускаем обычный поиск
         from run_analysis import run_dialog_mode, init_rags
 
-        # Используем глобальную переменную rags из handlers.py (строка 163)
+        # Используем глобальную переменную rags из handlers.py (строка 164)
         # вместо несуществующей rag_indices из config
-        global rags
+        # Читаем глобальную переменную без global (только чтение, не присваивание)
         current_rags = rags if rags else init_rags()
 
         await run_dialog_mode(
