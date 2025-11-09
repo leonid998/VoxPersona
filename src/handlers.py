@@ -2473,29 +2473,21 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
         deep_search = expansion_data["deep_search"]
         original_question = expansion_data["original"]
 
-        # Логирование улучшения (если есть conversation_id)
+        # FIX (2025-11-09): Убрано сохранение в ConversationMessage из-за ValidationError
+        # Модель ConversationMessage не поддерживает type="system_info" и message_id=0
+        # TODO: В будущем расширить модель ConversationMessage для системных событий
+        # Связанная документация: TASKS/00007_20251105_YEIJEG/010_search_imp/01_full_inspertion/inspection.md
+        
+        # Логирование улучшения вопроса (если есть conversation_id)
         if conversation_id:
-            from conversation_manager import conversation_manager
-            from conversations import ConversationMessage
-            from datetime import datetime
-
-            # Сохраняем как системное сообщение
-            system_message = ConversationMessage(
-                timestamp=datetime.now().isoformat(),
-                message_id=0,  # Системное сообщение не имеет Telegram ID
-                type="system_info",
-                text=f"[Query Expansion] {original_question} → {expanded_question}",
-                tokens=0,
-                sent_as=None,
-                file_path=None,
-                search_type=None
-            )
-
-            conversation_manager.add_message(
-                user_id=chat_id,
-                conversation_id=conversation_id,
-                message=system_message
-            )
+            try:
+                logger.info(
+                    f"[Query Expansion] Conversation {conversation_id}: "
+                    f"Original: {original_question[:100]}... → "
+                    f"Expanded: {expanded_question[:100]}..."
+                )
+            except Exception as e:
+                logger.error(f"Failed to log expansion: {e}")
 
         # Создаем mock message с улучшенным вопросом
         # (для совместимости с run_dialog_mode)
