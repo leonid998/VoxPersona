@@ -2490,11 +2490,16 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
                 logger.error(f"Failed to log expansion: {e}")
 
         # Создаем mock message с улучшенным вопросом
+        # FIX (2025-11-09 Session 7): Генерация fake message_id для MockMessage
+        # ПРОБЛЕМА: Callback от inline кнопки НЕ имеет реального message.id
+        # РЕШЕНИЕ: Используем timestamp в микросекундах для уникального ID
+        # ОБОСНОВАНИЕ: ConversationMessage требует message_id > 0 (Pydantic валидация)
+        # ССЫЛКА: TASKS/00007_20251105_YEIJEG/010_search_imp/01_full_inspertion/inspection_session7.md (Разрыв №1)
         # (для совместимости с run_dialog_mode)
         class MockMessage:
             def __init__(self, text_val, chat_id_val):
                 self.text = text_val
-                self.id = 0
+                self.id = int(time.time() * 1000000)  # ✅ Fake ID: timestamp в микросекундах (всегда > 0, уникальный)
                 self.chat = type('Chat', (), {'id': chat_id_val})()
 
         mock_message = MockMessage(expanded_question, chat_id)
