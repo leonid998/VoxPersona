@@ -9,7 +9,7 @@ import uuid
 import json
 import time  # ✅ Для TTL механизма сессий
 from pathlib import Path
-from pyrogram import Client, filters
+from pyrogram import Client, filters, enums
 from pyrogram.types import CallbackQuery, Message, Document, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from minio.error import S3Error
 
@@ -558,34 +558,36 @@ async def handle_authorized_text(app: Client, user_states: dict[int, dict[str, A
 
     if st.get("step") == "dialog_mode":
         deep = st.get("deep_search", False)
-        # Отправляем системное сообщение-статус через MessageTracker
-        msg = await track_and_send(
-            chat_id=c_id,
-            app=app,
-            text="⏳ Думаю...",
-            message_type="status_message"
+
+        # НОВАЯ ЛОГИКА: Сохраняем вопрос и показываем меню выбора
+        user_states[c_id] = {
+            **st,  # Сохраняем существующее состояние
+            "pending_question": message.text,  # ← Сохраняем вопрос
+            "step": "awaiting_expansion_choice"  # ← Новый шаг
+        }
+
+        # Показываем меню выбора
+        await show_query_choice_menu(c_id, message.text, app)
+        return
+
+
+    # === ОБРАБОТКА AWAITING_EXPANSION_CHOICE ===
+    # Защита от ввода нового текста в состоянии ожидания выбора
+    # ЗАЧЕМ: Если пользователь вместо нажатия кнопки ввел новый текст,
+    #        нужно показать ему предупреждение и не обрабатывать новый вопрос
+    # Связь: Работает с состоянием установленным в dialog_mode handler
+    if st.get("step") == "awaiting_expansion_choice":
+        await app.send_message(
+            c_id,
+            "⚠️ **Пожалуйста, выберите действие из меню выше:**\n\n"
+            "• Отправить в поиск как есть\n"
+            "• Улучшить вопрос\n\n"
+            "Или нажмите «Назад» для возврата в меню.",
+            parse_mode=enums.ParseMode.MARKDOWN
         )
-        st_ev = threading.Event()
-        sp_th = threading.Thread(target=run_loading_animation, args=(c_id, msg.id, st_ev, app))
-        sp_th.start()
-        try:
-            if not rags:
-                await app.send_message(c_id, "🔄 База знаний ещё загружается, попробуйте позже.")
-            else:
-                await run_dialog_mode(
-                    message=message,
-                    app=app,
-                    deep_search=deep,
-                    rags=rags,
-                    conversation_id=conversation_id
-                )
-            return
-        except Exception as e:
-            logging.error(f"Ошибка: {e}")
-            await app.send_message(c_id, "Произошла ошибка")
-        finally:
-            st_ev.set()
-            sp_th.join()
+        logging.info(f"User {c_id} tried to send new text during awaiting_expansion_choice")
+        return
+    # === КОНЕЦ ОБРАБОТКИ ===
 
     # Если пользователь находится в режиме редактирования
     if st.get("step", "").startswith("edit_"):
@@ -1098,6 +1100,20 @@ async def handle_mode_deep(callback: CallbackQuery, app: Client):
 async def handle_menu_dialog(chat_id: int, app: Client):
     # Получаем текущее состояние или создаем новое
     st = user_states.get(chat_id, {})
+
+    # ✅ НОВОЕ: Очистка pending_question при возврате в меню
+    # ЗАЧЕМ: Если пользователь нажал "Назад" в меню выбора улучшения,
+    #        нужно очистить сохраненный вопрос (защита от утечки памяти)
+    # Связь: Работает с pending_question из dialog_mode handler
+    if "pending_question" in st:
+        del st["pending_question"]
+        logging.info(f"Cleared pending_question for chat_id={chat_id} (back to menu)")
+
+    # Восстанавливаем step на dialog_mode
+    if st.get("step") == "awaiting_expansion_choice":
+        st["step"] = "dialog_mode"
+        user_states[chat_id] = st
+
 
     # Сохраняем conversation_id если он есть, иначе создаем новый чат
     conversation_id = st.get("conversation_id")
@@ -2092,6 +2108,16 @@ def register_handlers(app: Client):
             elif data.startswith("expand_refine||"):
                 await handle_expand_refine(callback, app)
                 return
+
+            # === QUERY CHOICE CALLBACKS (BEFORE EXPANSION) ===
+            elif data == "query_send_as_is":
+                await handle_query_send_as_is(callback, app)
+                return
+
+            elif data == "query_improve":
+                await handle_query_improve(callback, app)
+                return
+            # === END QUERY CHOICE CALLBACKS ===
             # === КОНЕЦ QUERY EXPANSION ===
 
             # Главное меню
@@ -2608,6 +2634,317 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
         pass
 
 # ============ END QUERY EXPANSION HANDLERS ============
+
+
+# ============ QUERY CHOICE HANDLERS (BEFORE EXPANSION) ============
+
+async def show_query_choice_menu(chat_id: int, question: str, app: Client):
+    """
+    Показывает меню выбора: улучшить вопрос или отправить как есть.
+
+    Вызывается ПОСЛЕ ввода вопроса пользователем, ДО вызова expand_query().
+
+    Args:
+        chat_id: ID чата Telegram
+        question: Вопрос пользователя
+        app: Pyrogram клиент
+
+    Notes:
+        - Создает InlineKeyboard с 3 кнопками
+        - callback_data: "query_send_as_is" и "query_improve"
+        - Добавлена подсказка о пользе улучшения вопросов
+
+    Связь:
+        - Вызывается из обработчика текста при step="dialog_mode"
+        - После выбора вызывается handle_query_send_as_is или handle_query_improve
+    """
+    text = (
+        f"📝 **Ваш вопрос:**\n"
+        f"_{question}_\n\n"
+        f"💡 **Улучшение вопроса** помогает найти более точные результаты, "
+        f"используя терминологию базы данных.\n\n"
+        f"Выберите действие:"
+    )
+
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📤 Отправить в поиск КАК ЕСТЬ", callback_data="query_send_as_is")],
+        [InlineKeyboardButton("✨ Улучшить вопрос (через AI)", callback_data="query_improve")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="menu_dialog")]
+    ])
+
+    await app.send_message(chat_id, text, reply_markup=markup, parse_mode=enums.ParseMode.MARKDOWN)
+
+
+async def handle_query_send_as_is(callback: CallbackQuery, app: Client):
+    """
+    Обработчик callback: отправка вопроса в поиск БЕЗ улучшения.
+
+    Flow:
+        1. Извлечь pending_question из user_states
+        2. Удалить pending_question (очистка)
+        3. Создать MockMessage
+        4. Запустить run_dialog_mode с skip_expansion=True
+
+    Args:
+        callback: Pyrogram CallbackQuery object
+        app: Pyrogram Client
+
+    Notes:
+        - ВАЖНО: skip_expansion=True → без вызова expand_query()
+        - Добавлен loading animation (spinner)
+        - Обработка отсутствия pending_question
+
+    Связь:
+        - Вызывается из callback_query_handler при data="query_send_as_is"
+        - Запускает run_analysis.run_dialog_mode напрямую
+
+    Связь с err_task.txt:
+        - Реализует путь "Отправить в поиск КАК ЕСТЬ"
+    """
+    chat_id = callback.message.chat.id
+    st = user_states.get(chat_id, {})
+
+    original_question = st.get("pending_question")
+    conversation_id = st.get("conversation_id")
+    deep_search = st.get("deep_search", False)
+
+    # Валидация: проверка наличия вопроса
+    if not original_question:
+        await callback.answer("⚠️ Вопрос не найден, попробуйте еще раз", show_alert=True)
+        logging.warning(f"[Query Choice] No pending_question for chat_id={chat_id}")
+        return
+
+    # Удаляем pending_question из состояния (защита от утечки памяти)
+    if "pending_question" in st:
+        del st["pending_question"]
+        # Восстанавливаем step на dialog_mode для следующих вопросов
+        st["step"] = "dialog_mode"
+        user_states[chat_id] = st
+
+    await callback.answer("✅ Отправлено в поиск")
+    logging.info(f"[Query Choice] User {chat_id} chose SEND AS IS: {original_question[:50]}")
+
+    # Создаем mock message (для совместимости с run_dialog_mode)
+    class MockMessage:
+        def __init__(self, text_val, chat_id_val, msg_id):
+            self.text = text_val
+            self.id = msg_id
+            self.chat = type('Chat', (), {'id': chat_id_val})()
+
+    import time
+    mock_message = MockMessage(original_question, chat_id, int(time.time() * 1000000))
+
+    # Показываем loading animation
+    msg = await track_and_send(
+        chat_id=chat_id,
+        app=app,
+        text="⏳ Думаю...",
+        message_type="status_message"
+    )
+
+    st_ev = threading.Event()
+    sp_th = threading.Thread(target=run_loading_animation, args=(chat_id, msg.id, st_ev, app))
+    sp_th.start()
+
+    # ✅ ISSUE #2a FIX: Проверка готовности базы знаний
+    if not rags:
+        st_ev.set()
+        sp_th.join()
+        await app.send_message(chat_id, "🔄 База знаний ещё загружается, попробуйте позже.")
+        logging.warning(f"[Query Choice] RAGs not ready for chat_id={chat_id}")
+        return
+
+    try:
+        # Запускаем поиск БЕЗ улучшения
+        from run_analysis import run_dialog_mode
+        await run_dialog_mode(
+            message=mock_message,
+            app=app,
+            rags=rags,  # Глобальная переменная из handlers.py
+            deep_search=deep_search,
+            conversation_id=conversation_id,
+            skip_expansion=True  # ← КЛЮЧЕВОЙ ПАРАМЕТР: пропуск expand_query()
+        )
+    except Exception as e:
+        logging.error(f"[Query Choice] Error in handle_query_send_as_is: {e}", exc_info=True)
+        await app.send_message(chat_id, "❌ Произошла ошибка при поиске")
+    finally:
+        # Останавливаем spinner
+        st_ev.set()
+        sp_th.join()
+
+
+async def handle_query_improve(callback: CallbackQuery, app: Client):
+    """
+    Обработчик callback: улучшение вопроса через expand_query().
+
+    Flow:
+        1. Извлечь pending_question из user_states
+        2. Удалить pending_question (очистка)
+        3. Вызвать expand_query()
+        4. ЕСЛИ успешно → show_expanded_query_menu()
+        5. ИНАЧЕ → fallback на отправку без улучшения
+
+    Args:
+        callback: Pyrogram CallbackQuery object
+        app: Pyrogram Client
+
+    Notes:
+        - Обрабатывает случай когда expand_query не улучшил вопрос
+        - Fallback: отправка оригинального вопроса с предупреждением
+        - Логирование всех этапов для диагностики
+
+    Связь:
+        - Вызывается из callback_query_handler при data="query_improve"
+        - Использует query_expander.expand_query()
+        - При успехе вызывает run_analysis.show_expanded_query_menu()
+
+    Связь с err_task.txt:
+        - Реализует путь "Улучшить вопрос"
+    """
+    chat_id = callback.message.chat.id
+    st = user_states.get(chat_id, {})
+
+    original_question = st.get("pending_question")
+    conversation_id = st.get("conversation_id")
+    deep_search = st.get("deep_search", False)
+
+    # Валидация: проверка наличия вопроса
+    if not original_question:
+        await callback.answer("⚠️ Вопрос не найден, попробуйте еще раз", show_alert=True)
+        logging.warning(f"[Query Choice] No pending_question for chat_id={chat_id}")
+        return
+
+    # Удаляем pending_question (защита от утечки)
+    if "pending_question" in st:
+        del st["pending_question"]
+        st["step"] = "dialog_mode"  # Восстанавливаем для следующих вопросов
+        user_states[chat_id] = st
+
+    await callback.answer("✨ Улучшаю вопрос...")
+    logging.info(f"[Query Choice] User {chat_id} chose IMPROVE: {original_question[:50]}")
+
+    # Вызываем expand_query
+    from query_expander import expand_query
+
+    try:
+        expansion_result = expand_query(original_question)
+    except Exception as e:
+        # Обработка критической ошибки expand_query
+        logging.error(f"[Query Choice] expand_query failed: {e}", exc_info=True)
+        await callback.answer(
+            "⚠️ Не удалось улучшить вопрос, отправляю оригинал",
+            show_alert=True
+        )
+        # Fallback: отправка без улучшения
+        await _execute_search_without_expansion(
+            chat_id, original_question, deep_search, conversation_id, app
+        )
+        return
+
+    # Проверка: было ли улучшение успешным
+    if expansion_result["used_descry"] and expansion_result["expanded"] != original_question:
+        # Успех: показываем улучшенный вопрос
+        from run_analysis import show_expanded_query_menu
+        await show_expanded_query_menu(
+            chat_id=chat_id,
+            app=app,
+            original=expansion_result["original"],
+            expanded=expansion_result["expanded"],
+            conversation_id=conversation_id,
+            deep_search=deep_search,
+            refine_count=0  # Первая попытка улучшения
+        )
+        logging.info(f"[Query Choice] Successfully expanded for chat_id={chat_id}")
+        return  # ✅ ISSUE #1 FIX: предотвращаем выполнение else блока
+    else:
+        # Улучшение не сработало (например, descry.md пустой или expanded == original)
+        error_reason = expansion_result.get("error", "unknown")
+        logging.warning(
+            f"[Query Choice] Expansion failed for chat_id={chat_id}: {error_reason}"
+        )
+        await callback.answer(
+            "⚠️ Улучшение не применилось, отправляю оригинальный вопрос",
+            show_alert=True
+        )
+        # Fallback: отправка без улучшения
+        await _execute_search_without_expansion(
+            chat_id, original_question, deep_search, conversation_id, app
+        )
+
+
+async def _execute_search_without_expansion(
+    chat_id: int,
+    question: str,
+    deep_search: bool,
+    conversation_id: str,
+    app: Client
+):
+    """
+    Внутренняя функция: запуск поиска БЕЗ улучшения вопроса.
+
+    Используется как fallback в handle_query_improve при ошибках expand_query.
+
+    Args:
+        chat_id: ID чата Telegram
+        question: Вопрос пользователя
+        deep_search: True = глубокое исследование, False = быстрый поиск
+        conversation_id: ID мультичата
+        app: Pyrogram Client
+
+    Notes:
+        - Дублирует логику из handle_query_send_as_is
+        - Добавлен для избежания циклических вызовов
+        - skip_expansion=True
+    """
+    # Создаем mock message
+    class MockMessage:
+        def __init__(self, text_val, chat_id_val, msg_id):
+            self.text = text_val
+            self.id = msg_id
+            self.chat = type('Chat', (), {'id': chat_id_val})()
+
+    import time
+    mock_message = MockMessage(question, chat_id, int(time.time() * 1000000))
+
+    # Показываем loading animation
+    msg = await track_and_send(
+        chat_id=chat_id,
+        app=app,
+        text="⏳ Думаю...",
+        message_type="status_message"
+    )
+
+    st_ev = threading.Event()
+    sp_th = threading.Thread(target=run_loading_animation, args=(chat_id, msg.id, st_ev, app))
+    sp_th.start()
+
+    # ✅ ISSUE #2b FIX: Проверка готовности базы знаний
+    if not rags:
+        st_ev.set()
+        sp_th.join()
+        await app.send_message(chat_id, "🔄 База знаний ещё загружается, попробуйте позже.")
+        logging.warning(f"[Query Choice] RAGs not ready in _execute_search_without_expansion")
+        return
+
+    try:
+        from run_analysis import run_dialog_mode
+        await run_dialog_mode(
+            message=mock_message,
+            app=app,
+            rags=rags,
+            deep_search=deep_search,
+            conversation_id=conversation_id,
+            skip_expansion=True
+        )
+    except Exception as e:
+        logging.error(f"[Query Choice] Error in _execute_search: {e}", exc_info=True)
+        await app.send_message(chat_id, "❌ Произошла ошибка при поиске")
+    finally:
+        st_ev.set()
+        sp_th.join()
+
+# ============ END QUERY CHOICE HANDLERS ============
 
 
 # ============ TEST CALLBACK HANDLER FOR MENU CRAWLER ============
