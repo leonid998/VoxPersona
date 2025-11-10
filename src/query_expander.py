@@ -64,18 +64,18 @@ def load_descry() -> str:
 
 
 # Константа: путь к файлу с промптом для улучшения вопросов
-QUERY_EXPANSION_PROMPT_PATH = "Description/queru_exp.md"
+QUERY_EXPANSION_PROMPT_PATH = "Description/queru_exp.txt"
 
 
 def load_query_expansion_prompt() -> str:
     """
     Загружает шаблон промпта для улучшения вопросов пользователя.
 
-    Файл queru_exp.md содержит инструкции для Claude по улучшению вопросов
+    Файл queru_exp.txt содержит инструкции для Claude по улучшению вопросов
     с использованием терминологии из описания БД.
 
     Returns:
-        str: Содержимое файла queru_exp.md (шаблон промпта с плейсхолдерами).
+        str: Содержимое файла queru_exp.txt (шаблон промпта с плейсхолдерами).
 
     Raises:
         FileNotFoundError: Если файл не существует (критическая ошибка конфигурации).
@@ -114,7 +114,7 @@ def build_expansion_prompt(question: str, descry_content: str) -> str:
     """
     Формирует промпт для Claude согласно алгоритму улучшения вопросов.
 
-    FIX (2025-11-10): Промпт загружается из файла Description/queru_exp.md
+    FIX (2025-11-10): Промпт загружается из файла Description/queru_exp.txt
     ИЗМЕНЕНИЕ: Вместо хардкод f-string используется шаблон из файла
     ЗАЧЕМ: Упрощение редактирования промпта без изменения кода
     ПРЕИМУЩЕСТВА:
@@ -122,7 +122,7 @@ def build_expansion_prompt(question: str, descry_content: str) -> str:
     - Редактирование без пересборки Docker образа (при hot-reload)
     - Версионирование промпта в git (отдельный файл)
 
-    Промпт загружается из файла queru_exp.md и содержит плейсхолдеры:
+    Промпт загружается из файла queru_exp.txt и содержит плейсхолдеры:
     - {question} - подставляется исходный вопрос пользователя
     - {descry_content} - подставляется содержимое файла descry.md
 
@@ -134,7 +134,7 @@ def build_expansion_prompt(question: str, descry_content: str) -> str:
         str: Полный промпт для отправки в Claude API
 
     Raises:
-        FileNotFoundError: Если файл queru_exp.md не найден
+        FileNotFoundError: Если файл queru_exp.txt не найден
         IOError: Если произошла ошибка чтения файла
         ValueError: Если шаблон не содержит необходимых плейсхолдеров
 

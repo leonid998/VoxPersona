@@ -144,7 +144,7 @@ class TestLoadQueryExpansionPrompt:
                 load_query_expansion_prompt()
 
             assert "Prompt template file not found" in str(exc_info.value)
-            assert "queru_exp.md" in str(exc_info.value)
+            assert "queru_exp.txt" in str(exc_info.value)
 
     def test_load_prompt_file_read_error(self):
         """
