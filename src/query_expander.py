@@ -63,24 +63,68 @@ def load_descry() -> str:
         return ""
 
 
+# Константа: путь к файлу с промптом для улучшения вопросов
+QUERY_EXPANSION_PROMPT_PATH = "Description/queru_exp.md"
+
+
+def load_query_expansion_prompt() -> str:
+    """
+    Загружает шаблон промпта для улучшения вопросов пользователя.
+
+    Файл queru_exp.md содержит инструкции для Claude по улучшению вопросов
+    с использованием терминологии из описания БД.
+
+    Returns:
+        str: Содержимое файла queru_exp.md (шаблон промпта с плейсхолдерами).
+
+    Raises:
+        FileNotFoundError: Если файл не существует (критическая ошибка конфигурации).
+        IOError: Если произошла ошибка чтения файла.
+
+    Notes:
+        - Путь к файлу задается константой QUERY_EXPANSION_PROMPT_PATH
+        - Файл читается с кодировкой UTF-8
+        - Отсутствие файла считается критической ошибкой
+        - Промпт содержит плейсхолдеры {question} и {descry_content}
+
+    Examples:
+        >>> template = load_query_expansion_prompt()
+        >>> prompt = template.format(question="Проблемы с вентиляцией", descry_content="...")
+    """
+    # Проверка существования файла
+    if not os.path.exists(QUERY_EXPANSION_PROMPT_PATH):
+        error_msg = f"[Query Expansion] Prompt template file not found: {QUERY_EXPANSION_PROMPT_PATH}"
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg)
+
+    try:
+        # Читаем файл с явным указанием кодировки UTF-8
+        with open(QUERY_EXPANSION_PROMPT_PATH, 'r', encoding='utf-8') as f:
+            template = f.read()
+
+        logger.info(f"[Query Expansion] Loaded prompt template from {QUERY_EXPANSION_PROMPT_PATH} ({len(template)} chars)")
+        return template
+    except Exception as e:
+        error_msg = f"[Query Expansion] Error reading prompt template: {e}"
+        logger.error(error_msg)
+        raise IOError(error_msg) from e
+
+
 def build_expansion_prompt(question: str, descry_content: str) -> str:
     """
     Формирует промпт для Claude согласно алгоритму улучшения вопросов.
 
-    FIX (2025-11-09): Промпт изменен для КРАТКОСТИ
-    ПРОБЛЕМА: Claude генерировал вопросы 2000-4700 символов → MESSAGE_TOO_LONG (Telegram лимит: 4096)
-    ПРИЧИНА: Промпт содержал "подробно разверни", "добавь детали" → побуждал к многословности
-    РЕШЕНИЕ:
-    - Заменены слова: "подробно" → "КРАТКО", "детали" → "КЛЮЧЕВЫЕ термины"
-    - Добавлен четкий лимит: "Максимум 400 символов"
-    - Обновлены инструкции (компактность, 10-20 слов)
-    РЕЗУЛЬТАТ: Ожидаемая длина: 200-500 символов (безопасно для Telegram)
+    FIX (2025-11-10): Промпт загружается из файла Description/queru_exp.md
+    ИЗМЕНЕНИЕ: Вместо хардкод f-string используется шаблон из файла
+    ЗАЧЕМ: Упрощение редактирования промпта без изменения кода
+    ПРЕИМУЩЕСТВА:
+    - A/B тестирование разных версий промпта
+    - Редактирование без пересборки Docker образа (при hot-reload)
+    - Версионирование промпта в git (отдельный файл)
 
-    Промпт содержит:
-    - Исходный вопрос пользователя
-    - Полное описание БД (индексы и структура)
-    - Пошаговый алгоритм улучшения (5 шагов)
-    - Требования к улучшенному вопросу
+    Промпт загружается из файла queru_exp.md и содержит плейсхолдеры:
+    - {question} - подставляется исходный вопрос пользователя
+    - {descry_content} - подставляется содержимое файла descry.md
 
     Args:
         question: Исходный вопрос пользователя
@@ -89,12 +133,18 @@ def build_expansion_prompt(question: str, descry_content: str) -> str:
     Returns:
         str: Полный промпт для отправки в Claude API
 
+    Raises:
+        FileNotFoundError: Если файл queru_exp.md не найден
+        IOError: Если произошла ошибка чтения файла
+        ValueError: Если шаблон не содержит необходимых плейсхолдеров
+
     Notes:
-        - Алгоритм улучшения основан на task.txt (5 шагов)
+        - Использует load_query_expansion_prompt() для загрузки шаблона
+        - Подстановка значений через .format() (не f-string)
         - Промпт инструктирует Claude вернуть ТОЛЬКО улучшенный вопрос
         - Не допускается добавление информации, отсутствующей в descry.md
 
-    Связь: TASKS/00007_20251105_YEIJEG/010_search_imp/01_full_inspertion/inspection.md (РЕШЕНИЕ 3)
+    Связь: TASKS/00007_20251105_YEIJEG/010_search_imp/03_promt_out/inspection.md
 
     Examples:
         >>> prompt = build_expansion_prompt(
@@ -103,39 +153,25 @@ def build_expansion_prompt(question: str, descry_content: str) -> str:
         ... )
         >>> assert "Алгоритм улучшения" in prompt
     """
-    # FIX (2025-11-09): Ограничение длины для исправления MESSAGE_TOO_LONG
-    # ЗАЧЕМ: Telegram лимит 4096 символов, безопасный лимит: 400 символов
-    # БЫЛО: "подробно разверни" → 2000-4700 символов
-    # СТАЛО: "КРАТКО улучши" → 200-500 символов
-    # Связь: TASKS/00007_20251105_YEIJEG/010_search_imp/01_full_inspertion/inspection.md (РЕШЕНИЕ 3)
+    # Загружаем шаблон промпта из файла
+    # ВАЖНО: При отсутствии файла будет выброшено исключение FileNotFoundError
+    # ЗАЧЕМ: Отсутствие промпта = критическая ошибка конфигурации, должна быть явной
+    prompt_template = load_query_expansion_prompt()
 
-    # Формируем промпт согласно спецификации из impl_plan.md (строки 194-217)
-    # Промпт структурирован для максимальной ясности инструкций Claude
-    return f"""Задача: КРАТКО улучшить вопрос пользователя используя терминологию из описания БД.
-
-Вопрос пользователя:
-{question}
-
-Описание содержимого БД (индексы и структура):
-{descry_content}
-
-Алгоритм улучшения:
-1. КРАТКО и точно улучши вопрос пользователя
-2. Изучи описание БД и найди наиболее релевантные термины
-3. Найди возможное содержание которое содержится в описании БД
-4. Перестрой вопрос используя найденную терминологию из описания БД (только КЛЮЧЕВЫЕ термины!)
-5. Добавь только САМЫЕ ВАЖНЫЕ термины (не все найденные!)
-
-Требования к улучшенному вопросу:
-- Сохранить смысл исходного вопроса
-- Добавить только КЛЮЧЕВЫЕ термины из описания БД
-- Сделать вопрос более конкретным и точным для поиска
-- НЕ задавать встречные вопросы пользователю
-- НЕ добавлять информацию, которой нет в описании БД
-- **ВАЖНО: Максимальная длина улучшенного вопроса — 400 символов (10-20 слов)!**
-
-Верни ТОЛЬКО улучшенный вопрос (без пояснений, без вводных фраз).
-"""
+    # Подставляем значения в шаблон
+    # Используем .format() вместо f-string для runtime подстановки
+    # ЗАЧЕМ: f-string выполняется при определении функции, а нам нужна подстановка во время вызова
+    try:
+        return prompt_template.format(
+            question=question,
+            descry_content=descry_content
+        )
+    except KeyError as e:
+        # Защита от некорректного шаблона (отсутствует плейсхолдер)
+        # ЗАЧЕМ: Если пользователь удалит {question} или {descry_content} из файла, код упадет явно
+        error_msg = f"[Query Expansion] Invalid prompt template: missing placeholder {e}"
+        logger.error(error_msg)
+        raise ValueError(error_msg) from e
 
 
 def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:

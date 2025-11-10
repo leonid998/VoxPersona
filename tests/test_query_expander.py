@@ -13,9 +13,11 @@ import pytest
 from unittest.mock import patch, mock_open, MagicMock
 from src.query_expander import (
     load_descry,
+    load_query_expansion_prompt,
     build_expansion_prompt,
     expand_query,
-    DESCRY_PATH
+    DESCRY_PATH,
+    QUERY_EXPANSION_PROMPT_PATH
 )
 
 
@@ -93,6 +95,76 @@ class TestLoadDescry:
 
 
 # =============================================================================
+# TestLoadQueryExpansionPrompt: Тесты загрузки шаблона промпта
+# =============================================================================
+
+class TestLoadQueryExpansionPrompt:
+    """
+    Тестирует функцию load_query_expansion_prompt() - загрузку шаблона промпта.
+
+    Покрываемые сценарии:
+    - Успешная загрузка файла queru_exp.md
+    - Отсутствие файла (FileNotFoundError)
+    - Ошибка чтения файла (IOError)
+    """
+
+    def test_load_prompt_file_exists(self):
+        """
+        Тест: файл queru_exp.md существует и успешно читается.
+
+        Проверяет что:
+        - Функция корректно открывает файл с UTF-8 кодировкой
+        - Возвращает полное содержимое файла
+        - Путь к файлу соответствует константе QUERY_EXPANSION_PROMPT_PATH
+        - Шаблон содержит плейсхолдеры {question} и {descry_content}
+        """
+        mock_content = "Задача: КРАТКО улучшить вопрос\n\nВопрос: {question}\n\nОписание: {descry_content}"
+
+        with patch('os.path.exists', return_value=True), \
+             patch('builtins.open', mock_open(read_data=mock_content)):
+
+            result = load_query_expansion_prompt()
+
+            assert result == mock_content
+            assert "{question}" in result
+            assert "{descry_content}" in result
+
+    def test_load_prompt_file_not_exists(self):
+        """
+        Тест: файл queru_exp.md не существует (критическая ошибка).
+
+        Проверяет что:
+        - Функция проверяет существование файла перед чтением
+        - Выбрасывает FileNotFoundError при отсутствии файла
+        - Сообщение ошибки содержит путь к файлу
+        """
+        with patch('os.path.exists', return_value=False):
+
+            with pytest.raises(FileNotFoundError) as exc_info:
+                load_query_expansion_prompt()
+
+            assert "Prompt template file not found" in str(exc_info.value)
+            assert "queru_exp.md" in str(exc_info.value)
+
+    def test_load_prompt_file_read_error(self):
+        """
+        Тест: ошибка при чтении файла (права доступа, кодировка и т.д.).
+
+        Проверяет что:
+        - Функция обрабатывает исключения при чтении
+        - Выбрасывает IOError с описанием ошибки
+        - Сообщение ошибки содержит оригинальную причину
+        """
+        with patch('os.path.exists', return_value=True), \
+             patch('builtins.open', side_effect=IOError("Permission denied")):
+
+            with pytest.raises(IOError) as exc_info:
+                load_query_expansion_prompt()
+
+            assert "Error reading prompt template" in str(exc_info.value)
+
+
+# =============================================================================
 # TestBuildExpansionPrompt: Тесты формирования промпта
 # =============================================================================
 
@@ -106,14 +178,19 @@ class TestBuildExpansionPrompt:
         Проверяет что:
         - Вопрос пользователя включен в промпт без изменений
         - Вопрос находится в секции "Вопрос пользователя:"
+
+        FIX (2025-11-10): Обновлено - промпт загружается из файла
         """
         question = "Какие проблемы с вентиляцией?"
         descry = "Индексы: вентиляция"
 
-        prompt = build_expansion_prompt(question, descry)
+        mock_prompt_template = "Вопрос пользователя:\n{question}\n\nОписание: {descry_content}"
 
-        assert question in prompt
-        assert "Вопрос пользователя:" in prompt
+        with patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template):
+            prompt = build_expansion_prompt(question, descry)
+
+            assert question in prompt
+            assert "Вопрос пользователя:" in prompt
 
     def test_prompt_contains_descry_content(self):
         """
@@ -122,14 +199,19 @@ class TestBuildExpansionPrompt:
         Проверяет что:
         - Содержимое descry.md включено в промпт
         - Описание находится в секции "Описание содержимого БД"
+
+        FIX (2025-11-10): Обновлено - промпт загружается из файла
         """
         question = "Проблемы с отоплением"
         descry = "Индексы: отопление, котельная, ИТП"
 
-        prompt = build_expansion_prompt(question, descry)
+        mock_prompt_template = "Вопрос: {question}\n\nОписание содержимого БД:\n{descry_content}"
 
-        assert descry in prompt
-        assert "Описание содержимого БД" in prompt
+        with patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template):
+            prompt = build_expansion_prompt(question, descry)
+
+            assert descry in prompt
+            assert "Описание содержимого БД" in prompt
 
     def test_prompt_contains_algorithm_steps(self):
         """
@@ -138,20 +220,33 @@ class TestBuildExpansionPrompt:
         Проверяет что:
         - Секция "Алгоритм улучшения:" присутствует
         - Все 5 шагов алгоритма включены в промпт:
-          1. Развернуть вопрос
+          1. КРАТКО улучшить вопрос
           2. Изучить описание БД
           3. Найти возможное содержание
           4. Перестроить вопрос
-          5. Добавить уточняющие детали
-        """
-        prompt = build_expansion_prompt("Тестовый вопрос", "Тестовое описание")
+          5. Добавить САМЫЕ ВАЖНЫЕ термины
 
-        assert "Алгоритм улучшения:" in prompt
-        assert "1. Правильно и подробно разверни вопрос" in prompt
-        assert "2. Изучи описание БД" in prompt
-        assert "3. Найди возможное содержание" in prompt
-        assert "4. Перестрой вопрос" in prompt
-        assert "5. Добавь уточняющие детали" in prompt
+        FIX (2025-11-10): Обновлено - промпт загружается из файла
+        """
+        mock_prompt_template = """Алгоритм улучшения:
+1. КРАТКО и точно улучши вопрос пользователя
+2. Изучи описание БД и найди наиболее релевантные термины
+3. Найди возможное содержание которое содержится в описании БД
+4. Перестрой вопрос используя найденную терминологию из описания БД
+5. Добавь только САМЫЕ ВАЖНЫЕ термины
+
+Вопрос: {question}
+Описание: {descry_content}"""
+
+        with patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template):
+            prompt = build_expansion_prompt("Тестовый вопрос", "Тестовое описание")
+
+            assert "Алгоритм улучшения:" in prompt
+            assert "1. КРАТКО и точно улучши вопрос" in prompt
+            assert "2. Изучи описание БД" in prompt
+            assert "3. Найди возможное содержание" in prompt
+            assert "4. Перестрой вопрос" in prompt
+            assert "5. Добавь только САМЫЕ ВАЖНЫЕ термины" in prompt
 
     def test_prompt_contains_requirements(self):
         """
@@ -161,12 +256,23 @@ class TestBuildExpansionPrompt:
         - Секция "Требования к улучшенному вопросу:" присутствует
         - Указано требование "Верни ТОЛЬКО улучшенный вопрос"
         - Запрещено добавлять информацию вне descry.md
-        """
-        prompt = build_expansion_prompt("Тест", "Описание")
 
-        assert "Требования к улучшенному вопросу:" in prompt
-        assert "Верни ТОЛЬКО улучшенный вопрос" in prompt
-        assert "НЕ добавлять информацию, которой нет в описании БД" in prompt
+        FIX (2025-11-10): Обновлено - промпт загружается из файла
+        """
+        mock_prompt_template = """Вопрос: {question}
+Описание: {descry_content}
+
+Требования к улучшенному вопросу:
+- Верни ТОЛЬКО улучшенный вопрос
+- НЕ добавлять информацию, которой нет в описании БД
+- **ВАЖНО: Максимальная длина — 400 символов!**"""
+
+        with patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template):
+            prompt = build_expansion_prompt("Тест", "Описание")
+
+            assert "Требования к улучшенному вопросу:" in prompt
+            assert "Верни ТОЛЬКО улучшенный вопрос" in prompt
+            assert "НЕ добавлять информацию, которой нет в описании БД" in prompt
 
     def test_prompt_with_special_characters(self):
         """
@@ -175,16 +281,62 @@ class TestBuildExpansionPrompt:
         Проверяет что:
         - Вопрос и descry с кириллицей корректно включаются
         - Спецсимволы не ломают форматирование промпта
+
+        FIX (2025-11-10): Обновлено - промпт загружается из файла
         """
         question = "Проблемы с ПВУ (приточно-вытяжные установки)?"
         descry = "Системы: вентиляция 50%, кондиционирование 30%"
 
-        prompt = build_expansion_prompt(question, descry)
+        mock_prompt_template = "Вопрос: {question}\nОписание: {descry_content}"
 
-        assert question in prompt
-        assert descry in prompt
-        assert "%" in prompt
-        assert "(" in prompt
+        with patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template):
+            prompt = build_expansion_prompt(question, descry)
+
+            assert question in prompt
+            assert descry in prompt
+            assert "%" in prompt
+            assert "(" in prompt
+
+    def test_build_expansion_prompt_invalid_template_missing_question(self):
+        """
+        Тест: шаблон не содержит плейсхолдера {question} (ValueError).
+
+        Проверяет что:
+        - build_expansion_prompt() выбросит KeyError при форматировании
+        - Этот KeyError обрабатывается и выбрасывается ValueError
+        - Сообщение ошибки содержит имя отсутствующего плейсхолдера
+
+        FIX (2025-11-10): Обновлено - валидация через try-except в build_expansion_prompt
+        """
+        # Шаблон БЕЗ {question}, но С {descry_content} - format() не выбросит KeyError!
+        # Нужен шаблон с дополнительными плейсхолдерами которые вызовут KeyError
+        invalid_template = "Описание: {descry_content}\nДополнительно: {unknown_placeholder}"
+
+        with patch('src.query_expander.load_query_expansion_prompt', return_value=invalid_template):
+            with pytest.raises(ValueError) as exc_info:
+                build_expansion_prompt("Тестовый вопрос", "Описание БД")
+
+            assert "Invalid prompt template" in str(exc_info.value)
+            assert "unknown_placeholder" in str(exc_info.value)
+
+    def test_build_expansion_prompt_valid_template_extra_placeholders(self):
+        """
+        Тест: шаблон содержит ВСЕ необходимые плейсхолдеры + дополнительные (ошибка).
+
+        Проверяет что:
+        - Если шаблон содержит неизвестные плейсхолдеры - выбрасывается ValueError
+        - Ошибка содержит имя неизвестного плейсхолдера
+
+        FIX (2025-11-10): Добавлено для полного покрытия edge cases
+        """
+        template_with_extra = "Вопрос: {question}\nОписание: {descry_content}\nДоп: {extra_field}"
+
+        with patch('src.query_expander.load_query_expansion_prompt', return_value=template_with_extra):
+            with pytest.raises(ValueError) as exc_info:
+                build_expansion_prompt("Вопрос", "Описание")
+
+            assert "Invalid prompt template" in str(exc_info.value)
+            assert "extra_field" in str(exc_info.value)
 
 
 # =============================================================================
@@ -223,10 +375,15 @@ class TestExpandQuery:
         - При отсутствии descry.md возвращает исходный вопрос
         - Устанавливает error о отсутствии файла
         - Флаг used_descry = False (файл не использован)
+
+        FIX (2025-11-10): Добавлено мокирование load_query_expansion_prompt()
         """
         question = "Какие проблемы с вентиляцией?"
 
-        with patch('src.query_expander.load_descry', return_value=""):
+        mock_prompt_template = "Вопрос: {question}\nОписание: {descry_content}"
+
+        with patch('src.query_expander.load_descry', return_value=""), \
+             patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template):
             result = expand_query(question)
 
             assert result["original"] == question
@@ -244,12 +401,17 @@ class TestExpandQuery:
         - Устанавливает error = None (нет ошибок)
         - Флаг used_descry = True (файл использован)
         - Очищает ответ от лишних пробелов (strip)
+
+        FIX (2025-11-10): Добавлено мокирование load_query_expansion_prompt()
         """
         question = "проблемы с вентиляцией"
         descry_content = "Индексы: вентиляция, ПВУ, воздуховоды"
         improved_question = "Какие неисправности обнаружены в системах вентиляции (ПВУ, воздуховоды)?"
 
+        mock_prompt_template = "Вопрос: {question}\nОписание: {descry_content}"
+
         with patch('src.query_expander.load_descry', return_value=descry_content), \
+             patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template), \
              patch('src.query_expander.send_msg_to_model', return_value=improved_question):
 
             result = expand_query(question)
@@ -268,11 +430,16 @@ class TestExpandQuery:
         - Возвращает исходный вопрос при ошибке (безопасный fallback)
         - Устанавливает error с описанием ошибки API
         - Флаг used_descry = False (улучшение не произошло)
+
+        FIX (2025-11-10): Добавлено мокирование load_query_expansion_prompt()
         """
         question = "Проблемы с отоплением"
         descry_content = "Индексы: отопление"
 
+        mock_prompt_template = "Вопрос: {question}\nОписание: {descry_content}"
+
         with patch('src.query_expander.load_descry', return_value=descry_content), \
+             patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template), \
              patch('src.query_expander.send_msg_to_model', side_effect=Exception("API timeout")):
 
             result = expand_query(question)
@@ -293,12 +460,17 @@ class TestExpandQuery:
         - Возвращает исходный вопрос при некорректном ответе
         - Устанавливает error о пустом ответе
         - Флаг used_descry = True (descry использовался, но не помог)
+
+        FIX (2025-11-10): Добавлено мокирование load_query_expansion_prompt()
         """
         question = "Тестовый вопрос"
         descry_content = "Описание БД"
 
+        mock_prompt_template = "Вопрос: {question}\nОписание: {descry_content}"
+
         # Тест 1: пустой ответ от Claude
         with patch('src.query_expander.load_descry', return_value=descry_content), \
+             patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template), \
              patch('src.query_expander.send_msg_to_model', return_value="   "):
 
             result = expand_query(question)
@@ -309,6 +481,7 @@ class TestExpandQuery:
 
         # Тест 2: Claude вернул тот же вопрос (не улучшил)
         with patch('src.query_expander.load_descry', return_value=descry_content), \
+             patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template), \
              patch('src.query_expander.send_msg_to_model', return_value=question):
 
             result = expand_query(question)
@@ -325,12 +498,17 @@ class TestExpandQuery:
         - Применяется strip() к ответу от Claude
         - Удаляются начальные и конечные пробелы/переносы строк
         - Возвращается очищенный улучшенный вопрос
+
+        FIX (2025-11-10): Добавлено мокирование load_query_expansion_prompt()
         """
         question = "Проблемы с ПВУ"
         descry_content = "Индексы: ПВУ"
         improved_with_whitespace = "\n\n  Какие неисправности в приточно-вытяжных установках?  \n"
 
+        mock_prompt_template = "Вопрос: {question}\nОписание: {descry_content}"
+
         with patch('src.query_expander.load_descry', return_value=descry_content), \
+             patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template), \
              patch('src.query_expander.send_msg_to_model', return_value=improved_with_whitespace):
 
             result = expand_query(question)
@@ -349,11 +527,16 @@ class TestExpandQuery:
         - Функция работает с любым значением max_retries
 
         Примечание: параметр зарезервирован для будущего использования.
+
+        FIX (2025-11-10): Добавлено мокирование load_query_expansion_prompt()
         """
         question = "Тестовый вопрос"
         descry_content = "Описание"
 
+        mock_prompt_template = "Вопрос: {question}\nОписание: {descry_content}"
+
         with patch('src.query_expander.load_descry', return_value=descry_content), \
+             patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template), \
              patch('src.query_expander.send_msg_to_model', return_value="Улучшенный вопрос"):
 
             # Тест с default max_retries
@@ -374,11 +557,16 @@ class TestExpandQuery:
         - Пока что обрабатывается без ошибок (pass в коде)
 
         Примечание: реализация chunking запланирована в будущем.
+
+        FIX (2025-11-10): Добавлено мокирование load_query_expansion_prompt()
         """
         question = "Тестовый вопрос"
         large_descry = "Описание БД: " + ("A" * 60000)  # >50000 символов
 
+        mock_prompt_template = "Вопрос: {question}\nОписание: {descry_content}"
+
         with patch('src.query_expander.load_descry', return_value=large_descry), \
+             patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template), \
              patch('src.query_expander.send_msg_to_model', return_value="Улучшенный вопрос"):
 
             result = expand_query(question)
@@ -400,16 +588,22 @@ class TestIntegration:
 
         Проверяет взаимодействие всех функций:
         1. load_descry() загружает файл
-        2. build_expansion_prompt() формирует промпт
-        3. send_msg_to_model() отправляет в Claude
-        4. expand_query() возвращает результат
+        2. load_query_expansion_prompt() загружает шаблон промпта
+        3. build_expansion_prompt() формирует промпт
+        4. send_msg_to_model() отправляет в Claude
+        5. expand_query() возвращает результат
+
+        FIX (2025-11-10): Добавлено мокирование load_query_expansion_prompt()
         """
         question = "проблемы с котлами"
         descry_content = "# Описание БД\n\nСистемы отопления: котельная, ИТП, котлы"
         expected_improved = "Какие дефекты обнаружены в котельной и котлах системы отопления?"
 
+        mock_prompt_template = "Вопрос: {question}\nОписание БД: {descry_content}"
+
         with patch('os.path.exists', return_value=True), \
              patch('builtins.open', mock_open(read_data=descry_content)), \
+             patch('src.query_expander.load_query_expansion_prompt', return_value=mock_prompt_template), \
              patch('src.query_expander.send_msg_to_model', return_value=expected_improved) as mock_api:
 
             result = expand_query(question)
