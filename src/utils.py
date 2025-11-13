@@ -70,9 +70,15 @@ def get_embedding_model():
             logging.error("sentence_transformers не установлен, модель эмбеддингов недоступна")
             return None
         logging.info("Загружаем локальную модель эмбеддингов BAAI/bge-m3...")
+        # Используем BAAI/bge-m3 - многоязычную модель с отличной поддержкой русского языка
+        # Преимущества BGE-M3:
+        # - Специально обучена на текстах кириллицы (в отличие от MiniLM)
+        # - Размерность эмбеддингов: 1024 (vs 384 у MiniLM) - более точное представление
+        # - Лучшая производительность для семантического поиска в RAG индексах
+        # - Единая модель для всех индексов проекта VoxPersona (consistency)
         # Проверяем, что SentenceTransformer доступен перед использованием
         if SentenceTransformer is not None:
-            EMBEDDING_MODEL = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')  # pyright: ignore[reportConstantRedefinition]  
+            EMBEDDING_MODEL = SentenceTransformer('BAAI/bge-m3', device='cpu')  # pyright: ignore[reportConstantRedefinition]  
     return EMBEDDING_MODEL
 
 class CustomSentenceTransformerEmbeddings(Embeddings):
