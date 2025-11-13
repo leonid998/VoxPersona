@@ -6,6 +6,9 @@ from pyrogram.enums import ParseMode
 import re
 import asyncio
 import aiohttp
+from pathlib import Path
+from docx import Document
+import os
 
 from config import ANTHROPIC_API_KEY, ANTHROPIC_API_KEY_2, ANTHROPIC_API_KEY_3, ANTHROPIC_API_KEY_4, ANTHROPIC_API_KEY_5, ANTHROPIC_API_KEY_6, ANTHROPIC_API_KEY_7
 from utils import run_loading_animation, smart_send_text_unified, grouped_reports_to_string, get_username_from_chat
@@ -18,6 +21,202 @@ from message_tracker import track_and_send
 from analysis import analyze_methodology, classify_query, extract_from_chunk_parallel, aggregate_citations, classify_report_type, generate_db_answer, extract_from_chunk_parallel_async
 from storage import save_user_input_to_db, build_reports_grouped, create_db_in_memory
 from query_expander import expand_query
+
+
+def load_market_research_files(rag_name: str) -> str:
+    """
+    Загружает документы маркетингового исследования из файловой структуры (60 папок отелей)
+    для создания RAG индекса.
+
+    Функция сканирует директорию с 60 отелями РФ, извлекает DOCX файлы согласно конфигурации индекса,
+    парсит их содержимое и форматирует с метаданными для последующего индексирования.
+
+    Args:
+        rag_name (str): Название индекса для загрузки. Допустимые значения:
+            - "Отчеты по дизайну" - отчеты из папки "Дизайн отчеты"
+            - "Отчеты по обследованию" - отчеты из папки "Обследование отчеты"
+            - "Итоговые отчеты" - отчеты из папки "Итоговые отчеты"
+            - "Исходники дизайн" - файлы с "аудит" в названии (корень отеля)
+            - "Исходники обследование" - файлы с "обследование" в названии (корень отеля)
+
+    Returns:
+        str: Объединенный текст всех найденных документов с метаданными в формате:
+            # Отель: <hotel_name>
+            # Файл: <filename>
+
+            <file_text>
+
+            ================================================================================
+
+    Raises:
+        FileNotFoundError: Если базовая директория MarketResearch/RF не существует
+        ValueError: Если передано неизвестное значение rag_name
+
+    Examples:
+        Локальный путь: C:/Users/l0934/Projects/VoxPersona/rag_indices/MarketResearch/RF/
+        Серверный путь: /app/rag_indices/MarketResearch/RF/
+
+        >>> content = load_market_research_files("Отчеты по дизайну")
+        >>> print(f"Загружено {len(content)} символов из отчетов по дизайну")
+
+    Notes:
+        - Обрабатывает только .docx файлы
+        - Использует кроссплатформенный pathlib.Path
+        - Автоматически определяет локальный/серверный режим
+        - Пропускает файлы с ошибками чтения (логирует, не прерывает процесс)
+        - Проверяет существование папок и наличие документов
+    """
+
+    # Автоопределение базового пути (локально vs сервер)
+    if os.path.exists("/app/rag_indices"):
+        base_path = Path("/app/rag_indices/MarketResearch/RF")
+        logging.info("🌐 Режим: СЕРВЕР - используется путь /app/rag_indices")
+    else:
+        base_path = Path("C:/Users/l0934/Projects/VoxPersona/rag_indices/MarketResearch/RF")
+        logging.info("💻 Режим: ЛОКАЛЬНО - используется путь C:/Users/l0934/Projects/VoxPersona")
+
+    # Проверка существования базовой директории
+    if not base_path.exists():
+        error_msg = f"❌ Базовая директория не найдена: {base_path}"
+        logging.error(error_msg)
+        raise FileNotFoundError(error_msg)
+
+    logging.info(f"📂 Базовая директория найдена: {base_path}")
+
+    # Маппинг индексов на критерии поиска
+    rag_configs = {
+        "Отчеты по дизайну": {
+            "folder_pattern": "Дизайн отчеты",
+            "file_pattern": None,
+            "search_type": "folder"
+        },
+        "Отчеты по обследованию": {
+            "folder_pattern": "Обследование отчеты",
+            "file_pattern": None,
+            "search_type": "folder"
+        },
+        "Итоговые отчеты": {
+            "folder_pattern": "Итоговые отчеты",
+            "file_pattern": None,
+            "search_type": "folder"
+        },
+        "Исходники дизайн": {
+            "folder_pattern": None,
+            "file_pattern": "аудит",  # Регистронезависимо
+            "search_type": "file"
+        },
+        "Исходники обследование": {
+            "folder_pattern": None,
+            "file_pattern": "обследование",  # Регистронезависимо
+            "search_type": "file"
+        },
+    }
+
+    # Получение конфигурации для указанного индекса
+    if rag_name not in rag_configs:
+        available_rags = ', '.join(rag_configs.keys())
+        error_msg = f"❌ Неизвестный RAG индекс: '{rag_name}'. Доступные: {available_rags}"
+        logging.error(error_msg)
+        raise ValueError(error_msg)
+
+    config = rag_configs[rag_name]
+    logging.info(f"🔍 Конфигурация для '{rag_name}': {config}")
+
+    # Получение списка папок отелей (60 папок)
+    hotel_folders = [folder for folder in base_path.iterdir() if folder.is_dir()]
+    logging.info(f"🏨 Найдено папок отелей: {len(hotel_folders)}")
+
+    if not hotel_folders:
+        logging.warning(f"⚠️ Не найдено ни одной папки отеля в {base_path}")
+        return ""
+
+    # Коллекция для всех текстов
+    all_texts = []
+    files_processed = 0
+    files_skipped = 0
+
+    # Итерация по всем папкам отелей
+    for hotel_folder in hotel_folders:
+        hotel_name = hotel_folder.name
+        logging.debug(f"📁 Обработка отеля: {hotel_name}")
+
+        # Определение списка файлов для обработки в зависимости от типа поиска
+        docx_files = []
+
+        if config["search_type"] == "folder":
+            # Поиск по папке (Отчеты по дизайну, Обследованию, Итоговые)
+            target_folder = hotel_folder / config["folder_pattern"]
+
+            if not target_folder.exists():
+                logging.debug(f"⏭️  Пропуск {hotel_name}: папка '{config['folder_pattern']}' не найдена")
+                files_skipped += 1
+                continue
+
+            # Собираем все DOCX файлы из целевой папки
+            docx_files = list(target_folder.glob("*.docx"))
+
+        elif config["search_type"] == "file":
+            # Поиск по паттерну в названии файла (Исходники дизайн/обследование)
+            pattern = config["file_pattern"].lower()
+
+            # Поиск в корне папки отеля
+            docx_files = [
+                file_path for file_path in hotel_folder.glob("*.docx")
+                if pattern in file_path.name.lower()
+            ]
+
+        # Обработка найденных DOCX файлов
+        if not docx_files:
+            logging.debug(f"⏭️  Пропуск {hotel_name}: DOCX файлы не найдены")
+            files_skipped += 1
+            continue
+
+        for file_path in docx_files:
+            try:
+                # Парсинг DOCX файла
+                doc = Document(file_path)
+
+                # Извлечение текста из всех параграфов
+                paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
+                file_text = "\n".join(paragraphs)
+
+                # Проверка на пустоту
+                if not file_text.strip():
+                    logging.debug(f"⚠️ Файл пуст: {file_path.name} ({hotel_name})")
+                    continue
+
+                # Форматирование с метаданными
+                formatted_text = (
+                    f"# Отель: {hotel_name}\n"
+                    f"# Файл: {file_path.name}\n\n"
+                    f"{file_text}\n\n"
+                    f"{'='*80}\n\n"
+                )
+
+                all_texts.append(formatted_text)
+                files_processed += 1
+                logging.debug(f"✅ Обработан файл: {file_path.name} ({hotel_name}), символов: {len(file_text)}")
+
+            except Exception as e:
+                # Логирование ошибки без прерывания процесса
+                logging.error(f"❌ Ошибка при чтении файла {file_path.name} ({hotel_name}): {e}")
+                continue
+
+    # Объединение всех текстов
+    combined_content = "".join(all_texts)
+
+    # Итоговый отчет
+    logging.info(
+        f"✅ Завершена загрузка для '{rag_name}': "
+        f"обработано файлов: {files_processed}, "
+        f"пропущено отелей: {files_skipped}, "
+        f"итоговый объем: {len(combined_content)} символов"
+    )
+
+    if not combined_content:
+        logging.warning(f"⚠️ Для индекса '{rag_name}' не найдено ни одного документа!")
+
+    return combined_content
 
 
 def init_rags(existing_rags: dict | None = None) -> dict:
