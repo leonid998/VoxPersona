@@ -228,7 +228,9 @@ def init_rags(existing_rags: dict | None = None) -> dict:
     else:
         logging.info("📦 Pre-loaded RAG индексов нет, создаем все с нуля")
 
+    # === РАСШИРЕННАЯ КОНФИГУРАЦИЯ: 9 существующих + 5 новых МИ индексов ===
     rag_configs = [
+        # Существующие индексы (PostgreSQL)
         ("Интервью", None, None),
         ("Дизайн", None, None),
         ("Интервью", "Оценка методологии интервью", None),
@@ -238,20 +240,41 @@ def init_rags(existing_rags: dict | None = None) -> dict:
         ("Дизайн", "Оценка методологии аудита", None),
         ("Дизайн", "Соответствие программе аудита", None),
         ("Дизайн", "Структурированный отчет аудита", None),
+
+        # === НОВЫЕ ИНДЕКСЫ МИ (Маркетинговое исследование) ===
+        (None, "Отчеты по дизайну", "market_research"),
+        (None, "Отчеты по обследованию", "market_research"),
+        (None, "Итоговые отчеты", "market_research"),
+        (None, "Исходники дизайн", "market_research"),
+        (None, "Исходники обследование", "market_research"),
     ]
 
     for config in rag_configs:
-        scenario_name, report_type, _ = config
+        # === ИЗМЕНЕНИЕ: Теперь распаковываем все 3 элемента tuple ===
+        scenario_name, report_type, source_type = config
+
         try:
             rag_name = report_type if report_type else scenario_name
             if rag_name in rags:
                 logging.info(f"⏭️  Пропуск {rag_name}: уже загружен с диска")
                 continue
             logging.info(f"🏗️  Создание индекса {rag_name}...")
-            content = build_reports_grouped(scenario_name=scenario_name, report_type=report_type)
-            content_str = grouped_reports_to_string(content)
 
-            if rag_name == "Интервью" or rag_name == "Дизайн":
+            # === ВЫБОР ИСТОЧНИКА ДАННЫХ ===
+            if source_type == "market_research":
+                # МИ индексы: загрузка из файловой структуры (60 отелей)
+                content_str = load_market_research_files(rag_name)
+                if not content_str:
+                    logging.warning(f"⚠️ Пропуск {rag_name}: нет данных МИ")
+                    continue
+            else:
+                # Существующие индексы: загрузка из PostgreSQL
+                content = build_reports_grouped(scenario_name=scenario_name, report_type=report_type)
+                content_str = grouped_reports_to_string(content)
+            # === КОНЕЦ ВЫБОРА ИСТОЧНИКА ===
+
+            # === РАСШИРЕННОЕ УСЛОВИЕ: 7 FAISS индексов (2 старых + 5 новых МИ) ===
+            if rag_name in ["Интервью", "Дизайн", "Отчеты по дизайну", "Отчеты по обследованию", "Итоговые отчеты", "Исходники дизайн", "Исходники обследование"]:
                 rag_db = create_db_in_memory(content_str)
                 rags[rag_name] = rag_db
                 logging.info(f"✅ FAISS индекс для {rag_name} сформирован успешно")
