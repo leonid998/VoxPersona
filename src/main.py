@@ -231,7 +231,7 @@ async def load_rags():
             await handlers.set_rags(mapped_rags)
             current_rags = mapped_rags
 
-        if not has_valid_faiss_indices(RAG_INDEX_DIR):
+        if should_save_indices(current_rags):
             try:
                 save_rag_indices(current_rags)
             except Exception as e:
