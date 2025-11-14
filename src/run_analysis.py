@@ -288,7 +288,8 @@ def init_rags(existing_rags: dict | None = None) -> dict:
                 # Существующие индексы: загрузка из PostgreSQL
                 # ✅ ФИЛЬТРАЦИЯ МЕТОДОЛОГИЧЕСКИХ ОТЧЕТОВ:
                 # Для индексов "Интервью" и "Дизайн" исключаем методологические отчеты
-                exclude_types = None
+                # ✅ ПРОБЛЕМА #5: Добавлен type hint list[str] | None
+                exclude_types: list[str] | None = None
                 
                 if rag_name == "Интервью":
                     exclude_types = ["Оценка методологии интервью"]
