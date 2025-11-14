@@ -1220,6 +1220,33 @@ class AuthStorageManager(BaseStorageManager):
             logger.error(f"Failed to get active session by telegram_id {telegram_id}: {e}")
             return None
 
+
+    def get_active_session_by_user_id(self, user_id: str) -> Optional[Session]:
+        """
+        Получить активную сессию пользователя по user_id (без поиска по telegram_id).
+
+        Оптимизированный метод для случаев, когда объект пользователя уже получен.
+        Устраняет дубликат вызова get_user_by_telegram_id() в системе авторизации.
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            Активная сессия или None
+
+        Автор: backend-developer
+        Дата: 14 ноября 2025
+        Задача: Оптимизация системы авторизации (устранение дублирования get_user_by_telegram_id)
+        """
+        sessions = self.get_user_sessions(user_id, include_expired=False)
+        now = datetime.now()
+
+        for session in sessions:
+            if session.is_active and session.expires_at > now:
+                return session
+
+        return None
+
     def list_invitations(self, include_consumed: bool = False) -> List[Invitation]:
         """
         Возвращает список всех приглашений.

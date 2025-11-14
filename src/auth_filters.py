@@ -104,7 +104,8 @@ async def _is_authorized(flt, client, message):
         return False
 
     # КРИТИЧНО: Проверка активной сессии
-    active_session = auth.storage.get_active_session_by_telegram_id(telegram_id)
+    # Используем user.user_id вместо повторного поиска по telegram_id
+    active_session = auth.storage.get_active_session_by_user_id(user.user_id)
     if not active_session:
         logger.debug(
             f"Auth filter: no active session (telegram_id={telegram_id}, user_id={user.user_id})"
