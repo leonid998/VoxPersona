@@ -142,6 +142,54 @@ async def migrate_old_indices_if_needed():
         logging.info("✅ Индексы используют актуальную модель BAAI/bge-m3")
 
 
+def has_valid_faiss_indices(indices_dir: str) -> bool:
+    """
+    Проверяет наличие валидных FAISS индексов в директории.
+
+    Игнорирует файлы-маркеры (например, .model_BAAI_bge-m3) и проверяет
+    только поддиректории с .faiss файлами.
+
+    Логика:
+    - Сканирует директорию indices_dir
+    - Проверяет только поддиректории (не файлы)
+    - Ищет .faiss файлы в каждой поддиректории
+    - Возвращает True при первом найденном валидном индексе
+
+    Args:
+        indices_dir: Путь к директории с индексами
+
+    Returns:
+        True если найдены поддиректории с .faiss файлами, False иначе
+
+    Raises:
+        OSError: Обрабатывается внутри функции с логированием
+    """
+    # Проверка существования директории
+    if not indices_dir or not os.path.exists(indices_dir):
+        logging.warning(f"⚠️ Директория индексов не существует: {indices_dir}")
+        return False
+
+    try:
+        for item in os.listdir(indices_dir):
+            item_path = os.path.join(indices_dir, item)
+
+            # Проверяем только директории (игнорируем файлы-маркеры)
+            if os.path.isdir(item_path):
+                # Ищем .faiss файлы в поддиректории
+                try:
+                    if any(f.endswith('.faiss') for f in os.listdir(item_path)):
+                        return True
+                except OSError as e:
+                    logging.warning(f"⚠️ Ошибка чтения поддиректории {item_path}: {e}")
+                    continue
+
+    except OSError as e:
+        logging.warning(f"⚠️ Ошибка чтения директории индексов {indices_dir}: {e}")
+        return False
+
+    return False
+
+
 async def load_rags():
     """Initialize RAG models without blocking the bot startup."""
     logging.info("Запуск фоновой инициализации RAG моделей")
@@ -183,7 +231,7 @@ async def load_rags():
             await handlers.set_rags(mapped_rags)
             current_rags = mapped_rags
 
-        if not os.listdir(RAG_INDEX_DIR):
+        if not has_valid_faiss_indices(RAG_INDEX_DIR):
             try:
                 save_rag_indices(current_rags)
             except Exception as e:
