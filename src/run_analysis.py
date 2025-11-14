@@ -286,7 +286,25 @@ def init_rags(existing_rags: dict | None = None) -> dict:
                     continue
             else:
                 # Существующие индексы: загрузка из PostgreSQL
-                content = build_reports_grouped(scenario_name=scenario_name, report_type=report_type)
+                # ✅ ФИЛЬТРАЦИЯ МЕТОДОЛОГИЧЕСКИХ ОТЧЕТОВ:
+                # Для индексов "Интервью" и "Дизайн" исключаем методологические отчеты
+                exclude_types = None
+                
+                if rag_name == "Интервью":
+                    exclude_types = ["Оценка методологии интервью"]
+                    logging.info(f"📋 Индекс 'Интервью': исключаем типы {exclude_types}")
+                elif rag_name == "Дизайн":
+                    exclude_types = [
+                        "Оценка методологии аудита",
+                        "Соответствие программе аудита"
+                    ]
+                    logging.info(f"📋 Индекс 'Дизайн': исключаем типы {exclude_types}")
+                
+                content = build_reports_grouped(
+                    scenario_name=scenario_name,
+                    report_type=report_type,
+                    exclude_report_types=exclude_types  # ✅ Передаем список для исключения
+                )
                 content_str = grouped_reports_to_string(content)
             # === КОНЕЦ ВЫБОРА ИСТОЧНИКА ===
 

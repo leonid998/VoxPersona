@@ -270,8 +270,33 @@ def process_stored_file(category: str, filename: str, chat_id: int, app: Client)
 
 def build_reports_grouped(
     scenario_name: str,
-    report_type: str | None = None
+    report_type: str | None = None,
+    exclude_report_types: list[str] | None = None
 ) -> dict[int, list[str]]:
+    """
+    Строит словарь отчетов по сценарию, группируя их по transcription_id.
+
+    Args:
+        scenario_name: Название сценария ('Интервью' или 'Дизайн')
+        report_type: Тип отчета для фильтрации (None = все типы)
+        exclude_report_types: Список типов отчетов для исключения из результата
+            Пример: ["Оценка методологии интервью", "Оценка методологии аудита"]
+
+    Returns:
+        dict[int, list[str]]: Словарь {transcription_id: [список_отчетов_в_формате_json+текст]}
+
+    Notes:
+        - Фильтрация exclude_report_types применяется ПОСЛЕ построения словаря
+        - Исключение происходит на уровне отдельных отчетов внутри transcription
+        - Если после исключения transcription остается пустым, он не включается в результат
+
+    Examples:
+        >>> # Получить все отчеты по интервью, кроме методологии
+        >>> reports = build_reports_grouped(
+        ...     scenario_name="Интервью",
+        ...     exclude_report_types=["Оценка методологии интервью"]
+        ... )
+    """
     if not scenario_name:
         raise ValueError("scenario_name must be provided")
 
@@ -286,8 +311,25 @@ def build_reports_grouped(
 
     grouped: dict[int, list[str]] = collections.defaultdict(list)
 
+    # Счетчики для логирования
+    total_reports = 0
+    excluded_count = 0
+
     for r in rows:
         transcription_id = r["transcription_id"]
+        report_type_desc = r["report_type_desc"]
+
+        total_reports += 1
+
+        # ✅ ФИЛЬТРАЦИЯ: Пропускаем отчеты из exclude_report_types
+        if exclude_report_types and report_type_desc in exclude_report_types:
+            excluded_count += 1
+            logging.debug(
+                f"  ⏭️  Исключен отчет: transcription_id={transcription_id}, "
+                f"type='{report_type_desc}'"
+            )
+            continue  # Не добавляем этот отчет в результат
+
         header = {
             "transcription_id": transcription_id,
             "audit_date": str(r["audit_date"]),
@@ -301,7 +343,7 @@ def build_reports_grouped(
             "zone_names": r["zone_names"],
             "city_name": r["city_name"],
             "scenario_name": r["scenario_name"],
-            "report_type_desc": r["report_type_desc"],
+            "report_type_desc": report_type_desc,
         }
 
         parts = [
@@ -311,5 +353,17 @@ def build_reports_grouped(
             parts.append(clean_text(r["audit_text"]))
 
         grouped[transcription_id].append("\n\n".join(parts))
+
+
+    # ✅ ЛОГИРОВАНИЕ: Итоговая статистика по исключениям
+    if exclude_report_types:
+        logging.info(
+            f"  📊 Статистика фильтрации: "
+            f"всего отчетов={total_reports}, "
+            f"исключено={excluded_count}, "
+            f"осталось={total_reports - excluded_count}, "
+            f"transcription_ids={len(grouped)}"
+        )
+        logging.info(f"  🚫 Исключенные типы: {exclude_report_types}")
 
     return grouped
