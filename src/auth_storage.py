@@ -60,6 +60,7 @@ class AuthStorageManager(BaseStorageManager):
         _user_locks (Dict[str, threading.Lock]): Per-user locks для thread-safety
         _lock_manager (threading.Lock): Lock для управления _user_locks словарем
         _global_lock (threading.Lock): Lock для глобальных файлов (invitations, roles, settings)
+        _telegram_user_cache (dict[int, str]): In-memory кэш telegram_id → user_id для оптимизации get_user_by_telegram_id()
     """
 
     def __init__(self, base_path: Path):
@@ -78,6 +79,14 @@ class AuthStorageManager(BaseStorageManager):
         self._user_locks: Dict[str, threading.Lock] = {}
         self._lock_manager = threading.Lock()
         self._global_lock = threading.Lock()  # Для invitations.json, roles.json, settings.json
+
+        # In-memory кэш для оптимизации get_user_by_telegram_id()
+        # Структура: {telegram_id: user_id}
+        # - Заполняется при первом вызове get_user_by_telegram_id()
+        # - Инвалидируется при delete_user() / hard_delete_user()
+        # - НЕ кэширует None (если пользователь не найден)
+        # - Thread-safe не требуется (asyncio single-threaded)
+        self._telegram_user_cache: dict[int, str] = {}
 
         # Инициализация глобальных файлов
         self._ensure_global_files()
@@ -336,6 +345,8 @@ class AuthStorageManager(BaseStorageManager):
         """
         Удаляет пользователя (помечает как is_active=False, НЕ удаляет физически).
 
+        КРИТИЧНО: Инвалидирует кэш telegram_user_cache при удалении пользователя.
+
         Thread-safe операция с использованием per-user lock.
 
         Args:
@@ -359,6 +370,13 @@ class AuthStorageManager(BaseStorageManager):
                 user_data = self.atomic_read(user_file)
                 if not user_data:
                     return False
+
+                # ИНВАЛИДАЦИЯ КЭША: удалить telegram_id из кэша при удалении пользователя
+                # Это предотвращает получение неактивного пользователя через кэш
+                telegram_id = user_data.get("telegram_id")
+                if telegram_id is not None and telegram_id in self._telegram_user_cache:
+                    del self._telegram_user_cache[telegram_id]
+                    logger.debug(f"Cache invalidated for telegram_id={telegram_id} during user delete")
 
                 # Soft delete - установить is_active=False
                 user_data["is_active"] = False
@@ -385,6 +403,7 @@ class AuthStorageManager(BaseStorageManager):
         - Удаляет sessions.json
         - Удаляет audit_log.json
         - Удаляет директорию user_{user_id}/ рекурсивно
+        - Инвалидирует кэш telegram_user_cache
         - Проверяет что пользователь был soft-deleted (is_active=False) перед удалением
         - Защищен от path traversal атак
 
@@ -434,6 +453,8 @@ class AuthStorageManager(BaseStorageManager):
             # ПРОВЕРКА WORKFLOW: пользователь должен быть soft-deleted перед hard delete
             # Это предотвращает случайное удаление активных пользователей
             user_file = user_dir / "user.json"
+            telegram_id_to_invalidate = None  # Сохраняем telegram_id для инвалидации кэша
+
             if user_file.exists():
                 try:
                     user_data = self.atomic_read(user_file)
@@ -443,6 +464,10 @@ class AuthStorageManager(BaseStorageManager):
                             f"Use delete_user() first to soft-delete (set is_active=False)."
                         )
                         return False
+
+                    # ИНВАЛИДАЦИЯ КЭША: сохранить telegram_id для удаления из кэша
+                    telegram_id_to_invalidate = user_data.get("telegram_id")
+
                 except Exception as e:
                     logger.error(f"Failed to read user.json for validation: {user_id}: {e}")
                     return False
@@ -475,6 +500,11 @@ class AuthStorageManager(BaseStorageManager):
                         del self._user_locks[user_id]
                         logger.debug(f"Removed lock for deleted user: {user_id}")
 
+                # ИНВАЛИДАЦИЯ КЭША: удалить telegram_id из кэша
+                if telegram_id_to_invalidate is not None and telegram_id_to_invalidate in self._telegram_user_cache:
+                    del self._telegram_user_cache[telegram_id_to_invalidate]
+                    logger.debug(f"Cache invalidated for telegram_id={telegram_id_to_invalidate} during hard delete")
+
                 return True
 
             except PermissionError as e:
@@ -492,6 +522,10 @@ class AuthStorageManager(BaseStorageManager):
                     if user_id in self._user_locks:
                         del self._user_locks[user_id]
 
+                # Инвалидировать кэш даже в этом случае
+                if telegram_id_to_invalidate is not None and telegram_id_to_invalidate in self._telegram_user_cache:
+                    del self._telegram_user_cache[telegram_id_to_invalidate]
+
                 return True
 
             except OSError as e:
@@ -503,19 +537,56 @@ class AuthStorageManager(BaseStorageManager):
                 # Любая другая ошибка при удалении
                 logger.error(f"Failed to hard delete user {user_id}: {e}")
                 return False
+
     def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
         """
-        Получает пользователя по telegram_id.
+        Получает пользователя по telegram_id с использованием in-memory кэша.
 
-        Поиск среди всех user_* директорий.
+        ЛОГИКА КЭШИРОВАНИЯ (P0.2):
+        1. Проверить кэш _telegram_user_cache[telegram_id]
+        2. Если найдено в кэше → вернуть пользователя по user_id из кэша (через get_user)
+        3. Если НЕ найдено в кэше → выполнить SQL-подобный поиск по всем user_* директориям
+        4. При успешном поиске → добавить в кэш {telegram_id: user_id}
+        5. При отсутствии пользователя → НЕ кэшировать None (избегать false negatives)
+
+        ИНВАЛИДАЦИЯ КЭША:
+        - delete_user() удаляет telegram_id из кэша при soft delete
+        - hard_delete_user() удаляет telegram_id из кэша при physical delete
+        - clear_telegram_user_cache() очищает весь кэш (для тестирования/дебага)
+
+        МОНИТОРИНГ:
+        - Логирует cache hits для отслеживания эффективности
+        - Логирует cache misses для мониторинга производительности
 
         Args:
             telegram_id: Telegram ID пользователя
 
         Returns:
             Optional[User]: Объект User или None если не найден
+
+        Автор: python-pro
+        Дата: 14 ноября 2025
+        Задача: P0.2 - Оптимизация get_user_by_telegram_id() с in-memory кэшем
         """
         try:
+            # ШАГ 1: ПРОВЕРКА КЭША
+            # Если telegram_id найден в кэше → получить user_id и вернуть пользователя
+            if telegram_id in self._telegram_user_cache:
+                cached_user_id = self._telegram_user_cache[telegram_id]
+                logger.debug(
+                    f"Cache HIT for telegram_id={telegram_id} → user_id={cached_user_id} "
+                    f"(cache_size={len(self._telegram_user_cache)})"
+                )
+                # Получить пользователя через get_user() для корректной конвертации
+                # Это обеспечивает актуальность данных (кэшируется только маппинг telegram_id→user_id)
+                return self.get_user(cached_user_id)
+
+            # ШАГ 2: CACHE MISS - выполнить поиск по всем user_* директориям
+            logger.debug(
+                f"Cache MISS for telegram_id={telegram_id}, performing filesystem search "
+                f"(cache_size={len(self._telegram_user_cache)})"
+            )
+
             # Поиск среди всех user_* директорий
             for user_dir in self.base_path.glob("user_*"):
                 if not user_dir.is_dir():
@@ -527,16 +598,55 @@ class AuthStorageManager(BaseStorageManager):
 
                 user_data = self.atomic_read(user_file)
                 if user_data.get("telegram_id") == telegram_id:
-                    # Найден пользователь, вернуть через get_user() для корректной конвертации
+                    # ШАГ 3: НАЙДЕН ПОЛЬЗОВАТЕЛЬ - добавить в кэш
                     user_id = user_data.get("user_id")
+
+                    # Сохранить маппинг telegram_id → user_id в кэш
+                    self._telegram_user_cache[telegram_id] = user_id
+                    logger.debug(
+                        f"Added to cache: telegram_id={telegram_id} → user_id={user_id} "
+                        f"(cache_size={len(self._telegram_user_cache)})"
+                    )
+
+                    # Вернуть пользователя через get_user() для корректной конвертации
                     return self.get_user(user_id)
 
-            logger.debug(f"User not found by telegram_id: {telegram_id}")
+            # ШАГ 4: ПОЛЬЗОВАТЕЛЬ НЕ НАЙДЕН
+            # ВАЖНО: НЕ кэшируем None, чтобы избежать false negatives
+            # (пользователь может быть создан позже с этим telegram_id)
+            logger.debug(f"User not found by telegram_id: {telegram_id} (not cached)")
             return None
 
         except Exception as e:
             logger.error(f"Failed to get user by telegram_id {telegram_id}: {e}")
             return None
+
+    def clear_telegram_user_cache(self) -> int:
+        """
+        Очистить весь кэш telegram_user_cache.
+
+        Используется для:
+        - Тестирования/дебага
+        - Принудительной инвалидации кэша при массовых изменениях
+        - Мониторинга памяти
+
+        Returns:
+            int: Количество удаленных записей из кэша
+
+        Example:
+            >>> storage = AuthStorageManager(Path("auth_data"))
+            >>> cleared_count = storage.clear_telegram_user_cache()
+            >>> print(f"Cleared {cleared_count} cache entries")
+
+        Автор: python-pro
+        Дата: 14 ноября 2025
+        Задача: P0.2 - Добавление метода очистки кэша
+        """
+        cache_size = len(self._telegram_user_cache)
+        self._telegram_user_cache.clear()
+
+        logger.info(f"Telegram user cache cleared: {cache_size} entries removed")
+        return cache_size
 
     def get_user_by_username(self, username: str) -> Optional[User]:
         """
