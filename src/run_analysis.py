@@ -21,6 +21,10 @@ from message_tracker import track_and_send
 from analysis import analyze_methodology, classify_query, extract_from_chunk_parallel, aggregate_citations, classify_report_type, generate_db_answer, extract_from_chunk_parallel_async
 from storage import save_user_input_to_db, build_reports_grouped, create_db_in_memory
 from query_expander import expand_query
+# Router Agent модули для интеллектуального выбора индекса
+from relevance_evaluator import evaluate_report_relevance
+from index_selector import select_most_relevant_index, INDEX_MAPPING
+from question_enhancer import enhance_question_for_index
 
 
 def load_market_research_files(rag_name: str) -> str:
@@ -234,6 +238,140 @@ def load_market_research_files(rag_name: str) -> str:
         logging.warning(f"⚠️ Для индекса '{rag_name}' не найдено ни одного документа!")
 
     return combined_content
+
+
+def load_all_report_descriptions() -> dict[str, str]:
+    """
+    Загружает все 22 файла описаний отчетов из Description/Report content/.
+
+    Рекурсивно обходит директорию Description/Report content/, читает все .md файлы
+    и создает словарь с короткими именами отчетов в качестве ключей.
+
+    Returns:
+        dict[str, str]: Словарь {короткое_имя_отчета: содержимое_файла}
+        Пример: {
+            "Структурированный_отчет_аудита": "# Описание отчета...",
+            "Общие_факторы": "# Общие факторы...",
+            ...
+        }
+
+    Raises:
+        FileNotFoundError: Если директория Description/Report content/ не существует
+        RuntimeError: Если загружено не 22 файла (ожидаемое количество)
+
+    Example:
+        >>> descriptions = load_all_report_descriptions()
+        >>> len(descriptions)
+        22
+        >>> "Краткое резюме" in descriptions
+        True
+    """
+    # Определение корневой директории проекта (локально vs сервер)
+    if Path("/home/voxpersona_user/VoxPersona").exists():
+        base_path = Path("/home/voxpersona_user/VoxPersona")
+        logging.info("🌐 Сервер: используем путь /home/voxpersona_user/VoxPersona")
+    else:
+        base_path = Path(__file__).parent.parent
+        logging.info(f"💻 Локально: используем путь {base_path}")
+
+    # Путь к директории с описаниями отчетов
+    descriptions_dir = base_path / "Description" / "Report content"
+
+    if not descriptions_dir.exists():
+        error_msg = f"Директория с описаниями отчетов не найдена: {descriptions_dir}"
+        logging.error(f"❌ {error_msg}")
+        raise FileNotFoundError(error_msg)
+
+    logging.info(f"📂 Загрузка описаний отчетов из: {descriptions_dir}")
+
+    # Маппинг длинных названий → короткие имена
+    name_mappings = {
+        "Краткое резюме комплексного обследования": "Краткое резюме",
+        "Ощущения от отеля": "Ощущения",
+        "Заполняемость_и_бронирование": "Заполняемость",
+        "Итоговый_отчет": "Итоговый",
+        "Отдых_и_восстановление": "Отдых",
+        "Рекомендации_по_улучшению": "Рекомендации",
+        "Сильные стороны дизайна": "Сильные стороны",
+        "Недостатки_дизайна": "Недостатки",
+        "Ожидания_и_реальность": "Ожидания",
+        "Противоречия_концепции_и_дизайна": "Противоречия",
+        "Востребованность_гостиничного_хозяйства": "Востребованность",
+        "Обустройство_гостиничного_хозяйства": "Обустройство",
+        "Качество_инфраструктуры": "Качество инфраструктуры",
+    }
+
+    def extract_short_name(filename: str) -> str:
+        """
+        Извлекает короткое имя отчета из имени файла.
+
+        Args:
+            filename: Имя файла (например, "Содержание_отчетов_Итоговый_отчет.md")
+
+        Returns:
+            str: Короткое имя (например, "Итоговый")
+        """
+        # Убираем расширение .md
+        name = filename.replace(".md", "")
+
+        # Убираем префиксы (разные варианты написания)
+        prefixes = [
+            "Содержание_отчетов_",
+            "Содержание отчетов_",
+            "Содержание отчетов ",
+            "Главная_"
+        ]
+        for prefix in prefixes:
+            name = name.replace(prefix, "")
+
+        # Применяем маппинг для длинных названий
+        for long_name, short_name in name_mappings.items():
+            if long_name in name:
+                return short_name
+
+        return name
+
+    # Словарь для хранения описаний
+    descriptions = {}
+
+    # Рекурсивный обход всех .md файлов
+    md_files = list(descriptions_dir.rglob("*.md"))
+    logging.info(f"🔍 Найдено {len(md_files)} .md файлов")
+
+    for file_path in md_files:
+        try:
+            # Извлекаем короткое имя
+            short_name = extract_short_name(file_path.name)
+
+            # Читаем содержимое файла
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Сохраняем в словарь
+            descriptions[short_name] = content
+            logging.debug(f"  ✅ {file_path.name} → '{short_name}' ({len(content)} символов)")
+
+        except Exception as e:
+            logging.error(f"  ❌ Ошибка при чтении {file_path.name}: {e}")
+            # Не прерываем процесс, продолжаем загрузку остальных файлов
+            continue
+
+    # Валидация: должно быть ровно 22 файла
+    expected_count = 22
+    actual_count = len(descriptions)
+
+    if actual_count != expected_count:
+        error_msg = (
+            f"Загружено {actual_count} описаний, ожидалось {expected_count}. "
+            f"Загруженные: {sorted(descriptions.keys())}"
+        )
+        logging.error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg)
+
+    logging.info(f"✅ Успешно загружено {actual_count} описаний отчетов")
+    logging.debug(f"📋 Загруженные отчеты: {sorted(descriptions.keys())}")
+
+    return descriptions
 
 
 def init_rags(existing_rags: dict | None = None) -> dict:
@@ -503,23 +641,74 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
 
     # ============ КОНЕЦ НОВОГО КОДА: QUERY EXPANSION ============
 
+    # ============================================================
+    # Router Agent: выбор индекса на основе релевантности отчетов
+    # ============================================================
     try:
-        # Классифицируем УЛУЧШЕННЫЙ вопрос (вместо исходного)
-        category = classify_query(text_to_search)
-        logging.info(f"Сценарий: {category}")
+        logging.info("[Router] Запуск Router Agent для выбора оптимального индекса...")
 
-        if category.lower() == "дизайн":
-            prompt_name="prompt_classify_design"
-            scenario_name="Дизайн"
-        elif category.lower() == "интервью":
-            prompt_name="prompt_classify_interview"
-            scenario_name="Интервью"
-        else:
-            raise ValueError(f"Не удалось определить сценарий для анализа отчетов")
+        # Этап 1: Загрузка описаний всех отчетов
+        logging.info("[Router] Загрузка описаний 22 отчетов...")
+        report_descriptions = load_all_report_descriptions()
+        logging.debug(f"[Router] Загружено {len(report_descriptions)} описаний отчетов")
 
+        # Этап 2: Оценка релевантности всех отчетов к запросу пользователя
+        logging.info(f"[Router] Оценка релевантности отчетов для запроса: {text_to_search[:100]}...")
+        report_relevance = await evaluate_report_relevance(text_to_search, report_descriptions)
+        logging.debug(f"[Router] Результаты оценки релевантности: {report_relevance}")
+
+        # Этап 3: Выбор наиболее релевантного индекса
+        logging.info("[Router] Выбор наиболее релевантного индекса на основе оценок...")
+        selected_index = select_most_relevant_index(report_relevance, INDEX_MAPPING)
+        logging.info(f"[Router] ✅ Выбран индекс: {selected_index}")
+
+        # Этап 4: Улучшение вопроса для выбранного индекса
+        logging.info(f"[Router] Улучшение вопроса для индекса '{selected_index}'...")
+        enhanced_question = await enhance_question_for_index(text_to_search, selected_index, report_descriptions)
+        logging.info(f"[Router] Улучшенный вопрос: {enhanced_question[:150]}...")
+
+        # Обновление запроса и выбор RAG индекса
+        text_to_search = enhanced_question
+        scenario_name = selected_index
+
+        # Проверка что выбранный индекс существует в rags
+        if scenario_name not in rags:
+            raise ValueError(f"Индекс '{scenario_name}' не найден в доступных rags: {list(rags.keys())}")
+
+        rag = rags[scenario_name]
+        logging.info(f"[Router] Используется RAG индекс: {scenario_name}")
+
+    except Exception as e:
+        # Fallback: откат к старой системе классификации при любой ошибке
+        logging.warning(f"[Router] ⚠️ Ошибка Router Agent: {e}")
+        logging.warning("[Router] Откат к fallback-системе классификации (classify_query)...")
+
+        try:
+            # Старая система классификации
+            category = classify_query(text_to_search)
+            logging.info(f"[Fallback] Определен сценарий: {category}")
+
+            if category.lower() == "дизайн":
+                scenario_name = "Дизайн"
+            elif category.lower() == "интервью":
+                scenario_name = "Интервью"
+            else:
+                raise ValueError(f"Fallback classify_query не смог определить сценарий: {category}")
+
+            rag = rags[scenario_name]
+            logging.info(f"[Fallback] ✅ Используется RAG индекс: {scenario_name}")
+
+        except Exception as fallback_error:
+            logging.error(f"[Fallback] ❌ Критическая ошибка в fallback-системе: {fallback_error}")
+            raise ValueError(f"Не удалось определить сценарий ни через Router Agent, ни через fallback: {fallback_error}")
+
+    # Формирование контента отчетов для выбранного сценария
+    try:
         content = build_reports_grouped(scenario_name=scenario_name, report_type=None)
         content = grouped_reports_to_string(content)
-        rag = rags[scenario_name]
+    except Exception as content_error:
+        logging.error(f"❌ Ошибка при формировании контента отчетов: {content_error}")
+        content = ""  # Fallback на пустой контент
 
         # Получаем username
         username = await get_username_from_chat(chat_id, app)
