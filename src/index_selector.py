@@ -72,6 +72,19 @@ INDEX_MAPPING: Dict[str, List[str]] = {
 # Индекс по умолчанию (если не удалось выбрать другой)
 DEFAULT_INDEX = "Dizayn"
 
+# Маппинг коротких имен индексов на человекочитаемые названия
+# ФАЗА 3: Router Agent - UI отображение выбранного индекса
+# Используется в handlers.py и run_analysis.py
+INDEX_DISPLAY_NAMES: Dict[str, str] = {
+    "Dizayn": "Дизайн (Структурированные аудиты)",
+    "Intervyu": "Интервью (Транскрипции)",
+    "Otchety_po_dizaynu": "Отчеты по дизайну (60 отелей РФ)",
+    "Otchety_po_obsledovaniyu": "Отчеты по обследованию (Инфраструктура)",
+    "Itogovye_otchety": "Итоговые отчеты (Сводная аналитика)",
+    "Iskhodniki_dizayn": "Исходники (Дизайн)",
+    "Iskhodniki_obsledovanie": "Исходники (Обследование)"
+}
+
 
 def select_most_relevant_index(
     report_relevance: Dict[str, float],
