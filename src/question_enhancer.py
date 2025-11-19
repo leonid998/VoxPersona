@@ -39,7 +39,7 @@ from constants import CLAUDE_ERROR_MESSAGE
 from analysis import send_msg_to_model
 
 # Константы
-HAIKU_MODEL = "claude-haiku-4-5-20250929"  # Модель Haiku для улучшения вопроса
+HAIKU_MODEL = "claude-3-5-haiku-20241022"  # Модель Haiku 3.5 для улучшения вопроса
 MAX_TOKENS = 500  # Достаточно для улучшенного вопроса (150-300 символов)
 TEMPERATURE = 0.1  # Низкая температура для консистентности
 

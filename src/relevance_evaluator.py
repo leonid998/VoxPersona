@@ -26,7 +26,7 @@ from anthropic import RateLimitError
 from config import ANTHROPIC_API_KEY
 
 # Константы
-HAIKU_MODEL = "claude-haiku-4-5-20250929"  # Модель Haiku для быстрой оценки
+HAIKU_MODEL = "claude-3-5-haiku-20241022"  # Модель Haiku 3.5 для быстрой оценки
 MAX_TOKENS = 50  # Достаточно для ответа с одним числом
 TEMPERATURE = 0  # Детерминированный режим для консистентности
 MAX_CONCURRENT_REQUESTS = 10  # Ограничение параллельных запросов (избежать 429)

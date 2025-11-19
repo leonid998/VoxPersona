@@ -267,8 +267,13 @@ def load_all_report_descriptions() -> dict[str, str]:
         True
     """
     # Определение корневой директории проекта (локально vs сервер)
-    if Path("/home/voxpersona_user/VoxPersona").exists():
-        base_path = Path("/home/voxpersona_user/VoxPersona")
+    # Проверяем платформу: на Windows всегда используем локальный путь
+    import sys
+    is_windows = sys.platform == "win32"
+    server_path = Path("/home/voxpersona_user/VoxPersona")
+
+    if not is_windows and server_path.exists():
+        base_path = server_path
         logging.info("🌐 Сервер: используем путь /home/voxpersona_user/VoxPersona")
     else:
         base_path = Path(__file__).parent.parent

@@ -151,12 +151,13 @@ def select_most_relevant_index(
         ]
 
         if relevant_scores:
-            # Среднее арифметическое релевантностей отчетов индекса
-            avg_score = sum(relevant_scores) / len(relevant_scores)
-            index_scores[index_name] = avg_score
+            # Максимальная релевантность среди отчетов индекса
+            # (если хотя бы один отчет релевантен - индекс подходит)
+            max_score = max(relevant_scores)
+            index_scores[index_name] = max_score
             logger.debug(
                 f"Индекс '{index_name}': {len(relevant_scores)} отчетов, "
-                f"средняя релевантность = {avg_score:.4f}"
+                f"макс релевантность = {max_score:.4f}"
             )
         else:
             # Если ни один отчет индекса не найден в report_relevance
