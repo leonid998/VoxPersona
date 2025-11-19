@@ -647,7 +647,7 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
     try:
         logging.info("[Router] Запуск Router Agent для выбора оптимального индекса...")
 
-        # Этап 1: Загрузка описаний всех отчетов
+        # Этап 1: Загрузка описаний всех отчетов (внутри try для обработки ошибок)
         logging.info("[Router] Загрузка описаний 22 отчетов...")
         report_descriptions = load_all_report_descriptions()
         logging.debug(f"[Router] Загружено {len(report_descriptions)} описаний отчетов")
@@ -664,19 +664,37 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
 
         # Этап 4: Улучшение вопроса для выбранного индекса
         logging.info(f"[Router] Улучшение вопроса для индекса '{selected_index}'...")
-        enhanced_question = await enhance_question_for_index(text_to_search, selected_index, report_descriptions)
+        enhanced_question = enhance_question_for_index(text_to_search, selected_index, report_descriptions)  # ИСПРАВЛЕНО: убран await (sync функция)
         logging.info(f"[Router] Улучшенный вопрос: {enhanced_question[:150]}...")
 
         # Обновление запроса и выбор RAG индекса
         text_to_search = enhanced_question
-        scenario_name = selected_index
+
+        # ИСПРАВЛЕНИЕ #1: Маппинг имен индексов Router Agent → rags
+        # Router Agent использует транслитерированные имена (Dizayn, Intervyu),
+        # а rags использует русские имена (Дизайн, Интервью)
+        ROUTER_TO_RAG_MAPPING = {
+            "Dizayn": "Дизайн",
+            "Intervyu": "Интервью",
+            "Iskhodniki_dizayn": "Исходники дизайн",
+            "Iskhodniki_obsledovanie": "Исходники обследование",
+            "Itogovye_otchety": "Итоговые отчеты",
+            "Otchety_po_dizaynu": "Отчеты по дизайну",
+            "Otchety_po_obsledovaniyu": "Отчеты по обследованию"
+        }
+
+        scenario_name = ROUTER_TO_RAG_MAPPING.get(selected_index, selected_index)
+        logging.info(f"[Router] Маппинг индекса: '{selected_index}' → '{scenario_name}'")
 
         # Проверка что выбранный индекс существует в rags
         if scenario_name not in rags:
             raise ValueError(f"Индекс '{scenario_name}' не найден в доступных rags: {list(rags.keys())}")
 
         rag = rags[scenario_name]
-        logging.info(f"[Router] Используется RAG индекс: {scenario_name}")
+
+        # ИСПРАВЛЕНИЕ #3: Определение category для совместимости с остальным кодом
+        category = scenario_name  # Используем русское название индекса как категорию
+        logging.info(f"[Router] Используется RAG индекс: {scenario_name}, категория: {category}")
 
     except Exception as e:
         # Fallback: откат к старой системе классификации при любой ошибке
@@ -696,7 +714,8 @@ async def run_dialog_mode(message, app: Client, rags: dict, deep_search: bool = 
                 raise ValueError(f"Fallback classify_query не смог определить сценарий: {category}")
 
             rag = rags[scenario_name]
-            logging.info(f"[Fallback] ✅ Используется RAG индекс: {scenario_name}")
+            # ИСПРАВЛЕНИЕ: category уже определен выше (classify_query вернул значение)
+            logging.info(f"[Fallback] ✅ Используется RAG индекс: {scenario_name}, категория: {category}")
 
         except Exception as fallback_error:
             logging.error(f"[Fallback] ❌ Критическая ошибка в fallback-системе: {fallback_error}")
