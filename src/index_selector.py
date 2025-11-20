@@ -151,13 +151,14 @@ def select_most_relevant_index(
         ]
 
         if relevant_scores:
-            # Максимальная релевантность среди отчетов индекса
-            # (если хотя бы один отчет релевантен - индекс подходит)
-            max_score = max(relevant_scores)
-            index_scores[index_name] = max_score
+            # Средняя релевантность отчетов индекса (AVG)
+            # Справедливый алгоритм - учитывает все отчеты индекса
+            avg_score = sum(relevant_scores) / len(relevant_scores)
+
+            index_scores[index_name] = avg_score
             logger.debug(
                 f"Индекс '{index_name}': {len(relevant_scores)} отчетов, "
-                f"макс релевантность = {max_score:.4f}"
+                f"avg релевантность = {avg_score:.2f}"
             )
         else:
             # Если ни один отчет индекса не найден в report_relevance
@@ -194,6 +195,76 @@ def select_most_relevant_index(
     logger.info(f"Выбран индекс: '{best_index}' с релевантностью {best_score:.4f}")
 
     return best_index
+
+
+def get_top_relevant_indices(
+    report_relevance: Dict[str, float],
+    index_mapping: Optional[Dict[str, List[str]]] = None,
+    top_k: int = 3,
+    min_score: float = 0.0
+) -> List[tuple]:
+    """
+    Возвращает топ-K наиболее релевантных индексов с их scores.
+
+    Рекомендательный подход: вместо выбора одного индекса,
+    возвращает список топ-K индексов для показа пользователю.
+
+    Args:
+        report_relevance: Словарь {report_name: relevance_score} от relevance_evaluator.
+        index_mapping: Словарь {index_name: [report_names]}.
+        top_k: Количество индексов для возврата (по умолчанию 3).
+        min_score: Минимальный score для включения в результат.
+
+    Returns:
+        List[tuple]: Список кортежей (index_name, score), отсортированный по убыванию score.
+
+    Example:
+        >>> relevance = {"Дизайн и архитектура": 95.0, "Обследование": 30.0}
+        >>> top = get_top_relevant_indices(relevance, top_k=3)
+        >>> top[0]
+        ('Otchety_po_dizaynu', 95.0)
+    """
+    if not report_relevance:
+        logger.warning("Пустой report_relevance, возвращаем пустой список")
+        return []
+
+    # Используем маппинг по умолчанию если не передан
+    mapping = index_mapping if index_mapping is not None else INDEX_MAPPING
+
+    # Вычисляем релевантность каждого индекса (AVG)
+    index_scores: Dict[str, float] = {}
+
+    for index_name, report_names in mapping.items():
+        relevant_scores = [
+            report_relevance[report_name]
+            for report_name in report_names
+            if report_name in report_relevance
+        ]
+
+        if relevant_scores:
+            avg_score = sum(relevant_scores) / len(relevant_scores)
+            index_scores[index_name] = avg_score
+        else:
+            index_scores[index_name] = 0.0
+
+    # Сортируем по убыванию score, затем по имени для детерминированности
+    sorted_indices = sorted(
+        index_scores.items(),
+        key=lambda x: (-x[1], x[0])
+    )
+
+    # Фильтруем по минимальному score
+    if min_score > 0:
+        sorted_indices = [(idx, score) for idx, score in sorted_indices if score >= min_score]
+
+    # Возвращаем топ-K
+    result = sorted_indices[:top_k]
+
+    logger.info(f"Топ-{len(result)} релевантных индексов:")
+    for i, (idx, score) in enumerate(result, 1):
+        logger.info(f"  {i}. {idx}: {score:.2f}%")
+
+    return result
 
 
 def validate_index_mapping(

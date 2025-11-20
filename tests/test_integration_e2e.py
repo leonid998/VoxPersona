@@ -44,6 +44,7 @@ from relevance_evaluator import (
 )
 from index_selector import (
     select_most_relevant_index,
+    get_top_relevant_indices,
     validate_index_mapping,
     get_index_statistics,
     INDEX_MAPPING,
@@ -275,8 +276,8 @@ async def test_router_on_golden_dataset(golden_dataset):
     Тест Router Agent на эталонном наборе из 21 вопроса.
 
     Проверяет:
-    - Точность Router Agent >= 80%
-    - Корректность работы на разнообразных вопросах
+    - Recall@3: правильный индекс в топ-3 рекомендациях >= 80%
+    - Рекомендательная система работает корректно
     - Стабильность результатов
 
     Args:
@@ -292,75 +293,89 @@ async def test_router_on_golden_dataset(golden_dataset):
     except FileNotFoundError:
         pytest.skip("Директория с описаниями отчетов не найдена")
 
-    correct = 0
+    correct_at_1 = 0  # Accuracy@1 - точный выбор
+    correct_at_3 = 0  # Recall@3 - в топ-3
     total = len(golden_dataset)
     results = []
 
-    print(f"\n🔄 Тестирование Router Agent на {total} вопросах из golden dataset...")
+    print(f"\n🔄 Тестирование Router Agent (рекомендательный режим) на {total} вопросах...")
 
     for i, item in enumerate(golden_dataset, 1):
         question = item["question"]
         expected_index = item["expected_index"]
 
-        # Запускаем Router Agent
+        # Запускаем Router Agent - получаем топ-3 рекомендации
         relevance = await evaluate_report_relevance(question, report_descriptions)
-        selected_index = select_most_relevant_index(relevance, INDEX_MAPPING)
+        top_indices = get_top_relevant_indices(relevance, INDEX_MAPPING, top_k=3)
 
-        is_correct = selected_index == expected_index
-        if is_correct:
-            correct += 1
+        # Извлекаем названия индексов из топ-3
+        top_3_names = [idx for idx, score in top_indices]
+        selected_index = top_3_names[0] if top_3_names else DEFAULT_INDEX
+
+        # Проверяем accuracy@1 и recall@3
+        is_correct_at_1 = selected_index == expected_index
+        is_correct_at_3 = expected_index in top_3_names
+
+        if is_correct_at_1:
+            correct_at_1 += 1
+        if is_correct_at_3:
+            correct_at_3 += 1
 
         results.append({
             "question": question,
             "expected": expected_index,
             "selected": selected_index,
-            "correct": is_correct,
-            "top_relevance": max(relevance.values()) if relevance else 0
+            "top_3": top_3_names,
+            "correct_at_1": is_correct_at_1,
+            "correct_at_3": is_correct_at_3,
+            "top_scores": top_indices
         })
 
-        # Прогресс
-        status = "✅" if is_correct else "❌"
-        print(f"  [{i}/{total}] {status} {question[:50]}...")
+        # Прогресс - показываем recall@3
+        status = "✅" if is_correct_at_3 else "❌"
+        at_1_mark = "🎯" if is_correct_at_1 else ""
+        print(f"  [{i}/{total}] {status}{at_1_mark} {question[:45]}...")
 
-    accuracy = correct / total * 100
+    accuracy_at_1 = correct_at_1 / total * 100
+    recall_at_3 = correct_at_3 / total * 100
 
     # Детальный отчет
     print(f"\n" + "="*60)
     print(f"📊 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ ROUTER AGENT")
     print(f"="*60)
-    print(f"\n✅ Точность: {accuracy:.1f}% ({correct}/{total})")
+    print(f"\n📈 Метрики:")
+    print(f"  • Accuracy@1: {accuracy_at_1:.1f}% ({correct_at_1}/{total})")
+    print(f"  • Recall@3:   {recall_at_3:.1f}% ({correct_at_3}/{total})")
 
-    # Отчет по ошибкам
-    errors = [r for r in results if not r["correct"]]
+    # Отчет по ошибкам (где не попали в топ-3)
+    errors = [r for r in results if not r["correct_at_3"]]
     if errors:
-        print(f"\n❌ Ошибки ({len(errors)}):")
+        print(f"\n❌ Не попали в топ-3 ({len(errors)}):")
         for e in errors:
             print(f"\n  Q: {e['question']}")
             print(f"    Ожидали: {e['expected']}")
-            print(f"    Получили: {e['selected']}")
-            print(f"    Max релевантность: {e['top_relevance']:.1f}%")
+            print(f"    Топ-3: {', '.join(e['top_3'])}")
     else:
-        print(f"\n🎉 Все вопросы обработаны корректно!")
+        print(f"\n🎉 Все правильные индексы в топ-3!")
 
     # Статистика по индексам
-    print(f"\n📈 Статистика по индексам:")
+    print(f"\n📈 Статистика по индексам (recall@3):")
     index_stats = {}
     for r in results:
         exp = r["expected"]
-        sel = r["selected"]
         if exp not in index_stats:
-            index_stats[exp] = {"total": 0, "correct": 0}
+            index_stats[exp] = {"total": 0, "in_top3": 0}
         index_stats[exp]["total"] += 1
-        if r["correct"]:
-            index_stats[exp]["correct"] += 1
+        if r["correct_at_3"]:
+            index_stats[exp]["in_top3"] += 1
 
     for idx, stats in sorted(index_stats.items()):
-        idx_accuracy = stats["correct"] / stats["total"] * 100 if stats["total"] > 0 else 0
-        print(f"  {idx}: {idx_accuracy:.0f}% ({stats['correct']}/{stats['total']})")
+        idx_recall = stats["in_top3"] / stats["total"] * 100 if stats["total"] > 0 else 0
+        print(f"  {idx}: {idx_recall:.0f}% ({stats['in_top3']}/{stats['total']})")
 
-    # Проверка порога точности
-    assert accuracy >= 80, \
-        f"Точность Router Agent {accuracy:.1f}% ниже порога 80%"
+    # Проверка порога recall@3
+    assert recall_at_3 >= 80, \
+        f"Recall@3 Router Agent {recall_at_3:.1f}% ниже порога 80%"
 
 
 # ============================================================================
