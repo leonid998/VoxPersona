@@ -10,6 +10,11 @@
     - Использует параллельные async запросы к Claude API
     - Применяет rate limiting (max 10 concurrent запросов)
 
+Batch функция: evaluate_batch_relevance()
+    - Оценивает все 22 отчета за один API запрос
+    - Возвращает тот же формат что evaluate_report_relevance()
+    - Оптимизирована для снижения количества API вызовов
+
 Примеры использования см. в tests/test_relevance_evaluator.py
 """
 
@@ -37,6 +42,7 @@ MAX_RETRIES = 3  # Максимум попыток при ошибке
 
 # Константы для batch-оценки
 BATCH_MAX_TOKENS = 4000  # Достаточно для JSON с 22 оценками и обоснованиями
+BATCH_REQUEST_TIMEOUT = 60  # Таймаут для batch-запроса (секунды)
 
 # Путь к директории с описаниями отчетов
 REPORT_DESCRIPTIONS_DIR = Path(__file__).parent.parent / "Description" / "Report content"
@@ -409,9 +415,8 @@ def build_batch_relevance_prompt(question: str, json_container: str) -> str:
     """
     Создает промпт для batch-оценки релевантности всех 22 отчетов за один запрос.
 
-    Формирует структурированный промпт, который инструктирует модель оценить
-    релевантность каждого отчета из JSON-контейнера для ответа на вопрос пользователя.
-    Оптимизирован для получения консистентных и парсящихся JSON-ответов.
+    Загружает шаблон промпта из файла data/batch_relevance_prompt.md и подставляет
+    вопрос пользователя и JSON-контейнер с описаниями отчетов.
 
     Args:
         question: Вопрос пользователя (строка на русском или английском)
@@ -420,30 +425,11 @@ def build_batch_relevance_prompt(question: str, json_container: str) -> str:
 
     Returns:
         str: Полный промпт для отправки в Claude API.
-             Включает системную часть, контекст, инструкции и данные.
-
-    Example:
-        >>> descriptions = load_report_descriptions()
-        >>> json_container = build_json_container(descriptions)
-        >>> prompt = build_batch_relevance_prompt(
-        ...     "Какое освещение в номерах?",
-        ...     json_container
-        ... )
-        >>> "evaluations" in prompt
-        True
-        >>> len(prompt) > 90000  # Промпт большой из-за JSON-контейнера
-        True
 
     Notes:
-        - Промпт требует JSON-ответ БЕЗ markdown-разметки (без ```)
-        - Шкала оценки: 0-100 (более детальная чем в параллельном методе)
-        - Требует краткое обоснование для каждой оценки (1-2 предложения)
+        - Шаблон промпта хранится в data/batch_relevance_prompt.md
+        - Промпт требует JSON-ответ БЕЗ markdown-разметки
         - Рекомендуется использовать с temperature=0 для консистентности
-
-    Performance:
-        - Размер промпта: ~2500 символов (без JSON-контейнера)
-        - С JSON-контейнером (~91k символов): ~94k символов итого
-        - Оценочное количество токенов: ~31k (для русского текста)
     """
     # Валидация входных данных
     if not question or not question.strip():
@@ -452,6 +438,398 @@ def build_batch_relevance_prompt(question: str, json_container: str) -> str:
     if not json_container or not json_container.strip():
         raise ValueError("JSON-контейнер не может быть пустым")
 
+    # Путь к файлу шаблона промпта
+    prompt_template_path = Path(__file__).parent.parent / "data" / "batch_relevance_prompt.md"
+
+    # Загрузка шаблона из файла
+    if prompt_template_path.exists():
+        with open(prompt_template_path, 'r', encoding='utf-8') as f:
+            prompt_template = f.read()
+
+        # Подстановка переменных
+        prompt = prompt_template.format(
+            question=question,
+            json_container=json_container
+        )
+    else:
+        # Fallback - если файл не найден, выбрасываем ошибку
+        raise FileNotFoundError(f"Файл шаблона промпта не найден: {prompt_template_path}")
+
+    # Логирование размера промпта
+    prompt_size = len(prompt)
+    prompt_without_json = prompt_size - len(json_container)
+
+    logger.debug(
+        f"Batch-промпт создан: {prompt_size:,} символов "
+        f"(~{prompt_size // 3:,} токенов), "
+        f"из них промпт без JSON: {prompt_without_json:,} символов"
+    )
+
+    return prompt
+
+
+# === BATCH ОЦЕНКА РЕЛЕВАНТНОСТИ ===
+
+
+def parse_batch_response(response_text: str) -> Dict[str, Any]:
+    """
+    Парсит ответ модели Claude и извлекает JSON с оценками.
+
+    Обрабатывает различные форматы ответа:
+    - Чистый JSON
+    - JSON в markdown-блоке (```json ... ```)
+    - JSON с текстом до/после
+
+    Args:
+        response_text: Текст ответа от Claude API
+
+    Returns:
+        Dict с распарсенным JSON (содержит "evaluations")
+
+    Raises:
+        ValueError: Если не удалось распарсить JSON
+
+    Example:
+        >>> response = '{"evaluations": [{"id": 1, "name": "Test", "relevance": 85}]}'
+        >>> result = parse_batch_response(response)
+        >>> result["evaluations"][0]["relevance"]
+        85
+    """
+    if not response_text or not response_text.strip():
+        raise ValueError("Пустой ответ от API")
+
+    text = response_text.strip()
+
+    # Попытка 1: Убрать markdown-разметку ```json ... ```
+    # Паттерн для блока кода с json или без указания языка
+    markdown_pattern = r'```(?:json)?\s*\n?(.*?)\n?```'
+    match = re.search(markdown_pattern, text, re.DOTALL)
+    if match:
+        text = match.group(1).strip()
+        logger.debug("Убрана markdown-разметка из ответа")
+
+    # Попытка 2: Найти JSON объект в тексте (от первой { до последней })
+    json_start = text.find('{')
+    json_end = text.rfind('}')
+
+    if json_start == -1 or json_end == -1 or json_start >= json_end:
+        raise ValueError(f"Не найден JSON объект в ответе: {text[:200]}...")
+
+    json_text = text[json_start:json_end + 1]
+
+    # Попытка парсинга JSON
+    try:
+        data = json.loads(json_text)
+    except json.JSONDecodeError as e:
+        # Попытка исправить типичные ошибки
+        # 1. Trailing commas
+        json_text_fixed = re.sub(r',\s*([}\]])', r'\1', json_text)
+        try:
+            data = json.loads(json_text_fixed)
+            logger.debug("JSON распарсен после удаления trailing commas")
+        except json.JSONDecodeError:
+            raise ValueError(f"Ошибка парсинга JSON: {e}. Текст: {json_text[:500]}...")
+
+    # Валидация структуры
+    if "evaluations" not in data:
+        raise ValueError(f"В ответе отсутствует ключ 'evaluations': {list(data.keys())}")
+
+    if not isinstance(data["evaluations"], list):
+        raise ValueError(f"'evaluations' должен быть списком, получено: {type(data['evaluations'])}")
+
+    return data
+
+
+def validate_batch_evaluations(
+    evaluations: List[Dict[str, Any]],
+    expected_count: int = 22
+) -> tuple[bool, List[str]]:
+    """
+    Валидирует список оценок из batch-ответа.
+
+    Проверяет:
+    - Количество оценок (ожидается 22)
+    - Наличие обязательных полей (id, name, relevance)
+    - Диапазон релевантности (0-100)
+
+    Args:
+        evaluations: Список оценок из parse_batch_response()
+        expected_count: Ожидаемое количество оценок (по умолчанию 22)
+
+    Returns:
+        tuple[bool, List[str]]: (is_valid, list_of_errors)
+
+    Example:
+        >>> evals = [{"id": 1, "name": "Test", "relevance": 85, "reason": "..."}]
+        >>> is_valid, errors = validate_batch_evaluations(evals, expected_count=1)
+        >>> is_valid
+        True
+    """
+    errors = []
+
+    # Проверка количества
+    if len(evaluations) != expected_count:
+        errors.append(
+            f"Ожидалось {expected_count} оценок, получено {len(evaluations)}"
+        )
+
+    # Проверка каждой оценки
+    seen_ids = set()
+    seen_names = set()
+
+    for i, eval_item in enumerate(evaluations):
+        # Проверка обязательных полей
+        if "id" not in eval_item:
+            errors.append(f"Оценка #{i}: отсутствует поле 'id'")
+        else:
+            eval_id = eval_item["id"]
+            if eval_id in seen_ids:
+                errors.append(f"Оценка #{i}: дублирующийся id={eval_id}")
+            seen_ids.add(eval_id)
+
+        if "name" not in eval_item:
+            errors.append(f"Оценка #{i}: отсутствует поле 'name'")
+        else:
+            name = eval_item["name"]
+            if name in seen_names:
+                errors.append(f"Оценка #{i}: дублирующееся имя '{name}'")
+            seen_names.add(name)
+
+        if "relevance" not in eval_item:
+            errors.append(f"Оценка #{i}: отсутствует поле 'relevance'")
+        else:
+            relevance = eval_item["relevance"]
+            # Проверка типа
+            if not isinstance(relevance, (int, float)):
+                errors.append(
+                    f"Оценка #{i} ({eval_item.get('name', '?')}): "
+                    f"relevance должен быть числом, получено {type(relevance)}"
+                )
+            # Проверка диапазона
+            elif not (0 <= relevance <= 100):
+                errors.append(
+                    f"Оценка #{i} ({eval_item.get('name', '?')}): "
+                    f"relevance={relevance} вне диапазона 0-100"
+                )
+
+    is_valid = len(errors) == 0
+    return is_valid, errors
+
+
+def convert_evaluations_to_dict(evaluations: List[Dict[str, Any]]) -> Dict[str, float]:
+    """
+    Преобразует список оценок в словарь {имя_отчета: релевантность}.
+
+    Формат совместим с возвратом evaluate_report_relevance().
+
+    Args:
+        evaluations: Список оценок из parse_batch_response()
+
+    Returns:
+        Dict[str, float]: {имя_отчета: релевантность (0-100)}
+
+    Example:
+        >>> evals = [
+        ...     {"id": 1, "name": "Report_A", "relevance": 85},
+        ...     {"id": 2, "name": "Report_B", "relevance": 30}
+        ... ]
+        >>> convert_evaluations_to_dict(evals)
+        {'Report_A': 85.0, 'Report_B': 30.0}
+    """
+    result = {}
+
+    for eval_item in evaluations:
+        name = eval_item.get("name", "Unknown")
+        relevance = eval_item.get("relevance", 0)
+
+        # Преобразование в float и clamp в диапазон 0-100
+        try:
+            relevance_float = float(relevance)
+            relevance_float = max(0.0, min(100.0, relevance_float))
+        except (TypeError, ValueError):
+            logger.warning(f"Не удалось преобразовать relevance для '{name}': {relevance}")
+            relevance_float = 0.0
+
+        result[name] = relevance_float
+
+    return result
+
+
+async def evaluate_batch_relevance(
+    question: str,
+    json_container: str,
+    api_key: str | None = None
+) -> Dict[str, float]:
+    """
+    Выполняет batch-оценку релевантности всех отчетов за один API запрос.
+
+    Отправляет JSON-контейнер с описаниями всех 22 отчетов и получает
+    оценки релевантности для каждого из них за один вызов Claude API.
+
+    Args:
+        question: Вопрос пользователя
+        json_container: JSON-контейнер с описаниями всех 22 отчетов
+                       (результат build_json_container())
+        api_key: API ключ Anthropic. Если None, используется ANTHROPIC_API_KEY из config
+
+    Returns:
+        Dict[str, float]: {имя_отчета: оценка_релевантности (0-100)}
+        Формат совместим с evaluate_report_relevance()
+
+    Raises:
+        ValueError: Если question или json_container пустые, или api_key недоступен
+
+    Performance:
+        - Один API запрос вместо 22 параллельных
+        - Типичное время выполнения: 5-15 секунд (зависит от размера контейнера)
+        - MAX_TOKENS: 4000 (достаточно для JSON с 22 оценками и обоснованиями)
+
+    Example:
+        >>> descriptions = load_report_descriptions()
+        >>> json_container = build_json_container(descriptions)
+        >>> results = await evaluate_batch_relevance(
+        ...     "Какое освещение в номерах?",
+        ...     json_container
+        ... )
+        >>> len(results)
+        22
+        >>> results["Структурированный_отчет_аудита"] > 50
+        True
+
+    Notes:
+        - Использует retry логику с exponential backoff (3 попытки)
+        - При ошибке парсинга возвращает пустой словарь с логированием
+        - Temperature=0 для консистентности оценок
+    """
+    # Валидация входных данных
+    if not question or not question.strip():
+        raise ValueError("Вопрос не может быть пустым")
+
+    if not json_container or not json_container.strip():
+        raise ValueError("JSON-контейнер не может быть пустым")
+
+    # Получить API key
+    if api_key is None:
+        api_key = ANTHROPIC_API_KEY
+
+    if not api_key:
+        raise ValueError(
+            "ANTHROPIC_API_KEY не установлен. "
+            "Проверьте файл .env или передайте api_key явно."
+        )
+
+    # Построить промпт
+    prompt = build_batch_relevance_prompt(question, json_container)
+
+    logger.info(
+        f"Начинаем batch-оценку релевантности для вопроса: '{question[:100]}...'"
+    )
+
+    # Создать клиент
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+
+    # Retry с exponential backoff
+    backoff = 1
+    last_exception = None
+
+    start_time = time.time()
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            # Async запрос к Claude API с таймаутом
+            response = await asyncio.wait_for(
+                client.messages.create(
+                    model=HAIKU_MODEL,
+                    max_tokens=BATCH_MAX_TOKENS,
+                    temperature=TEMPERATURE,
+                    messages=[{"role": "user", "content": prompt}]
+                ),
+                timeout=BATCH_REQUEST_TIMEOUT
+            )
+
+            # Извлечь текст ответа
+            response_text = response.content[0].text
+
+            logger.debug(f"Получен ответ от API: {len(response_text)} символов")
+
+            # Парсинг ответа
+            parsed_data = parse_batch_response(response_text)
+            evaluations = parsed_data["evaluations"]
+
+            # Валидация оценок
+            is_valid, errors = validate_batch_evaluations(evaluations)
+
+            if not is_valid:
+                logger.warning(f"Проблемы с валидацией оценок: {errors}")
+                # Продолжаем с тем что есть, но логируем ошибки
+
+            # Преобразование в словарь
+            relevance_scores = convert_evaluations_to_dict(evaluations)
+
+            elapsed = time.time() - start_time
+
+            logger.info(
+                f"Batch-оценка релевантности завершена за {elapsed:.2f}s. "
+                f"Обработано {len(relevance_scores)} отчетов."
+            )
+
+            # Логировать топ-3 наиболее релевантных отчета
+            if relevance_scores:
+                top_3 = sorted(relevance_scores.items(), key=lambda x: x[1], reverse=True)[:3]
+                logger.info("Топ-3 релевантных отчета (batch):")
+                for rank, (name, score) in enumerate(top_3, 1):
+                    logger.info(f"  {rank}. {name}: {score:.1f}%")
+
+            return relevance_scores
+
+        except RateLimitError as e:
+            last_exception = e
+            if attempt == MAX_RETRIES:
+                logger.error(
+                    f"Rate limit после {MAX_RETRIES} попыток. "
+                    f"Используется пустой словарь."
+                )
+                return {}
+
+            logger.warning(
+                f"Rate limit (попытка {attempt}/{MAX_RETRIES}). "
+                f"Ожидание {backoff}s перед повтором..."
+            )
+            await asyncio.sleep(backoff)
+            backoff *= 2  # Exponential backoff: 1s, 2s, 4s
+
+        except asyncio.TimeoutError:
+            logger.error(
+                f"Timeout ({BATCH_REQUEST_TIMEOUT}s) для batch-запроса. "
+                f"Используется пустой словарь."
+            )
+            return {}
+
+        except ValueError as e:
+            # Ошибка парсинга JSON
+            logger.error(f"Ошибка парсинга ответа: {e}")
+            return {}
+
+        except Exception as e:
+            logger.exception(f"Ошибка batch-оценки релевантности: {e}")
+            return {}
+
+    # Если все попытки исчерпаны
+    logger.error(
+        f"Исчерпаны попытки для batch-запроса. Используется пустой словарь."
+    )
+    return {}
+
+
+# Старый inline код перемещен в файл data/batch_relevance_prompt.md
+# Функция теперь загружает шаблон из файла для удобства редактирования
+
+
+def _legacy_build_relevance_prompt_inline():
+    """
+    DEPRECATED: Старая версия промпта, сохранена для справки.
+    Используйте build_batch_relevance_prompt() с загрузкой из файла.
+    """
     # Системная часть с ролью и контекстом
     system_context = """Ты - эксперт по анализу гостиничного бизнеса и исследованию отелей.
 Твоя задача - оценить релевантность каждого из 22 типов отчетов для ответа на вопрос пользователя.
