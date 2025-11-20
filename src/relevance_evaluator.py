@@ -1135,9 +1135,9 @@ async def evaluate_report_relevance(
 
     ОСНОВНАЯ ФУНКЦИЯ МОДУЛЯ.
 
-    Параллельно отправляет запросы к Claude Haiku 4.5 API для оценки релевантности
-    каждого типа отчета. Использует asyncio.gather() для параллельной обработки
-    с ограничением concurrent запросов через семафор.
+    Использует batch-механизм для оценки релевантности всех 22 типов отчетов
+    за один API запрос к Claude Haiku 4.5. Все описания отчетов упаковываются
+    в JSON-контейнер и отправляются одним запросом.
 
     Args:
         question: Вопрос пользователя (строка на русском или английском)
@@ -1154,9 +1154,9 @@ async def evaluate_report_relevance(
         FileNotFoundError: Если descriptions не переданы и не удалось загрузить из файлов
 
     Performance:
-        - Параллельная обработка: 22 отчета оцениваются одновременно
-        - Rate limiting: max 10 concurrent запросов
-        - Типичное время выполнения: 3-5 секунд (зависит от API latency)
+        - Один API запрос вместо 22 параллельных
+        - JSON-контейнер содержит все описания (~55k токенов)
+        - Типичное время выполнения: 5-15 секунд
 
     Example:
         >>> # Автоматическая загрузка описаний
@@ -1202,28 +1202,34 @@ async def evaluate_report_relevance(
         f"для вопроса: '{question[:100]}...'"
     )
 
-    # Создать семафор для ограничения параллельных запросов
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    # === BATCH-МЕХАНИЗМ ОЦЕНКИ РЕЛЕВАНТНОСТИ ===
+    #
+    # Вместо 22 параллельных запросов используем один batch-запрос:
+    # 1. build_json_container() упаковывает все 22 описания отчетов в структурированный JSON
+    #    Это позволяет передать всю информацию в одном запросе к Claude API
+    #
+    # 2. evaluate_batch_relevance() отправляет JSON-контейнер и получает оценки для всех отчетов
+    #    Возвращает Dict[str, float] - тот же формат что и раньше
+    #    Это снижает количество API вызовов с 22 до 1, уменьшая latency и стоимость
 
-    # Создать задачи для параллельного выполнения
-    tasks = [
-        evaluate_single_report(
-            question=question,
-            report_name=name,
-            report_description=description,
-            semaphore=semaphore,
-            api_key=api_key
-        )
-        for name, description in report_descriptions.items()
-    ]
+    # Упаковать все описания отчетов в единый JSON-контейнер
+    # JSON содержит структуру: reports (22 шт), indices (7 категорий), метаданные
+    json_container = build_json_container(report_descriptions)
+    logger.info(f"JSON-контейнер создан: {len(json_container)} символов")
 
-    # Выполнить все задачи параллельно
+    # Выполнить batch-оценку релевантности за один API запрос
+    # evaluate_batch_relevance() внутри вызывает build_batch_relevance_prompt()
+    # и возвращает Dict[str, float] - совместимо с предыдущим форматом
     start_time = time.time()
-    results = await asyncio.gather(*tasks, return_exceptions=False)
+    relevance_scores = await evaluate_batch_relevance(
+        question=question,
+        json_container=json_container,
+        api_key=api_key
+    )
     elapsed = time.time() - start_time
 
-    # Преобразовать список кортежей в словарь
-    relevance_scores = dict(results)
+    # Результат уже в формате Dict[str, float], совместимом с возвращаемым типом
+    # Нет необходимости в преобразовании - evaluate_batch_relevance() возвращает готовый словарь
 
     logger.info(
         f"Оценка релевантности завершена за {elapsed:.2f}s. "
@@ -1231,10 +1237,11 @@ async def evaluate_report_relevance(
     )
 
     # Логировать топ-3 наиболее релевантных отчета
-    top_3 = sorted(relevance_scores.items(), key=lambda x: x[1], reverse=True)[:3]
-    logger.info("Топ-3 релевантных отчета:")
-    for rank, (name, score) in enumerate(top_3, 1):
-        logger.info(f"  {rank}. {name}: {score:.1f}%")
+    if relevance_scores:
+        top_3 = sorted(relevance_scores.items(), key=lambda x: x[1], reverse=True)[:3]
+        logger.info("Топ-3 релевантных отчета:")
+        for rank, (name, score) in enumerate(top_3, 1):
+            logger.info(f"  {rank}. {name}: {score:.1f}%")
 
     return relevance_scores
 
