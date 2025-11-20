@@ -14,11 +14,13 @@
 """
 
 import asyncio
+import json
 import logging
 import re
 import time
+import unicodedata
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict, List
 
 import anthropic
 from anthropic import RateLimitError
@@ -37,6 +39,60 @@ MAX_RETRIES = 3  # Максимум попыток при ошибке
 REPORT_DESCRIPTIONS_DIR = Path(__file__).parent.parent / "Description" / "Report content"
 
 logger = logging.getLogger(__name__)
+
+
+# === МАППИНГ ОТЧЕТОВ НА ИНДЕКСЫ ===
+# Корректный маппинг с реальными именами файлов после обработки load_report_descriptions()
+# Структура соответствует папкам в Description/Report content/
+
+REPORT_TO_INDEX_MAPPING: Dict[str, str] = {
+    # Dizayn (1 отчет) - Содержание_Дизайн
+    "Структурированный_отчет_аудита": "Dizayn",
+
+    # Intervyu (3 отчета) - Содержание_Интервью
+    "Общие_факторы": "Intervyu",
+    "Отчет_о_связках": "Intervyu",
+    "Факторы_в_этом_заведении": "Intervyu",
+
+    # Iskhodniki_dizayn (1 отчет) - Содержание_Исходники_Аудит_Дизайна
+    "Аудит_Дизайна": "Iskhodniki_dizayn",
+
+    # Iskhodniki_obsledovanie (1 отчет) - Содержание_Исходники_Обследование
+    "Обследование": "Iskhodniki_obsledovanie",
+
+    # Itogovye_otchety (6 отчетов) - Содержание_Итоговые отчеты
+    "Главная_Краткое резюме комплексного обследования": "Itogovye_otchety",
+    "Ощущения от отеля": "Itogovye_otchety",
+    "Заполняемость_и_бронирование": "Itogovye_otchety",
+    "Итоговый_отчет": "Itogovye_otchety",
+    "Отдых_и_восстановление": "Itogovye_otchety",
+    "Рекомендации_по_улучшению": "Itogovye_otchety",
+
+    # Otchety_po_dizaynu (5 отчетов) - Содержание_Дизайн отчеты
+    "Дизайн и архитектура": "Otchety_po_dizaynu",
+    "Сильные стороны дизайна": "Otchety_po_dizaynu",
+    "Недостатки_дизайна": "Otchety_po_dizaynu",
+    "Ожидания_и_реальность": "Otchety_po_dizaynu",
+    "Противоречия_концепции_и_дизайна": "Otchety_po_dizaynu",
+
+    # Otchety_po_obsledovaniyu (5 отчетов) - Содержание_Обследование отчеты
+    "Востребованность_гостиничного_хозяйства": "Otchety_po_obsledovaniyu",
+    "Качество_инфраструктуры": "Otchety_po_obsledovaniyu",
+    "Клиентский_опыт": "Otchety_po_obsledovaniyu",
+    "Маршруты_и_безопасность": "Otchety_po_obsledovaniyu",
+    "Обустройство_гостиничного_хозяйства": "Otchety_po_obsledovaniyu",
+}
+
+# Человекочитаемые названия индексов
+INDEX_DISPLAY_NAMES: Dict[str, str] = {
+    "Dizayn": "Дизайн (Структурированные аудиты)",
+    "Intervyu": "Интервью (Транскрипции)",
+    "Otchety_po_dizaynu": "Отчеты по дизайну (60 отелей РФ)",
+    "Otchety_po_obsledovaniyu": "Отчеты по обследованию (Инфраструктура)",
+    "Itogovye_otchety": "Итоговые отчеты (Сводная аналитика)",
+    "Iskhodniki_dizayn": "Исходники (Дизайн)",
+    "Iskhodniki_obsledovanie": "Исходники (Обследование)"
+}
 
 
 def load_report_descriptions() -> Dict[str, str]:
@@ -84,6 +140,11 @@ def load_report_descriptions() -> Dict[str, str]:
             # → "Структурированный_отчет_аудита"
             report_name = md_file.stem  # Без расширения
 
+            # Нормализация Unicode в форму NFC (precomposed)
+            # Это решает проблему с разными представлениями буквы "й"
+            # macOS часто использует NFD (decomposed), а Windows/код - NFC
+            report_name = unicodedata.normalize("NFC", report_name)
+
             # Убрать префиксы (различные варианты)
             prefixes = [
                 "Содержание_отчетов_",
@@ -107,6 +168,238 @@ def load_report_descriptions() -> Dict[str, str]:
 
     logger.info(f"Загружено {len(descriptions)} описаний отчетов")
     return descriptions
+
+
+def build_json_container(
+    report_descriptions: Dict[str, str],
+    report_to_index: Dict[str, str] | None = None
+) -> str:
+    """
+    Упаковывает все описания отчетов в JSON-контейнер для batch-оценки.
+
+    Создает структурированный JSON с описаниями всех 22 отчетов,
+    их принадлежностью к индексам и метаданными. Используется для
+    отправки всех описаний в одном запросе к Claude API для оценки
+    релевантности.
+
+    Args:
+        report_descriptions: Словарь {имя_отчета: описание}.
+                            Обычно результат load_report_descriptions().
+        report_to_index: Словарь {имя_отчета: имя_индекса}.
+                        Если None, используется REPORT_TO_INDEX_MAPPING.
+
+    Returns:
+        JSON-строка со структурой:
+        {
+          "reports": [
+            {
+              "id": 1,
+              "name": "Структурированный_отчет_аудита",
+              "index": "Dizayn",
+              "description": "..."
+            },
+            ...
+          ],
+          "indices": [
+            {"name": "Dizayn", "display_name": "...", "report_ids": [1]},
+            ...
+          ],
+          "total_reports": 22,
+          "total_indices": 7
+        }
+
+    Raises:
+        ValueError: Если report_descriptions пустой или не все 22 отчета включены.
+
+    Example:
+        >>> descriptions = load_report_descriptions()
+        >>> json_container = build_json_container(descriptions)
+        >>> data = json.loads(json_container)
+        >>> data["total_reports"]
+        22
+        >>> data["total_indices"]
+        7
+
+    Notes:
+        - Сохраняет полные описания без обрезки (помещается в ~55k токенов)
+        - ID отчетов начинаются с 1 и идут по порядку сортировки по имени
+        - Логирует размер итогового JSON в символах
+    """
+    # Валидация входных данных
+    if not report_descriptions:
+        raise ValueError("report_descriptions не может быть пустым")
+
+    # Использовать маппинг по умолчанию если не передан
+    mapping = report_to_index if report_to_index is not None else REPORT_TO_INDEX_MAPPING
+
+    # Проверка что все отчеты из маппинга присутствуют
+    missing_reports = set(mapping.keys()) - set(report_descriptions.keys())
+    if missing_reports:
+        logger.warning(
+            f"Отчеты из маппинга отсутствуют в descriptions: {missing_reports}"
+        )
+
+    # Проверка что все загруженные отчеты есть в маппинге
+    unmapped_reports = set(report_descriptions.keys()) - set(mapping.keys())
+    if unmapped_reports:
+        logger.warning(
+            f"Загруженные отчеты отсутствуют в маппинге: {unmapped_reports}"
+        )
+
+    # === Построение структуры reports ===
+    reports: List[Dict[str, Any]] = []
+    report_id_by_name: Dict[str, int] = {}  # Для построения indices
+
+    # Сортируем по имени для детерминированного порядка
+    sorted_report_names = sorted(report_descriptions.keys())
+
+    for idx, report_name in enumerate(sorted_report_names, start=1):
+        description = report_descriptions[report_name]
+        index_name = mapping.get(report_name, "Unknown")
+
+        report_entry = {
+            "id": idx,
+            "name": report_name,
+            "index": index_name,
+            "description": description  # Полное описание без обрезки
+        }
+        reports.append(report_entry)
+        report_id_by_name[report_name] = idx
+
+        logger.debug(
+            f"Добавлен отчет #{idx}: {report_name} -> {index_name} "
+            f"({len(description)} символов)"
+        )
+
+    # === Построение структуры indices ===
+    # Группируем отчеты по индексам
+    index_to_report_ids: Dict[str, List[int]] = {}
+
+    for report_name, index_name in mapping.items():
+        if report_name in report_id_by_name:
+            if index_name not in index_to_report_ids:
+                index_to_report_ids[index_name] = []
+            index_to_report_ids[index_name].append(report_id_by_name[report_name])
+
+    # Формируем список индексов
+    indices: List[Dict[str, Any]] = []
+
+    for index_name in sorted(index_to_report_ids.keys()):
+        report_ids = sorted(index_to_report_ids[index_name])
+        display_name = INDEX_DISPLAY_NAMES.get(index_name, index_name)
+
+        index_entry = {
+            "name": index_name,
+            "display_name": display_name,
+            "report_ids": report_ids
+        }
+        indices.append(index_entry)
+
+        logger.debug(
+            f"Индекс '{index_name}': {len(report_ids)} отчетов, "
+            f"IDs: {report_ids}"
+        )
+
+    # === Сборка итогового контейнера ===
+    container = {
+        "reports": reports,
+        "indices": indices,
+        "total_reports": len(reports),
+        "total_indices": len(indices)
+    }
+
+    # Конвертация в JSON строку
+    # ensure_ascii=False для сохранения русских символов без экранирования
+    # indent=None для компактности (без отступов)
+    json_string = json.dumps(container, ensure_ascii=False)
+
+    # Логирование статистики
+    total_chars = len(json_string)
+    # Грубая оценка токенов: ~3 символа = 1 токен для русского текста
+    estimated_tokens = total_chars // 3
+
+    logger.info(
+        f"JSON-контейнер создан: {len(reports)} отчетов, {len(indices)} индексов"
+    )
+    logger.info(
+        f"Размер JSON: {total_chars:,} символов (~{estimated_tokens:,} токенов)"
+    )
+
+    # Валидация: проверяем что все 22 отчета включены
+    if len(reports) != 22:
+        logger.warning(
+            f"Ожидалось 22 отчета, но включено {len(reports)}. "
+            f"Проверьте загрузку описаний."
+        )
+
+    # Валидация: проверяем что все 7 индексов представлены
+    if len(indices) != 7:
+        logger.warning(
+            f"Ожидалось 7 индексов, но получено {len(indices)}. "
+            f"Проверьте маппинг отчетов."
+        )
+
+    return json_string
+
+
+def get_json_container_stats(json_container: str) -> Dict[str, Any]:
+    """
+    Получить статистику по JSON-контейнеру.
+
+    Полезно для отладки и мониторинга размера данных.
+
+    Args:
+        json_container: JSON-строка от build_json_container()
+
+    Returns:
+        Dict со статистикой:
+        {
+            "total_chars": int,
+            "estimated_tokens": int,
+            "total_reports": int,
+            "total_indices": int,
+            "reports_per_index": Dict[str, int],
+            "is_valid": bool
+        }
+
+    Example:
+        >>> json_str = build_json_container(descriptions)
+        >>> stats = get_json_container_stats(json_str)
+        >>> print(f"Токенов: {stats['estimated_tokens']}")
+    """
+    try:
+        data = json.loads(json_container)
+    except json.JSONDecodeError as e:
+        return {
+            "total_chars": len(json_container),
+            "estimated_tokens": len(json_container) // 3,
+            "total_reports": 0,
+            "total_indices": 0,
+            "reports_per_index": {},
+            "is_valid": False,
+            "error": str(e)
+        }
+
+    # Подсчет отчетов по индексам
+    reports_per_index = {}
+    for index_info in data.get("indices", []):
+        index_name = index_info.get("name", "Unknown")
+        report_ids = index_info.get("report_ids", [])
+        reports_per_index[index_name] = len(report_ids)
+
+    total_chars = len(json_container)
+
+    return {
+        "total_chars": total_chars,
+        "estimated_tokens": total_chars // 3,
+        "total_reports": data.get("total_reports", 0),
+        "total_indices": data.get("total_indices", 0),
+        "reports_per_index": reports_per_index,
+        "is_valid": (
+            data.get("total_reports", 0) == 22 and
+            data.get("total_indices", 0) == 7
+        )
+    }
 
 
 def build_relevance_prompt(question: str, report_description: str) -> str:
