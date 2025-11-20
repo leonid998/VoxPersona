@@ -64,7 +64,7 @@ from analysis import (
 # Logger для handlers
 logger = logging.getLogger(__name__)
 
-from run_analysis import run_analysis_with_spinner, run_dialog_mode
+from run_analysis import run_analysis_with_spinner, run_dialog_mode, ROUTER_TO_RAG_MAPPING
 
 from audio_utils import extract_audio_filename, define_audio_file_params, transcribe_audio_and_save
 
@@ -2528,6 +2528,8 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
         conversation_id = expansion_data["conversation_id"]
         deep_search = expansion_data["deep_search"]
         original_question = expansion_data["original"]
+        # ЗАДАЧА 2.3: Извлекаем топ-3 индексов для передачи в enhance_question_for_index
+        top_indices = expansion_data.get("top_indices", None)
 
         # FIX (2025-11-09): Убрано сохранение в ConversationMessage из-за ValidationError
         # Модель ConversationMessage не поддерживает type="system_info" и message_id=0
@@ -2580,7 +2582,8 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
             rags=current_rags,
             deep_search=deep_search,
             conversation_id=conversation_id,
-            skip_expansion=True  # ← НОВЫЙ ПАРАМЕТР: пропускаем повторное улучшение
+            skip_expansion=True,  # ← НОВЫЙ ПАРАМЕТР: пропускаем повторное улучшение
+            top_indices=top_indices  # ЗАДАЧА 2.3: передаем топ-3 индексов
         )
 
         await callback.answer("✅ Отправлено в поиск")
@@ -2636,6 +2639,8 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
         original_question = expansion_data["original"]
         conversation_id = expansion_data["conversation_id"]
         deep_search = expansion_data["deep_search"]
+        # FIX R1: Извлекаем selected_index для сохранения при уточнении
+        selected_index = expansion_data.get("selected_index", None)
 
         # Рекурсивно вызываем expand_query (с исходным вопросом!)
         from query_expander import expand_query
@@ -2643,6 +2648,26 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
 
         # Увеличиваем счетчик попыток
         expansion_result["refine_count"] = refine_count + 1
+
+        # FIX R1: Пересчитываем top_indices для нового улучшенного вопроса
+        # Это необходимо для актуальных рекомендаций в меню
+        from relevance_evaluator import evaluate_report_relevance
+        from index_selector import get_top_relevant_indices
+        from run_analysis import load_all_report_descriptions
+
+        new_top_indices = None
+        try:
+            report_descriptions = load_all_report_descriptions()
+            report_relevance = await evaluate_report_relevance(
+                expansion_result["expanded"],
+                report_descriptions
+            )
+            new_top_indices = get_top_relevant_indices(report_relevance, top_k=3, min_score=10.0)
+            logger.info(f"[Refine] Пересчитаны top_indices: {len(new_top_indices)} рекомендаций")
+        except Exception as e:
+            logger.warning(f"[Refine] Ошибка пересчета top_indices: {e}")
+            # При ошибке используем старые top_indices если есть
+            new_top_indices = expansion_data.get("top_indices", None)
 
         # Показываем новый улучшенный вопрос
         from run_analysis import show_expanded_query_menu
@@ -2654,7 +2679,9 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
             expanded=expansion_result["expanded"],
             conversation_id=conversation_id,
             deep_search=deep_search,
-            refine_count=refine_count + 1  # ✅ ШАГ 4: Передаем инкрементированный счетчик
+            refine_count=refine_count + 1,  # ✅ ШАГ 4: Передаем инкрементированный счетчик
+            selected_index=selected_index,   # FIX R1: Передаем selected_index
+            top_indices=new_top_indices      # FIX R1: Передаем пересчитанные top_indices
         )
 
         await callback.answer(f"🔄 Уточнено (попытка {refine_count + 1}/3)")
@@ -3079,6 +3106,7 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
     expanded_question = st.get("expanded_question", "")
     conversation_id = st.get("conversation_id", "")
     deep_search = st.get("deep_search", False)
+    top_indices = None  # ДОБАВЛЕНО: извлечение top_indices для передачи в show_expanded_query_menu
 
     # Fallback: поиск по expansion_{hash} ключам
     if not original_question:
@@ -3089,6 +3117,7 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
                 expanded_question = expansion_data.get("expanded", "")
                 conversation_id = expansion_data.get("conversation_id", "")
                 deep_search = expansion_data.get("deep_search", False)
+                top_indices = expansion_data.get("top_indices", None)  # ДОБАВЛЕНО
                 break
 
     # Валидация: проверка наличия данных
@@ -3111,7 +3140,8 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         conversation_id=conversation_id,
         deep_search=deep_search,
         refine_count=st.get("refine_count", 0),
-        selected_index=index_name  # ← НОВЫЙ ПАРАМЕТР
+        selected_index=index_name,
+        top_indices=top_indices  # ДОБАВЛЕНО: передача top_indices
     )
 
     display_name = INDEX_DISPLAY_NAMES.get(index_name, index_name)
@@ -3148,6 +3178,9 @@ async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
     deep_search = st.get("deep_search", False)
     selected_index = st.get("selected_index")  # Может быть None
 
+    # FIX R2: Инициализируем top_indices для передачи в show_expanded_query_menu
+    top_indices = None
+
     # Fallback: поиск по expansion_{hash} ключам
     if not original_question:
         for key in st.keys():
@@ -3157,6 +3190,8 @@ async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
                 expanded_question = expansion_data.get("expanded", "")
                 conversation_id = expansion_data.get("conversation_id", "")
                 deep_search = expansion_data.get("deep_search", False)
+                # FIX R2: Извлекаем top_indices из expansion_data
+                top_indices = expansion_data.get("top_indices", None)
                 break
 
     # Валидация
@@ -3178,7 +3213,8 @@ async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
         conversation_id=conversation_id,
         deep_search=deep_search,
         refine_count=st.get("refine_count", 0),
-        selected_index=selected_index  # Передаем текущий выбор
+        selected_index=selected_index,  # Передаем текущий выбор
+        top_indices=top_indices         # FIX R2: Передаем top_indices
     )
 
     await callback.answer("Возврат к меню")

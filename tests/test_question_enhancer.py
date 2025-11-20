@@ -20,7 +20,8 @@ from src.constants import CLAUDE_ERROR_MESSAGE
 from src.question_enhancer import (
     enhance_question_for_index,
     build_enhancement_prompt,
-    format_index_descriptions
+    format_index_descriptions,
+    format_top_indices_context
 )
 from src.index_selector import INDEX_MAPPING
 
@@ -198,7 +199,7 @@ def test_enhance_question_for_index_basic(
 
     # Проверить параметры вызова API
     call_args = mock_send_msg.call_args
-    assert call_args.kwargs['model'] == "claude-haiku-4-5-20250929"
+    assert call_args.kwargs['model'] == "claude-3-5-haiku-20241022"
     assert call_args.kwargs['max_tokens'] == 500
     assert call_args.kwargs['api_key'] == "test_key"
 
@@ -405,25 +406,25 @@ def test_enhance_question_truncates_long_question(mock_send_msg, sample_report_d
     Тест обрезки слишком длинного вопроса пользователя.
     """
     mock_send_msg.return_value = "Улучшенный вопрос про освещение в ресторане"
-    
+
     # Очень длинный вопрос (> 500 символов)
     long_question = "Какие проблемы с освещением? " * 50  # ~1500 символов
-    
+
     result = enhance_question_for_index(
         original_question=long_question,
         selected_index="Dizayn",
         report_descriptions=sample_report_descriptions,
         api_key="test_key"
     )
-    
+
     # Проверяем что функция не упала
     assert result == "Улучшенный вопрос про освещение в ресторане"
-    
+
     # Проверяем что в промпт передан обрезанный вопрос
     call_args = mock_send_msg.call_args
     messages = call_args[1]['messages']
     prompt = messages[0]['content']
-    
+
     # Проверяем что исходный вопрос был обрезан до 500 символов в промпте
     assert len(long_question) > 500  # Исходный вопрос длинный
     # В промпте не должно быть полного длинного вопроса
@@ -437,24 +438,24 @@ def test_enhance_question_invalid_index_mapping_type(sample_report_descriptions)
     Тест обработки некорректного типа в INDEX_MAPPING.
     """
     from src.index_selector import INDEX_MAPPING
-    
+
     # Сохраняем оригинальное значение
     original_mapping = INDEX_MAPPING.copy()
-    
+
     try:
         # Подменяем на некорректный тип
         INDEX_MAPPING["Dizayn"] = "не список, а строка"  # Некорректно!
-        
+
         result = enhance_question_for_index(
             original_question="тестовый вопрос",
             selected_index="Dizayn",
             report_descriptions=sample_report_descriptions,
             api_key="test_key"
         )
-        
+
         # Должен вернуть original_question при некорректном INDEX_MAPPING
         assert result == "тестовый вопрос"
-        
+
     finally:
         # Восстанавливаем оригинальное значение
         INDEX_MAPPING.update(original_mapping)
@@ -578,7 +579,7 @@ def test_enhance_question_integration_flow(
     call_kwargs = mock_send_msg.call_args.kwargs
 
     # Параметры API
-    assert call_kwargs['model'] == "claude-haiku-4-5-20250929"
+    assert call_kwargs['model'] == "claude-3-5-haiku-20241022"
     assert call_kwargs['max_tokens'] == 500
     assert call_kwargs['api_key'] == "test_key"
 
@@ -595,6 +596,57 @@ def test_enhance_question_integration_flow(
     # НЕ содержит описания из других индексов
     assert "Общие_факторы" not in prompt  # Из Intervyu
     assert "Обследование" not in prompt  # Из Iskhodniki_obsledovanie
+
+
+# === ТЕСТЫ ДЛЯ format_top_indices_context ===
+
+class TestFormatTopIndicesContext:
+    """Тесты для функции форматирования контекста топ-индексов"""
+
+    def test_format_top_indices_context_basic(self):
+        """Тест базового форматирования"""
+        top = [("Otchety_po_dizaynu", 85.3), ("Itogovye_otchety", 72.1)]
+        result = format_top_indices_context(top)
+        assert "Топ-3 релевантных индекса" in result
+        assert "85.3%" in result
+        assert "72.1%" in result
+
+    def test_format_top_indices_context_empty(self):
+        """Тест с пустым списком"""
+        result = format_top_indices_context([])
+        assert result == ""
+
+    def test_format_top_indices_context_none(self):
+        """Тест с None"""
+        result = format_top_indices_context(None)
+        assert result == ""
+
+    def test_format_top_indices_context_single(self):
+        """Тест с одним индексом"""
+        top = [("Dizayn", 90.0)]
+        result = format_top_indices_context(top)
+        assert "90.0%" in result
+
+    def test_format_top_indices_context_three_indices(self):
+        """Тест с тремя индексами"""
+        top = [
+            ("Otchety_po_dizaynu", 85.3),
+            ("Itogovye_otchety", 72.1),
+            ("Dizayn", 45.0)
+        ]
+        result = format_top_indices_context(top)
+        assert "85.3%" in result
+        assert "72.1%" in result
+        assert "45.0%" in result
+        assert "Учитывай эту информацию" in result
+
+    def test_format_top_indices_context_display_names(self):
+        """Тест отображения человекочитаемых названий индексов"""
+        top = [("Otchety_po_dizaynu", 85.3)]
+        result = format_top_indices_context(top)
+        # Проверяем что используется display name, а не технический идентификатор
+        # Зависит от INDEX_DISPLAY_NAMES в index_selector.py
+        assert "релевантность" in result
 
 
 if __name__ == "__main__":

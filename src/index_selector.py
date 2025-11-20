@@ -24,9 +24,15 @@
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Константы для форматирования рекомендаций
+RECOMMENDATIONS_HEADER = "🎯 Рекомендуемые индексы для вашего вопроса:\n"
+RECOMMENDATIONS_FOOTER = "\nВыберите индекс для поиска или используйте рекомендованный."
+RECOMMENDATIONS_EMPTY_MESSAGE = "Не удалось определить рекомендуемые индексы для вашего вопроса."
+DEFAULT_INDEX_EMOJI = "📁"
 
 
 # Маппинг индексов на отчеты (согласно files_list.md и impl_plan.md)
@@ -85,6 +91,30 @@ INDEX_DISPLAY_NAMES: Dict[str, str] = {
     "Iskhodniki_obsledovanie": "Исходники (Обследование)"
 }
 
+# Эмодзи для каждого индекса
+# Используется в format_index_recommendations() для визуального оформления в Telegram
+INDEX_EMOJIS: Dict[str, str] = {
+    "Dizayn": "🎨",
+    "Intervyu": "🎤",
+    "Otchety_po_dizaynu": "📊",
+    "Otchety_po_obsledovaniyu": "🔍",
+    "Itogovye_otchety": "🏨",
+    "Iskhodniki_dizayn": "📐",
+    "Iskhodniki_obsledovanie": "📋"
+}
+
+# Краткие описания индексов для рекомендаций
+# Используется в format_index_recommendations() для пояснения содержимого индекса
+INDEX_SHORT_DESCRIPTIONS: Dict[str, str] = {
+    "Dizayn": "Структурированные аудиты",
+    "Intervyu": "Транскрипции интервью",
+    "Otchety_po_dizaynu": "Анализ дизайна 60 отелей",
+    "Otchety_po_obsledovaniyu": "Инфраструктурный анализ",
+    "Itogovye_otchety": "Сводная аналитика",
+    "Iskhodniki_dizayn": "Исходные данные дизайна",
+    "Iskhodniki_obsledovanie": "Исходные данные обследования"
+}
+
 
 def select_most_relevant_index(
     report_relevance: Dict[str, float],
@@ -139,33 +169,15 @@ def select_most_relevant_index(
     logger.info(f"Начинаем выбор индекса на основе {len(report_relevance)} оценок отчетов")
     logger.debug(f"Релевантности отчетов: {report_relevance}")
 
-    # Вычисляем релевантность каждого индекса
-    index_scores: Dict[str, float] = {}
+    # Вычисляем релевантность каждого индекса (используем общую функцию)
+    index_scores = _calculate_index_scores(report_relevance, mapping)
 
-    for index_name, report_names in mapping.items():
-        # Находим релевантности отчетов, которые есть в report_relevance
-        relevant_scores = [
-            report_relevance[report_name]
-            for report_name in report_names
-            if report_name in report_relevance
-        ]
-
-        if relevant_scores:
-            # Средняя релевантность отчетов индекса (AVG)
-            # Справедливый алгоритм - учитывает все отчеты индекса
-            avg_score = sum(relevant_scores) / len(relevant_scores)
-
-            index_scores[index_name] = avg_score
-            logger.debug(
-                f"Индекс '{index_name}': {len(relevant_scores)} отчетов, "
-                f"avg релевантность = {avg_score:.2f}"
-            )
+    # Логируем результаты вычислений
+    for index_name, score in index_scores.items():
+        if score > 0:
+            logger.debug(f"Индекс '{index_name}': avg релевантность = {score:.2f}")
         else:
-            # Если ни один отчет индекса не найден в report_relevance
-            index_scores[index_name] = 0.0
-            logger.warning(
-                f"Индекс '{index_name}': ни один отчет не найден в report_relevance"
-            )
+            logger.warning(f"Индекс '{index_name}': ни один отчет не найден в report_relevance")
 
     # Проверка: если все индексы имеют релевантность 0
     if all(score == 0.0 for score in index_scores.values()):
@@ -195,6 +207,41 @@ def select_most_relevant_index(
     logger.info(f"Выбран индекс: '{best_index}' с релевантностью {best_score:.4f}")
 
     return best_index
+
+
+def _calculate_index_scores(
+    report_relevance: Dict[str, float],
+    mapping: Dict[str, List[str]]
+) -> Dict[str, float]:
+    """
+    Вычисляет среднюю релевантность для каждого индекса.
+
+    Внутренняя функция, используется в select_most_relevant_index
+    и get_top_relevant_indices для устранения дублирования кода.
+
+    Args:
+        report_relevance: Словарь {report_name: relevance_score}.
+        mapping: Словарь {index_name: [report_names]}.
+
+    Returns:
+        Dict[str, float]: Словарь {index_name: avg_score}.
+    """
+    index_scores: Dict[str, float] = {}
+
+    for index_name, report_names in mapping.items():
+        relevant_scores = [
+            report_relevance[report_name]
+            for report_name in report_names
+            if report_name in report_relevance
+        ]
+
+        if relevant_scores:
+            avg_score = sum(relevant_scores) / len(relevant_scores)
+            index_scores[index_name] = avg_score
+        else:
+            index_scores[index_name] = 0.0
+
+    return index_scores
 
 
 def get_top_relevant_indices(
@@ -232,20 +279,7 @@ def get_top_relevant_indices(
     mapping = index_mapping if index_mapping is not None else INDEX_MAPPING
 
     # Вычисляем релевантность каждого индекса (AVG)
-    index_scores: Dict[str, float] = {}
-
-    for index_name, report_names in mapping.items():
-        relevant_scores = [
-            report_relevance[report_name]
-            for report_name in report_names
-            if report_name in report_relevance
-        ]
-
-        if relevant_scores:
-            avg_score = sum(relevant_scores) / len(relevant_scores)
-            index_scores[index_name] = avg_score
-        else:
-            index_scores[index_name] = 0.0
+    index_scores = _calculate_index_scores(report_relevance, mapping)
 
     # Сортируем по убыванию score, затем по имени для детерминированности
     sorted_indices = sorted(
@@ -263,6 +297,101 @@ def get_top_relevant_indices(
     logger.info(f"Топ-{len(result)} релевантных индексов:")
     for i, (idx, score) in enumerate(result, 1):
         logger.info(f"  {i}. {idx}: {score:.2f}%")
+
+    return result
+
+
+def format_index_recommendations(
+    top_indices: List[Tuple[str, float]],
+    index_display_names: Optional[Dict[str, str]] = None
+) -> str:
+    """
+    Форматирует рекомендации по индексам для отображения в Telegram.
+
+    Создает красиво оформленное сообщение с рекомендуемыми индексами,
+    их релевантностью в процентах, эмодзи и кратким описанием содержимого.
+
+    Алгоритм:
+    1. Проверяет входные данные (пустой список -> сообщение об ошибке)
+    2. Для каждого индекса получает:
+       - Эмодзи из INDEX_EMOJIS
+       - Отображаемое имя из index_display_names или INDEX_DISPLAY_NAMES
+       - Короткое описание из INDEX_SHORT_DESCRIPTIONS
+    3. Форматирует строку с нумерацией и процентами релевантности
+
+    Args:
+        top_indices: Список кортежей (index_name, score) от get_top_relevant_indices().
+                    Score ожидается в диапазоне [0, 1] и конвертируется в проценты.
+        index_display_names: Кастомный словарь отображаемых имен индексов.
+                            Если None - использует INDEX_DISPLAY_NAMES по умолчанию.
+
+    Returns:
+        str: Отформатированная строка для отправки в Telegram.
+             При пустом списке возвращает сообщение об отсутствии рекомендаций.
+
+    Examples:
+        >>> top = [("Otchety_po_dizaynu", 0.853), ("Itogovye_otchety", 0.721)]
+        >>> result = format_index_recommendations(top)
+        >>> print(result)
+        🎯 Рекомендуемые индексы для вашего вопроса:
+
+        1. 📊 Отчеты по дизайну (60 отелей РФ) (85.3%) - Анализ дизайна 60 отелей
+        2. 🏨 Итоговые отчеты (Сводная аналитика) (72.1%) - Сводная аналитика
+
+        Выберите индекс для поиска или используйте рекомендованный.
+
+        >>> # Пустой список
+        >>> format_index_recommendations([])
+        'Не удалось определить рекомендуемые индексы для вашего вопроса.'
+
+        >>> # Один индекс
+        >>> format_index_recommendations([("Dizayn", 0.95)])
+        '🎯 Рекомендуемые индексы для вашего вопроса:...'
+    """
+    # Обработка пустого списка
+    if not top_indices:
+        logger.warning("Получен пустой список индексов для форматирования")
+        return RECOMMENDATIONS_EMPTY_MESSAGE
+
+    # Используем кастомные имена или дефолтные
+    display_names = index_display_names if index_display_names is not None else INDEX_DISPLAY_NAMES
+
+    logger.info(f"Форматирование рекомендаций для {len(top_indices)} индексов")
+
+    # Формируем список строк с рекомендациями
+    recommendation_lines = []
+
+    for i, (index_name, score) in enumerate(top_indices, 1):
+        # Получаем эмодзи для индекса (или дефолтный)
+        emoji = INDEX_EMOJIS.get(index_name, DEFAULT_INDEX_EMOJI)
+
+        # Получаем отображаемое имя индекса
+        display_name = display_names.get(index_name, index_name)
+
+        # Получаем краткое описание
+        description = INDEX_SHORT_DESCRIPTIONS.get(index_name, "")
+
+        # Конвертируем score в проценты (если score <= 1, умножаем на 100)
+        # Если score уже в процентах (> 1), оставляем как есть
+        percent = score * 100 if score <= 1 else score
+
+        # Формируем строку рекомендации
+        # Формат: "1. 📊 Отчеты по дизайну (60 отелей РФ) (85.3%) - Анализ дизайна 60 отелей"
+        line = f"{i}. {emoji} {display_name} ({percent:.1f}%)"
+
+        # Добавляем описание если есть
+        if description:
+            line += f" - {description}"
+
+        recommendation_lines.append(line)
+
+        logger.debug(f"Рекомендация {i}: {index_name} = {percent:.1f}%")
+
+    # Собираем финальное сообщение
+    recommendations = "\n".join(recommendation_lines)
+    result = f"{RECOMMENDATIONS_HEADER}\n{recommendations}\n{RECOMMENDATIONS_FOOTER}"
+
+    logger.info("Рекомендации успешно отформатированы")
 
     return result
 
@@ -439,4 +568,10 @@ if __name__ == "__main__":
     # Пример 3: Валидация маппинга
     print("=== Пример 3: Валидация маппинга ===")
     is_valid = validate_index_mapping(INDEX_MAPPING)
-    print(f"Маппинг валиден: {is_valid}")
+    print(f"Маппинг валиден: {is_valid}\n")
+
+    # Пример 4: Форматирование рекомендаций
+    print("=== Пример 4: Форматирование рекомендаций ===")
+    top_indices = get_top_relevant_indices(report_rel, top_k=3)
+    formatted = format_index_recommendations(top_indices)
+    print(formatted)

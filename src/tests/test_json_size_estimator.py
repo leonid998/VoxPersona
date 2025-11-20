@@ -13,7 +13,7 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.json_size_estimator import (
+from utils_pkg.json_size_estimator import (
     CHARS_PER_TOKEN_RU,
     SAFE_DATA_LIMIT_TOKENS,
     FileStats,

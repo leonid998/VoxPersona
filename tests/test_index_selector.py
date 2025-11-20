@@ -10,6 +10,7 @@
 6. Структура INDEX_MAPPING (покрытие всех 22 отчетов)
 7. Статистика индексов
 8. Граничные случаи
+9. Форматирование рекомендаций
 
 Запуск:
     pytest tests/test_index_selector.py -v
@@ -25,7 +26,12 @@ from src.index_selector import (
     validate_index_mapping,
     get_index_statistics,
     load_index_mapping_from_file,
+    get_top_relevant_indices,
+    format_index_recommendations,
     INDEX_MAPPING,
+    INDEX_DISPLAY_NAMES,
+    INDEX_EMOJIS,
+    INDEX_SHORT_DESCRIPTIONS,
     DEFAULT_INDEX
 )
 
@@ -476,6 +482,281 @@ class TestLoadIndexMappingFromFile:
 
 
 # ============================================================================
+# Тесты format_index_recommendations
+# ============================================================================
+
+class TestFormatIndexRecommendations:
+    """Тесты функции форматирования рекомендаций."""
+
+    def test_format_index_recommendations_basic(self):
+        """
+        Тест базового форматирования рекомендаций.
+
+        Ожидается:
+        - Корректный заголовок с эмодзи
+        - Нумерация индексов
+        - Проценты релевантности
+        - Эмодзи и описания для каждого индекса
+        - Завершающий текст
+        """
+        # Подготовка тестовых данных
+        top_indices = [
+            ("Otchety_po_dizaynu", 0.853),
+            ("Itogovye_otchety", 0.721),
+            ("Dizayn", 0.685)
+        ]
+
+        result = format_index_recommendations(top_indices)
+
+        # Проверка заголовка
+        assert "Рекомендуемые индексы для вашего вопроса:" in result
+
+        # Проверка наличия всех индексов с процентами
+        assert "85.3%" in result
+        assert "72.1%" in result
+        assert "68.5%" in result
+
+        # Проверка наличия эмодзи
+        assert "📊" in result  # Otchety_po_dizaynu
+        assert "🏨" in result  # Itogovye_otchety
+        assert "🎨" in result  # Dizayn
+
+        # Проверка наличия отображаемых имен
+        assert "Отчеты по дизайну" in result
+        assert "Итоговые отчеты" in result
+        assert "Дизайн" in result
+
+        # Проверка наличия описаний
+        assert "Анализ дизайна 60 отелей" in result
+        assert "Сводная аналитика" in result
+        assert "Структурированные аудиты" in result
+
+        # Проверка завершающего текста
+        assert "Выберите индекс для поиска" in result
+
+    def test_format_index_recommendations_empty(self):
+        """
+        Тест форматирования при пустом списке индексов.
+
+        Ожидается:
+        - Возвращается сообщение об отсутствии рекомендаций
+        """
+        result = format_index_recommendations([])
+
+        assert "Не удалось определить рекомендуемые индексы" in result
+
+    def test_format_index_recommendations_single(self):
+        """
+        Тест форматирования при одном индексе.
+
+        Ожидается:
+        - Корректный формат с одним индексом
+        """
+        top_indices = [("Dizayn", 0.95)]
+
+        result = format_index_recommendations(top_indices)
+
+        # Проверка заголовка
+        assert "Рекомендуемые индексы" in result
+
+        # Проверка единственного индекса
+        assert "1." in result
+        assert "95.0%" in result
+        assert "🎨" in result
+        assert "Дизайн" in result
+
+        # Не должно быть "2."
+        assert "2." not in result
+
+    def test_format_index_recommendations_custom_names(self):
+        """
+        Тест форматирования с кастомными именами индексов.
+
+        Ожидается:
+        - Используются переданные кастомные имена вместо дефолтных
+        """
+        top_indices = [
+            ("Dizayn", 0.9),
+            ("Intervyu", 0.7)
+        ]
+
+        custom_names = {
+            "Dizayn": "Кастомное имя дизайна",
+            "Intervyu": "Кастомное имя интервью"
+        }
+
+        result = format_index_recommendations(top_indices, index_display_names=custom_names)
+
+        # Проверка кастомных имен
+        assert "Кастомное имя дизайна" in result
+        assert "Кастомное имя интервью" in result
+
+        # Дефолтные имена не должны присутствовать
+        assert "Структурированные аудиты)" not in result
+
+    def test_format_index_recommendations_score_conversion(self):
+        """
+        Тест конвертации score в проценты.
+
+        Ожидается:
+        - Score <= 1 умножается на 100
+        - Score > 1 остается как есть (уже проценты)
+        """
+        # Score в формате 0-1
+        top_indices = [("Dizayn", 0.5)]
+        result = format_index_recommendations(top_indices)
+        assert "50.0%" in result
+
+        # Score уже в процентах (> 1)
+        top_indices = [("Dizayn", 85.0)]
+        result = format_index_recommendations(top_indices)
+        assert "85.0%" in result
+
+    def test_format_index_recommendations_unknown_index(self):
+        """
+        Тест форматирования с неизвестным индексом.
+
+        Ожидается:
+        - Для неизвестного индекса используется дефолтный эмодзи и само имя
+        """
+        top_indices = [("UnknownIndex", 0.8)]
+
+        result = format_index_recommendations(top_indices)
+
+        # Используется дефолтный эмодзи
+        assert "📁" in result
+
+        # Имя индекса отображается как есть
+        assert "UnknownIndex" in result
+
+        # Проценты отображаются корректно
+        assert "80.0%" in result
+
+    def test_format_index_recommendations_all_indices(self):
+        """
+        Тест форматирования со всеми 7 индексами.
+
+        Ожидается:
+        - Все индексы корректно отформатированы
+        """
+        top_indices = [
+            ("Otchety_po_dizaynu", 0.9),
+            ("Itogovye_otchety", 0.8),
+            ("Dizayn", 0.7),
+            ("Intervyu", 0.6),
+            ("Otchety_po_obsledovaniyu", 0.5),
+            ("Iskhodniki_dizayn", 0.4),
+            ("Iskhodniki_obsledovanie", 0.3)
+        ]
+
+        result = format_index_recommendations(top_indices)
+
+        # Проверка нумерации
+        for i in range(1, 8):
+            assert f"{i}." in result
+
+        # Проверка всех эмодзи
+        for emoji in INDEX_EMOJIS.values():
+            assert emoji in result
+
+    def test_format_index_recommendations_output_format(self):
+        """
+        Тест точного формата вывода.
+
+        Ожидается:
+        - Формат соответствует спецификации из задачи
+        """
+        top_indices = [
+            ("Otchety_po_dizaynu", 0.853),
+            ("Itogovye_otchety", 0.721)
+        ]
+
+        result = format_index_recommendations(top_indices)
+
+        # Проверка структуры с переносами строк
+        lines = result.strip().split('\n')
+
+        # Должен быть заголовок, пустая строка, рекомендации, пустая строка, footer
+        assert len(lines) >= 5
+
+        # Первая строка - заголовок
+        assert "🎯" in lines[0]
+
+    def test_format_index_recommendations_zero_score(self):
+        """
+        Тест форматирования с нулевым score.
+
+        Ожидается:
+        - Корректное отображение 0.0%
+        """
+        top_indices = [("Dizayn", 0.0)]
+
+        result = format_index_recommendations(top_indices)
+
+        assert "0.0%" in result
+
+
+# ============================================================================
+# Тесты констант
+# ============================================================================
+
+class TestConstants:
+    """Тесты констант модуля."""
+
+    def test_index_emojis_coverage(self):
+        """
+        Тест покрытия всех индексов эмодзи.
+
+        Ожидается:
+        - INDEX_EMOJIS содержит эмодзи для всех 7 индексов
+        """
+        assert len(INDEX_EMOJIS) == 7
+        assert set(INDEX_EMOJIS.keys()) == set(INDEX_MAPPING.keys())
+
+    def test_index_short_descriptions_coverage(self):
+        """
+        Тест покрытия всех индексов описаниями.
+
+        Ожидается:
+        - INDEX_SHORT_DESCRIPTIONS содержит описания для всех 7 индексов
+        """
+        assert len(INDEX_SHORT_DESCRIPTIONS) == 7
+        assert set(INDEX_SHORT_DESCRIPTIONS.keys()) == set(INDEX_MAPPING.keys())
+
+    def test_index_display_names_coverage(self):
+        """
+        Тест покрытия всех индексов отображаемыми именами.
+
+        Ожидается:
+        - INDEX_DISPLAY_NAMES содержит имена для всех 7 индексов
+        """
+        assert len(INDEX_DISPLAY_NAMES) == 7
+        assert set(INDEX_DISPLAY_NAMES.keys()) == set(INDEX_MAPPING.keys())
+
+    def test_emojis_are_not_empty(self):
+        """
+        Тест что все эмодзи не пустые.
+
+        Ожидается:
+        - Все значения в INDEX_EMOJIS непустые строки
+        """
+        for index_name, emoji in INDEX_EMOJIS.items():
+            assert emoji, f"Пустой эмодзи для индекса '{index_name}'"
+            assert len(emoji) > 0
+
+    def test_descriptions_are_not_empty(self):
+        """
+        Тест что все описания не пустые.
+
+        Ожидается:
+        - Все значения в INDEX_SHORT_DESCRIPTIONS непустые строки
+        """
+        for index_name, description in INDEX_SHORT_DESCRIPTIONS.items():
+            assert description, f"Пустое описание для индекса '{index_name}'"
+            assert len(description) > 0
+
+
+# ============================================================================
 # Интеграционные тесты
 # ============================================================================
 
@@ -552,6 +833,33 @@ class TestIntegration:
 
         assert result in INDEX_MAPPING.keys()
 
+    def test_get_top_and_format_integration(self):
+        """
+        Тест интеграции get_top_relevant_indices и format_index_recommendations.
+
+        Ожидается:
+        - get_top_relevant_indices возвращает корректные данные
+        - format_index_recommendations корректно их форматирует
+        """
+        report_relevance = {
+            "Дизайн и архитектура": 0.95,
+            "Сильные стороны": 0.90,
+            "Недостатки": 0.85,
+            "Краткое резюме": 0.70,
+            "Итоговый": 0.65
+        }
+
+        # Получаем топ индексов
+        top_indices = get_top_relevant_indices(report_relevance, top_k=3)
+
+        # Форматируем рекомендации
+        formatted = format_index_recommendations(top_indices)
+
+        # Проверка результата
+        assert len(top_indices) == 3
+        assert "Рекомендуемые индексы" in formatted
+        assert "📊" in formatted  # Otchety_po_dizaynu должен быть первым
+
 
 # ============================================================================
 # Тесты логирования
@@ -594,6 +902,21 @@ class TestLogging:
         # Должны быть предупреждения о том, что отчеты не найдены
         warnings = [record for record in caplog.records if record.levelname == "WARNING"]
         assert len(warnings) > 0
+
+    def test_logging_format_recommendations(self, caplog):
+        """
+        Тест логирования при форматировании рекомендаций.
+
+        Ожидается:
+        - Логируется информация о форматировании
+        """
+        top_indices = [("Dizayn", 0.9)]
+
+        with caplog.at_level(logging.INFO):
+            format_index_recommendations(top_indices)
+
+        # Проверяем наличие сообщения о форматировании
+        assert any("Форматирование рекомендаций" in record.message for record in caplog.records)
 
 
 if __name__ == "__main__":

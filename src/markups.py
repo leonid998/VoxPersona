@@ -3,7 +3,12 @@ from datamodels import mapping_scenario_names
 from constants import BUTTON_BACK, BUTTON_BACK_WITH_ARROW
 from conversation_manager import conversation_manager
 from conversations import ConversationMetadata
-import time  # Добавлен импорт для TTL механизма
+import time
+import hashlib
+from typing import List, Tuple, Optional
+
+# Константы для session management
+SESSION_TTL_SECONDS = 3600  # 1 час TTL для сессий query expansion
 
 def main_menu_markup():
     """Главное меню с расширенными кнопками."""
@@ -397,14 +402,16 @@ def make_query_expansion_markup(
     expanded_question: str,
     conversation_id: str,
     deep_search: bool,
-    refine_count: int = 0,  # ШАГ 1: Добавлен параметр refine_count
-    selected_index: str | None = None  # НОВЫЙ параметр: выбранный индекс (опционально)
+    refine_count: int = 0,
+    selected_index: Optional[str] = None,
+    top_indices: Optional[List[Tuple[str, float]]] = None
 ) -> InlineKeyboardMarkup:
     """
     Создает клавиатуру для выбора: отправить улучшенный вопрос или уточнить.
 
     ФАЗА 4: Query Expansion UI Components
     ФАЗА 3: Добавлена кнопка ручного выбора индекса
+    ЗАДАЧА 2.3: Добавлена поддержка top_indices для передачи в enhance_question_for_index
 
     Callback data format: "команда||hash"
     - expand_send||{hash}: Отправить улучшенный вопрос в поиск
@@ -418,6 +425,8 @@ def make_query_expansion_markup(
         deep_search: True = глубокое исследование, False = быстрый поиск
         refine_count: Текущее количество попыток уточнения (защита от зацикливания)
         selected_index: Выбранный вручную индекс (опционально)
+        top_indices: Топ-K релевантных индексов от Router Agent для передачи в enhance_question_for_index
+                    Формат: [(index_name, score), ...]
 
     Returns:
         InlineKeyboardMarkup с 4 кнопками (Отправить, Уточнить, Выбрать индекс, Назад)
@@ -426,23 +435,26 @@ def make_query_expansion_markup(
     # Не передаем полный вопрос, используем временное хранилище
 
     # Генерируем короткий ID для хранения в user_states
-    import hashlib
     query_hash = hashlib.md5(expanded_question.encode()).hexdigest()[:8]
 
     # Сохраняем в глобальное хранилище (user_states)
     from config import user_states
 
     # Создаем ключ для временного хранения
+    # TODO: Добавить периодическую очистку user_states по TTL
+    # Рекомендация: использовать cachetools.TTLCache или фоновую задачу asyncio
+    # для автоматического удаления устаревших сессий (created_at + ttl < now)
     temp_key = f"expansion_{query_hash}"
     user_states[temp_key] = {
         "original": original_question,
         "expanded": expanded_question,
         "conversation_id": conversation_id,
         "deep_search": deep_search,
-        "refine_count": refine_count,  # ШАГ 1: Сохраняем переданное значение счетчика
-        "selected_index": selected_index,  # Сохраняем выбранный индекс
-        "created_at": time.time(),  # Время создания сессии (Unix timestamp)
-        "ttl": 3600  # TTL: 1 час (3600 секунд)
+        "refine_count": refine_count,
+        "selected_index": selected_index,
+        "top_indices": top_indices,
+        "created_at": time.time(),
+        "ttl": SESSION_TTL_SECONDS
     }
 
     # callback_data: команда||hash
