@@ -2,18 +2,19 @@
 Модуль оценки релевантности отчетов для Router Agent.
 
 Использует Claude Haiku 4.5 API для оценки релевантности каждого из 22 типов отчетов
-для вопроса пользователя. Работает параллельно через asyncio для оптимизации производительности.
+для вопроса пользователя. Применяет batch-механизм: все описания упаковываются в
+JSON-контейнер и оцениваются за один API запрос.
 
 Основная функция: evaluate_report_relevance()
     - Принимает вопрос пользователя и словарь описаний отчетов
     - Возвращает словарь с процентами релевантности (0-100) для каждого отчета
-    - Использует параллельные async запросы к Claude API
-    - Применяет rate limiting (max 10 concurrent запросов)
+    - Использует batch-запрос через evaluate_batch_relevance()
+    - Один API вызов вместо 22 параллельных
 
-Batch функция: evaluate_batch_relevance()
-    - Оценивает все 22 отчета за один API запрос
-    - Возвращает тот же формат что evaluate_report_relevance()
-    - Оптимизирована для снижения количества API вызовов
+Вспомогательные функции:
+    - build_json_container() - упаковка 22 описаний в JSON
+    - build_batch_relevance_prompt() - формирование промпта для batch-оценки
+    - evaluate_batch_relevance() - выполнение batch-запроса к Claude API
 
 Примеры использования см. в tests/test_relevance_evaluator.py
 """
@@ -730,7 +731,6 @@ async def evaluate_batch_relevance(
 
     # Retry с exponential backoff
     backoff = 1
-    last_exception = None
 
     start_time = time.time()
 
@@ -773,17 +773,12 @@ async def evaluate_batch_relevance(
                 f"Обработано {len(relevance_scores)} отчетов."
             )
 
-            # Логировать топ-3 наиболее релевантных отчета
-            if relevance_scores:
-                top_3 = sorted(relevance_scores.items(), key=lambda x: x[1], reverse=True)[:3]
-                logger.info("Топ-3 релевантных отчета (batch):")
-                for rank, (name, score) in enumerate(top_3, 1):
-                    logger.info(f"  {rank}. {name}: {score:.1f}%")
+            # Топ-3 логируется в вызывающей функции evaluate_report_relevance()
+            # чтобы избежать дублирования в логах
 
             return relevance_scores
 
         except RateLimitError as e:
-            last_exception = e
             if attempt == MAX_RETRIES:
                 logger.error(
                     f"Rate limit после {MAX_RETRIES} попыток. "
