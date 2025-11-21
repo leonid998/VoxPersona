@@ -2651,13 +2651,14 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
 
         # FIX R1: Пересчитываем top_indices для нового улучшенного вопроса
         # Это необходимо для актуальных рекомендаций в меню
-        from relevance_evaluator import evaluate_report_relevance
+        from relevance_evaluator import evaluate_report_relevance, load_report_descriptions
         from index_selector import get_top_relevant_indices
-        from run_analysis import load_all_report_descriptions
 
         new_top_indices = None
         try:
-            report_descriptions = load_all_report_descriptions()
+            # ВАЖНО: Используем load_report_descriptions() из relevance_evaluator.py
+            # который возвращает ПОЛНЫЕ имена отчетов, соответствующие REPORT_TO_INDEX_MAPPING
+            report_descriptions = load_report_descriptions()
             report_relevance = await evaluate_report_relevance(
                 expansion_result["expanded"],
                 report_descriptions

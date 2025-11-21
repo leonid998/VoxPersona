@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 # === МАППИНГ ОТЧЕТОВ НА ИНДЕКСЫ ===
 # Корректный маппинг с реальными именами файлов после обработки load_report_descriptions()
 # Структура соответствует папкам в Description/Report content/
+# ВАЖНО: Имена должны точно соответствовать файлам после удаления префикса "Содержание_отчетов_" или "Содержание отчетов_"
 
 REPORT_TO_INDEX_MAPPING: Dict[str, str] = {
     # Dizayn (1 отчет) - Содержание_Дизайн
@@ -71,19 +72,19 @@ REPORT_TO_INDEX_MAPPING: Dict[str, str] = {
     "Обследование": "Iskhodniki_obsledovanie",
 
     # Itogovye_otchety (6 отчетов) - Содержание_Итоговые отчеты
-    "Главная_Краткое резюме комплексного обследования": "Itogovye_otchety",
-    "Ощущения от отеля": "Itogovye_otchety",
+    "Главная": "Itogovye_otchety",
     "Заполняемость_и_бронирование": "Itogovye_otchety",
     "Итоговый_отчет": "Itogovye_otchety",
     "Отдых_и_восстановление": "Itogovye_otchety",
+    "Ощущения_от_отеля": "Itogovye_otchety",
     "Рекомендации_по_улучшению": "Itogovye_otchety",
 
     # Otchety_po_dizaynu (5 отчетов) - Содержание_Дизайн отчеты
-    "Дизайн и архитектура": "Otchety_po_dizaynu",
-    "Сильные стороны дизайна": "Otchety_po_dizaynu",
+    "Дизайн_и_архитектура": "Otchety_po_dizaynu",
     "Недостатки_дизайна": "Otchety_po_dizaynu",
     "Ожидания_и_реальность": "Otchety_po_dizaynu",
     "Противоречия_концепции_и_дизайна": "Otchety_po_dizaynu",
+    "Сильные_стороны_дизайна": "Otchety_po_dizaynu",
 
     # Otchety_po_obsledovaniyu (5 отчетов) - Содержание_Обследование отчеты
     "Востребованность_гостиничного_хозяйства": "Otchety_po_obsledovaniyu",

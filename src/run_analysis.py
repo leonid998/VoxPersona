@@ -23,7 +23,7 @@ from analysis import analyze_methodology, classify_query, extract_from_chunk_par
 from storage import save_user_input_to_db, build_reports_grouped, create_db_in_memory
 from query_expander import expand_query
 # Router Agent модули для интеллектуального выбора индекса
-from relevance_evaluator import evaluate_report_relevance
+from relevance_evaluator import evaluate_report_relevance, load_report_descriptions
 from index_selector import select_most_relevant_index, INDEX_MAPPING, INDEX_DISPLAY_NAMES, get_top_relevant_indices, format_index_recommendations
 from question_enhancer import enhance_question_for_index
 
@@ -259,6 +259,17 @@ def load_market_research_files(rag_name: str) -> str:
 
 def load_all_report_descriptions() -> dict[str, str]:
     """
+    DEPRECATED: Используйте load_report_descriptions() из relevance_evaluator.py вместо этой функции.
+
+    Эта функция возвращает КОРОТКИЕ имена отчетов (например, "Краткое резюме"),
+    которые НЕ соответствуют REPORT_TO_INDEX_MAPPING и INDEX_MAPPING.
+
+    load_report_descriptions() из relevance_evaluator.py возвращает ПОЛНЫЕ имена
+    (например, "Главная_Краткое резюме комплексного обследования"),
+    которые корректно соответствуют маппингам.
+
+    ---
+
     Загружает все 22 файла описаний отчетов из Description/Report content/.
 
     Рекурсивно обходит директорию Description/Report content/, читает все .md файлы
@@ -701,7 +712,9 @@ async def run_dialog_mode(
                 logging.info("[Router Recommendations] Получение рекомендаций индексов для меню...")
 
                 # Загружаем описания отчетов
-                report_descriptions = load_all_report_descriptions()
+                # ВАЖНО: Используем load_report_descriptions() из relevance_evaluator.py
+                # который возвращает ПОЛНЫЕ имена отчетов, соответствующие REPORT_TO_INDEX_MAPPING
+                report_descriptions = load_report_descriptions()
                 logging.info(f"[Router Recommendations] Загружено {len(report_descriptions)} описаний отчетов")
 
                 # Оцениваем релевантность всех отчетов к улучшенному вопросу
@@ -765,7 +778,9 @@ async def run_dialog_mode(
 
         try:
             # Загружаем описания отчетов для улучшения вопроса
-            report_descriptions = load_all_report_descriptions()
+            # ВАЖНО: Используем load_report_descriptions() из relevance_evaluator.py
+            # который возвращает ПОЛНЫЕ имена отчетов, соответствующие REPORT_TO_INDEX_MAPPING
+            report_descriptions = load_report_descriptions()
             logging.info(f"[Manual Index] Загружено {len(report_descriptions)} описаний отчетов")
 
             # ЗАДАЧА 2.3: Улучшаем вопрос для ВЫБРАННОГО индекса с контекстом топ-3
@@ -814,8 +829,10 @@ async def run_dialog_mode(
             logging.info("[Router] Запуск Router Agent для выбора оптимального индекса...")
 
             # Этап 1: Загрузка описаний всех отчетов (внутри try для обработки ошибок)
+            # ВАЖНО: Используем load_report_descriptions() из relevance_evaluator.py
+            # который возвращает ПОЛНЫЕ имена отчетов, соответствующие REPORT_TO_INDEX_MAPPING
             logging.info("[Router] Загрузка описаний 22 отчетов...")
-            report_descriptions = load_all_report_descriptions()
+            report_descriptions = load_report_descriptions()
             logging.debug(f"[Router] Загружено {len(report_descriptions)} описаний отчетов")
 
             # Этап 2: Оценка релевантности всех отчетов к запросу пользователя
