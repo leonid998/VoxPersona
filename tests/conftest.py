@@ -334,6 +334,13 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "blocking: Тесты блокировки пользователей"
     )
+    # Маркеры для Router Agent E2E тестов
+    config.addinivalue_line(
+        "markers", "slow: Медленные тесты с реальными API вызовами (пропустить с -m 'not slow')"
+    )
+    config.addinivalue_line(
+        "markers", "integration: Интеграционные тесты с внешними сервисами"
+    )
 
 
 def pytest_collection_modifyitems(config, items):

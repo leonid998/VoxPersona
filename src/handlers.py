@@ -1,4 +1,4 @@
-﻿from typing import Any, cast
+from typing import Any, cast
 from datetime import datetime, date, timedelta
 import os
 import re
@@ -31,6 +31,7 @@ from auth_models import User, Invitation, AuthAuditEvent
 
 from storage import delete_tmp_params, safe_filename, find_real_filename
 from datamodels import mapping_building_names, REPORT_MAPPING, mapping_scenario_names
+from index_selector import INDEX_DISPLAY_NAMES
 
 from markups import (
     help_menu_markup,
@@ -63,7 +64,7 @@ from analysis import (
 # Logger для handlers
 logger = logging.getLogger(__name__)
 
-from run_analysis import run_analysis_with_spinner, run_dialog_mode
+from run_analysis import run_analysis_with_spinner, run_dialog_mode, ROUTER_TO_RAG_MAPPING
 
 from audio_utils import extract_audio_filename, define_audio_file_params, transcribe_audio_and_save
 
@@ -2118,6 +2119,35 @@ def register_handlers(app: Client):
                 await handle_query_improve(callback, app)
                 return
             # === END QUERY CHOICE CALLBACKS ===
+
+            # === MANUAL INDEX SELECTION CALLBACKS ===
+            elif data == "select_index_manual":
+                await handle_select_index_manual(callback, app)
+                return
+
+            elif data.startswith("idx_"):
+                index_name = data.replace("idx_", "")
+                await handle_index_selected(callback, app, index_name)
+                return
+
+            elif data == "back_to_query_menu":
+                await handle_back_to_query_menu(callback, app)
+                return
+
+            # === INDEX MODE SELECTION CALLBACKS (PHASE 3) ===
+            elif data == "search_auto_index":
+                await handle_search_auto_index(callback, app)
+                return
+
+            elif data == "search_manual_index":
+                await handle_search_manual_index(callback, app)
+                return
+
+            elif data == "back_to_query_choice":
+                await handle_back_to_query_choice(callback, app)
+                return
+            # === END INDEX MODE SELECTION CALLBACKS ===
+
             # === КОНЕЦ QUERY EXPANSION ===
 
             # Главное меню
@@ -2498,6 +2528,8 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
         conversation_id = expansion_data["conversation_id"]
         deep_search = expansion_data["deep_search"]
         original_question = expansion_data["original"]
+        # ЗАДАЧА 2.3: Извлекаем топ-3 индексов для передачи в enhance_question_for_index
+        top_indices = expansion_data.get("top_indices", None)
 
         # FIX (2025-11-09): Убрано сохранение в ConversationMessage из-за ValidationError
         # Модель ConversationMessage не поддерживает type="system_info" и message_id=0
@@ -2550,7 +2582,8 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
             rags=current_rags,
             deep_search=deep_search,
             conversation_id=conversation_id,
-            skip_expansion=True  # ← НОВЫЙ ПАРАМЕТР: пропускаем повторное улучшение
+            skip_expansion=True,  # ← НОВЫЙ ПАРАМЕТР: пропускаем повторное улучшение
+            top_indices=top_indices  # ЗАДАЧА 2.3: передаем топ-3 индексов
         )
 
         await callback.answer("✅ Отправлено в поиск")
@@ -2606,6 +2639,8 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
         original_question = expansion_data["original"]
         conversation_id = expansion_data["conversation_id"]
         deep_search = expansion_data["deep_search"]
+        # FIX R1: Извлекаем selected_index для сохранения при уточнении
+        selected_index = expansion_data.get("selected_index", None)
 
         # Рекурсивно вызываем expand_query (с исходным вопросом!)
         from query_expander import expand_query
@@ -2613,6 +2648,27 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
 
         # Увеличиваем счетчик попыток
         expansion_result["refine_count"] = refine_count + 1
+
+        # FIX R1: Пересчитываем top_indices для нового улучшенного вопроса
+        # Это необходимо для актуальных рекомендаций в меню
+        from relevance_evaluator import evaluate_report_relevance, load_report_descriptions
+        from index_selector import get_top_relevant_indices
+
+        new_top_indices = None
+        try:
+            # ВАЖНО: Используем load_report_descriptions() из relevance_evaluator.py
+            # который возвращает ПОЛНЫЕ имена отчетов, соответствующие REPORT_TO_INDEX_MAPPING
+            report_descriptions = load_report_descriptions()
+            report_relevance = await evaluate_report_relevance(
+                expansion_result["expanded"],
+                report_descriptions
+            )
+            new_top_indices = get_top_relevant_indices(report_relevance, top_k=3, min_score=10.0)
+            logger.info(f"[Refine] Пересчитаны top_indices: {len(new_top_indices)} рекомендаций")
+        except Exception as e:
+            logger.warning(f"[Refine] Ошибка пересчета top_indices: {e}")
+            # При ошибке используем старые top_indices если есть
+            new_top_indices = expansion_data.get("top_indices", None)
 
         # Показываем новый улучшенный вопрос
         from run_analysis import show_expanded_query_menu
@@ -2624,7 +2680,9 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
             expanded=expansion_result["expanded"],
             conversation_id=conversation_id,
             deep_search=deep_search,
-            refine_count=refine_count + 1  # ✅ ШАГ 4: Передаем инкрементированный счетчик
+            refine_count=refine_count + 1,  # ✅ ШАГ 4: Передаем инкрементированный счетчик
+            selected_index=selected_index,   # FIX R1: Передаем selected_index
+            top_indices=new_top_indices      # FIX R1: Передаем пересчитанные top_indices
         )
 
         await callback.answer(f"🔄 Уточнено (попытка {refine_count + 1}/3)")
@@ -2677,101 +2735,32 @@ async def show_query_choice_menu(chat_id: int, question: str, app: Client):
 
 async def handle_query_send_as_is(callback: CallbackQuery, app: Client):
     """
-    Обработчик callback: отправка вопроса в поиск БЕЗ улучшения.
+    Обработчик callback: выбор режима перед отправкой вопроса БЕЗ улучшения.
 
-    Flow:
-        1. Извлечь pending_question из user_states
-        2. Удалить pending_question (очистка)
-        3. Создать MockMessage
-        4. Запустить run_dialog_mode с skip_expansion=True
+    ФАЗА 3: Обновлено - теперь показывает меню выбора режима индекса
+    вместо прямой отправки в поиск.
 
-    Args:
-        callback: Pyrogram CallbackQuery object
-        app: Pyrogram Client
-
-    Notes:
-        - ВАЖНО: skip_expansion=True → без вызова expand_query()
-        - Добавлен loading animation (spinner)
-        - Обработка отсутствия pending_question
-
-    Связь:
-        - Вызывается из callback_query_handler при data="query_send_as_is"
-        - Запускает run_analysis.run_dialog_mode напрямую
-
-    Связь с err_task.txt:
-        - Реализует путь "Отправить в поиск КАК ЕСТЬ"
+    Workflow:
+        1. Показать меню: Автовыбор / Ручной выбор
+        2. Пользователь выбирает режим
+        3. При автовыборе -> сразу в поиск
+        4. При ручном -> показать список индексов
     """
     chat_id = callback.message.chat.id
-    st = user_states.get(chat_id, {})
 
-    original_question = st.get("pending_question")
-    conversation_id = st.get("conversation_id")
-    deep_search = st.get("deep_search", False)
+    from markups import make_index_mode_selection_markup
 
-    # Валидация: проверка наличия вопроса
-    if not original_question:
-        await callback.answer("⚠️ Вопрос не найден, попробуйте еще раз", show_alert=True)
-        logging.warning(f"[Query Choice] No pending_question for chat_id={chat_id}")
-        return
-
-    # Удаляем pending_question из состояния (защита от утечки памяти)
-    if "pending_question" in st:
-        del st["pending_question"]
-        # Восстанавливаем step на dialog_mode для следующих вопросов
-        st["step"] = "dialog_mode"
-        user_states[chat_id] = st
-
-    await callback.answer("✅ Отправлено в поиск")
-    logging.info(f"[Query Choice] User {chat_id} chose SEND AS IS: {original_question[:50]}")
-
-    # Создаем mock message (для совместимости с run_dialog_mode)
-    class MockMessage:
-        def __init__(self, text_val, chat_id_val, msg_id):
-            self.text = text_val
-            self.id = msg_id
-            self.chat = type('Chat', (), {'id': chat_id_val})()
-
-    import time
-    mock_message = MockMessage(original_question, chat_id, int(time.time() * 1000000))
-
-    # Показываем loading animation
-    msg = await track_and_send(
-        chat_id=chat_id,
-        app=app,
-        text="⏳ Думаю...",
-        message_type="status_message"
+    text = (
+        "**Выбор режима поиска**\n\n"
+        "Как определить индекс для поиска?\n\n"
+        "**Автовыбор** - система проанализирует вопрос и выберет\n"
+        "наиболее подходящий индекс автоматически\n\n"
+        "**Вручную** - вы сами выберете индекс из списка\n"
+        "(7 индексов: Дизайн, Интервью, Отчеты и др.)"
     )
 
-    st_ev = threading.Event()
-    sp_th = threading.Thread(target=run_loading_animation, args=(chat_id, msg.id, st_ev, app))
-    sp_th.start()
-
-    # ✅ ISSUE #2a FIX: Проверка готовности базы знаний
-    if not rags:
-        st_ev.set()
-        sp_th.join()
-        await app.send_message(chat_id, "🔄 База знаний ещё загружается, попробуйте позже.")
-        logging.warning(f"[Query Choice] RAGs not ready for chat_id={chat_id}")
-        return
-
-    try:
-        # Запускаем поиск БЕЗ улучшения
-        from run_analysis import run_dialog_mode
-        await run_dialog_mode(
-            message=mock_message,
-            app=app,
-            rags=rags,  # Глобальная переменная из handlers.py
-            deep_search=deep_search,
-            conversation_id=conversation_id,
-            skip_expansion=True  # ← КЛЮЧЕВОЙ ПАРАМЕТР: пропуск expand_query()
-        )
-    except Exception as e:
-        logging.error(f"[Query Choice] Error in handle_query_send_as_is: {e}", exc_info=True)
-        await app.send_message(chat_id, "❌ Произошла ошибка при поиске")
-    finally:
-        # Останавливаем spinner
-        st_ev.set()
-        sp_th.join()
+    await send_menu(chat_id, app, text, make_index_mode_selection_markup())
+    await callback.answer("Выберите режим поиска")
 
 
 async def handle_query_improve(callback: CallbackQuery, app: Client):
@@ -2945,6 +2934,428 @@ async def _execute_search_without_expansion(
         sp_th.join()
 
 # ============ END QUERY CHOICE HANDLERS ============
+
+
+# ============ MANUAL INDEX SELECTION HANDLERS ============
+# Добавлено в рамках Фазы 3: UI обновления (Задача 3.2)
+# Feature: Router Agent - ручной выбор RAG индекса пользователем
+
+async def handle_select_index_manual(callback: CallbackQuery, app: Client):
+    """
+    Показывает список всех 7 индексов для ручного выбора.
+
+    Workflow:
+        1. Получить chat_id из callback
+        2. Импортировать make_index_selection_markup из markups
+        3. Сформировать текст с описанием всех индексов
+        4. Отправить меню через send_menu()
+
+    Args:
+        callback: Pyrogram CallbackQuery object
+        app: Pyrogram Client
+
+    Callback_data: "select_index_manual"
+
+    Связь:
+        - Вызывается при нажатии кнопки "🎯 Выбрать индекс вручную"
+        - Открывает make_index_selection_markup() с 7 кнопками индексов
+        - После выбора → handle_index_selected()
+
+    Notes:
+        - Часть Router Agent системы (00009_20251119_SETBNH)
+        - Позволяет пользователю переопределить автоматический выбор индекса
+    """
+    chat_id = callback.message.chat.id
+
+    from markups import make_index_selection_markup
+
+    # Текст меню с описанием всех индексов
+    text = (
+        "🎯 **Выбор индекса для поиска**\n\n"
+        "Выберите индекс, в котором будет производиться поиск:\n\n"
+        "📊 **Дизайн** - структурированные аудиты дизайна\n"
+        "💬 **Интервью** - мнения гостей о заведении\n"
+        "🏛️ **Отчеты по дизайну** - готовые отчеты по 60 отелям РФ\n"
+        "🔍 **Отчеты по обследованию** - инфраструктура отелей\n"
+        "📈 **Итоговые отчеты** - сводные аналитические отчеты\n"
+        "📄 **Исходники (Дизайн)** - исходные файлы аудитов\n"
+        "📋 **Исходники (Обследование)** - исходные обследования"
+    )
+
+    await send_menu(chat_id, app, text, make_index_selection_markup())
+    await callback.answer("🎯 Выберите индекс")
+
+
+async def handle_index_selected(callback: CallbackQuery, app: Client, index_name: str):
+    """
+    Обрабатывает выбор индекса пользователем.
+
+    ФАЗА 3: Обновлено - добавлена проверка raw_search_mode для поиска без улучшения
+
+    Workflow:
+        1. Извлечь chat_id
+        2. Сохранить selected_index в user_states[chat_id]
+        3. Проверить raw_search_mode (если True - запустить поиск напрямую)
+        4. Иначе - извлечь данные о pending query и вернуться к меню улучшенного вопроса
+
+    Args:
+        callback: Pyrogram CallbackQuery object
+        app: Pyrogram Client
+        index_name: Короткое имя индекса (например, "Dizayn", "Intervyu")
+
+    Callback_data: "idx_{index_name}" (например, "idx_Dizayn")
+
+    Notes:
+        - Сохраняет выбор в user_states["selected_index"]
+        - Router Agent в run_analysis.py будет использовать этот индекс
+        - Показывает выбранный индекс в сообщении меню
+
+    Связь:
+        - Вызывается после handle_select_index_manual
+        - Возвращается в show_expanded_query_menu (из run_analysis)
+    """
+    chat_id = callback.message.chat.id
+
+    # Инициализация состояния если не существует
+    if chat_id not in user_states:
+        user_states[chat_id] = {}
+
+    # Валидация index_name
+    if index_name not in INDEX_DISPLAY_NAMES:
+        await callback.answer("Неверный индекс", show_alert=True)
+        logger.warning(f"[Manual Index Selection] Invalid index_name: {index_name}")
+        return
+
+    # Сохранение выбранного индекса
+    user_states[chat_id]["selected_index"] = index_name
+
+    logger.info(f"[Manual Index Selection] chat_id={chat_id} selected index: {index_name}")
+
+    # Извлечение данных текущего запроса из user_states
+    st = user_states.get(chat_id, {})
+
+    # ФАЗА 3: Проверка raw_search_mode (поиск без улучшения)
+    if st.get("raw_search_mode"):
+        # Очищаем флаг
+        user_states[chat_id].pop("raw_search_mode", None)
+
+        # Запускаем поиск напрямую
+        question = st.get("pending_question", "")
+        deep_search = st.get("deep_search", False)
+        conversation_id = st.get("conversation_id", "")
+
+        if not question:
+            await callback.answer("Вопрос не найден.", show_alert=True)
+            return
+
+        display_name = INDEX_DISPLAY_NAMES.get(index_name, index_name)
+        logger.info(f"[Raw Search] chat_id={chat_id} selected index: {index_name} for search without expansion")
+
+        # Показываем loading
+        msg = await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text=f"Поиск в индексе {display_name}...",
+            message_type="status_message"
+        )
+
+        st_ev = threading.Event()
+        sp_th = threading.Thread(target=run_loading_animation, args=(chat_id, msg.id, st_ev, app))
+        sp_th.start()
+
+        if not rags:
+            st_ev.set()
+            sp_th.join()
+            await app.send_message(chat_id, "База знаний ещё загружается, попробуйте позже.")
+            return
+
+        try:
+            class MockMessage:
+                def __init__(self, text_val, chat_id_val, msg_id):
+                    self.text = text_val
+                    self.id = msg_id
+                    self.chat = type('Chat', (), {'id': chat_id_val})()
+
+            import time
+            mock_message = MockMessage(question, chat_id, int(time.time() * 1000000))
+
+            from run_analysis import run_dialog_mode
+            await run_dialog_mode(
+                message=mock_message,
+                app=app,
+                rags=rags,
+                deep_search=deep_search,
+                conversation_id=conversation_id,
+                skip_expansion=True
+            )
+        except Exception as e:
+            logger.error(f"[Raw Search] Error: {e}", exc_info=True)
+            await app.send_message(chat_id, "Произошла ошибка при поиске")
+        finally:
+            st_ev.set()
+            sp_th.join()
+
+        await callback.answer(f"Поиск в индексе: {display_name}")
+        return
+
+    # ОРИГИНАЛЬНАЯ ЛОГИКА: Выбор индекса ПОСЛЕ улучшения вопроса
+    # Используем тот же механизм что и в handle_expand_send/handle_expand_refine
+
+    # Ищем expansion данные (могут быть в разных ключах)
+    expansion_data = None
+    original_question = st.get("original_question", "")
+    expanded_question = st.get("expanded_question", "")
+    conversation_id = st.get("conversation_id", "")
+    deep_search = st.get("deep_search", False)
+    top_indices = None  # ДОБАВЛЕНО: извлечение top_indices для передачи в show_expanded_query_menu
+
+    # Fallback: поиск по expansion_{hash} ключам
+    if not original_question:
+        for key in st.keys():
+            if key.startswith("expansion_"):
+                expansion_data = st[key]
+                original_question = expansion_data.get("original", "")
+                expanded_question = expansion_data.get("expanded", "")
+                conversation_id = expansion_data.get("conversation_id", "")
+                deep_search = expansion_data.get("deep_search", False)
+                top_indices = expansion_data.get("top_indices", None)  # ДОБАВЛЕНО
+                break
+
+    # Валидация: проверка наличия данных
+    if not original_question or not expanded_question:
+        await callback.answer(
+            "⚠️ Данные запроса не найдены. Попробуйте задать вопрос заново.",
+            show_alert=True
+        )
+        logger.warning(f"[Manual Index Selection] No query data for chat_id={chat_id}")
+        return
+
+    # Возвращаемся к меню улучшенного вопроса с указанием выбранного индекса
+    from run_analysis import show_expanded_query_menu
+
+    await show_expanded_query_menu(
+        chat_id=chat_id,
+        app=app,
+        original=original_question,
+        expanded=expanded_question,
+        conversation_id=conversation_id,
+        deep_search=deep_search,
+        refine_count=st.get("refine_count", 0),
+        selected_index=index_name,
+        top_indices=top_indices  # ДОБАВЛЕНО: передача top_indices
+    )
+
+    display_name = INDEX_DISPLAY_NAMES.get(index_name, index_name)
+    await callback.answer(f"✅ Выбран индекс: {display_name}")
+
+
+async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
+    """
+    Возвращает пользователя обратно к меню улучшенного вопроса.
+
+    Используется при нажатии кнопки "◀️ Назад" в меню выбора индекса.
+
+    Workflow:
+        1. Извлечь данные запроса из user_states
+        2. Вызвать show_expanded_query_menu с текущими данными
+
+    Args:
+        callback: Pyrogram CallbackQuery object
+        app: Pyrogram Client
+
+    Callback_data: "back_to_query_menu"
+
+    Notes:
+        - Не изменяет selected_index (сохраняет предыдущий выбор)
+        - Показывает текущий selected_index если он был установлен
+    """
+    chat_id = callback.message.chat.id
+    st = user_states.get(chat_id, {})
+
+    # Извлечение данных запроса
+    original_question = st.get("original_question", "")
+    expanded_question = st.get("expanded_question", "")
+    conversation_id = st.get("conversation_id", "")
+    deep_search = st.get("deep_search", False)
+    selected_index = st.get("selected_index")  # Может быть None
+
+    # FIX R2: Инициализируем top_indices для передачи в show_expanded_query_menu
+    top_indices = None
+
+    # Fallback: поиск по expansion_{hash} ключам
+    if not original_question:
+        for key in st.keys():
+            if key.startswith("expansion_"):
+                expansion_data = st[key]
+                original_question = expansion_data.get("original", "")
+                expanded_question = expansion_data.get("expanded", "")
+                conversation_id = expansion_data.get("conversation_id", "")
+                deep_search = expansion_data.get("deep_search", False)
+                # FIX R2: Извлекаем top_indices из expansion_data
+                top_indices = expansion_data.get("top_indices", None)
+                break
+
+    # Валидация
+    if not original_question or not expanded_question:
+        await callback.answer(
+            "⚠️ Данные запроса не найдены. Попробуйте задать вопрос заново.",
+            show_alert=True
+        )
+        return
+
+    # Возврат к меню
+    from run_analysis import show_expanded_query_menu
+
+    await show_expanded_query_menu(
+        chat_id=chat_id,
+        app=app,
+        original=original_question,
+        expanded=expanded_question,
+        conversation_id=conversation_id,
+        deep_search=deep_search,
+        refine_count=st.get("refine_count", 0),
+        selected_index=selected_index,  # Передаем текущий выбор
+        top_indices=top_indices         # FIX R2: Передаем top_indices
+    )
+
+    await callback.answer("Возврат к меню")
+
+# ============ END MANUAL INDEX SELECTION HANDLERS ============
+
+
+# ============ INDEX MODE SELECTION HANDLERS (PHASE 3) ============
+
+async def handle_search_auto_index(callback: CallbackQuery, app: Client):
+    """
+    Обработчик: поиск с автоматическим выбором индекса (Router Agent).
+
+    Callback_data: "search_auto_index"
+
+    Workflow:
+        1. Извлечь pending_question из user_states
+        2. Запустить run_dialog_mode с skip_expansion=True
+        3. Router Agent автоматически выберет индекс
+    """
+    chat_id = callback.message.chat.id
+    st = user_states.get(chat_id, {})
+
+    # Извлекаем данные запроса
+    question = st.get("pending_question", "")
+    deep_search = st.get("deep_search", False)
+    conversation_id = st.get("conversation_id", "")
+
+    if not question:
+        await callback.answer("Вопрос не найден. Попробуйте заново.", show_alert=True)
+        return
+
+    logger.info(f"[Index Mode] chat_id={chat_id} selected auto mode")
+
+    # Показываем loading
+    msg = await track_and_send(
+        chat_id=chat_id,
+        app=app,
+        text="Думаю...",
+        message_type="status_message"
+    )
+
+    st_ev = threading.Event()
+    sp_th = threading.Thread(target=run_loading_animation, args=(chat_id, msg.id, st_ev, app))
+    sp_th.start()
+
+    # Проверка готовности базы знаний
+    if not rags:
+        st_ev.set()
+        sp_th.join()
+        await app.send_message(chat_id, "База знаний ещё загружается, попробуйте позже.")
+        return
+
+    try:
+        # Создаем mock message
+        class MockMessage:
+            def __init__(self, text_val, chat_id_val, msg_id):
+                self.text = text_val
+                self.id = msg_id
+                self.chat = type('Chat', (), {'id': chat_id_val})()
+
+        import time
+        mock_message = MockMessage(question, chat_id, int(time.time() * 1000000))
+
+        from run_analysis import run_dialog_mode
+        await run_dialog_mode(
+            message=mock_message,
+            app=app,
+            rags=rags,
+            deep_search=deep_search,
+            conversation_id=conversation_id,
+            skip_expansion=True
+        )
+    except Exception as e:
+        logger.error(f"[Index Mode] Error in auto search: {e}", exc_info=True)
+        await app.send_message(chat_id, "Произошла ошибка при поиске")
+    finally:
+        st_ev.set()
+        sp_th.join()
+
+    await callback.answer()
+
+
+async def handle_search_manual_index(callback: CallbackQuery, app: Client):
+    """
+    Обработчик: показать список индексов для ручного выбора перед поиском.
+
+    Callback_data: "search_manual_index"
+
+    Workflow:
+        1. Сохранить флаг что ищем без улучшения
+        2. Показать make_index_selection_markup()
+        3. После выбора индекса -> handle_index_selected обработает raw_search_mode
+    """
+    chat_id = callback.message.chat.id
+
+    # Помечаем что это поиск без улучшения
+    if chat_id not in user_states:
+        user_states[chat_id] = {}
+    user_states[chat_id]["raw_search_mode"] = True
+
+    from markups import make_index_selection_markup
+
+    text = (
+        "🎯 **Выбор индекса для поиска**\n\n"
+        "Выберите индекс, в котором будет производиться поиск:\n\n"
+        "📊 **Дизайн** - структурированные аудиты дизайна\n"
+        "💬 **Интервью** - мнения гостей о заведении\n"
+        "🏛️ **Отчеты по дизайну** - готовые отчеты по 60 отелям РФ\n"
+        "🔧 **Отчеты по обследованию** - инфраструктура отелей\n"
+        "📋 **Итоговые отчеты** - сводные аналитические отчеты\n"
+        "📁 **Исходники (Дизайн)** - исходные файлы аудитов\n"
+        "📂 **Исходники (Обследование)** - исходные обследования"
+    )
+
+    await send_menu(chat_id, app, text, make_index_selection_markup())
+    await callback.answer("Выберите индекс")
+
+
+async def handle_back_to_query_choice(callback: CallbackQuery, app: Client):
+    """
+    Обработчик: возврат к меню выбора отправки вопроса.
+
+    Callback_data: "back_to_query_choice"
+    """
+    chat_id = callback.message.chat.id
+    st = user_states.get(chat_id, {})
+
+    question = st.get("pending_question", "")
+    deep_search = st.get("deep_search", False)
+
+    if not question:
+        await callback.answer("Вопрос не найден.", show_alert=True)
+        return
+
+    # Возвращаемся к меню выбора (show_query_choice_menu)
+    await show_query_choice_menu(chat_id, question, app)
+    await callback.answer("Назад")
+
+# ============ END INDEX MODE SELECTION HANDLERS ============
 
 
 # ============ TEST CALLBACK HANDLER FOR MENU CRAWLER ============
