@@ -276,7 +276,7 @@ async def test_full_router_workflow():
         f"Улучшенный вопрос должен быть длиннее: {len(enhanced)} <= {len(question)}"
 
     # Проверка что ключевое слово сохранено
-    question_lower = question.lower()
+    # ИСПРАВЛЕНО: удалена неиспользуемая переменная question_lower
     enhanced_lower = enhanced.lower()
 
     # Хотя бы одно ключевое слово должно присутствовать
@@ -372,9 +372,10 @@ async def test_router_on_golden_dataset(golden_dataset):
     recall_at_3 = correct_at_3 / total * 100
 
     # Детальный отчет
-    print(f"\n" + "="*60)
-    print(f"📊 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ ROUTER AGENT")
-    print(f"="*60)
+    # ИСПРАВЛЕНО: убран f-префикс из строк без полей замены
+    print("\n" + "="*60)
+    print("📊 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ ROUTER AGENT")
+    print("="*60)
     print(f"\n📈 Метрики:")
     print(f"  • Accuracy@1: {accuracy_at_1:.1f}% ({correct_at_1}/{total})")
     print(f"  • Recall@3:   {recall_at_3:.1f}% ({correct_at_3}/{total})")
@@ -388,7 +389,8 @@ async def test_router_on_golden_dataset(golden_dataset):
             print(f"    Ожидали: {e['expected']}")
             print(f"    Топ-3: {', '.join(e['top_3'])}")
     else:
-        print(f"\n🎉 Все правильные индексы в топ-3!")
+        # ИСПРАВЛЕНО: убран f-префикс - нет полей замены
+        print("\n🎉 Все правильные индексы в топ-3!")
 
     # Статистика по индексам
     print(f"\n📈 Статистика по индексам (recall@3):")
@@ -473,7 +475,8 @@ async def test_router_fallback_on_error(mock_report_descriptions):
         # Fallback: возвращается оригинальный вопрос
         assert result == question, \
             f"При ошибке должен вернуться оригинальный вопрос, получено: {result}"
-        print(f"✅ Fallback на оригинальный вопрос работает корректно")
+        # ИСПРАВЛЕНО: убран f-префикс - нет полей замены
+        print("✅ Fallback на оригинальный вопрос работает корректно")
 
     # Сценарий 3: Пустые релевантности приводят к DEFAULT_INDEX
     empty_relevance = {
@@ -692,7 +695,8 @@ def test_display_names_consistency():
         assert len(display_name.strip()) > 0, \
             f"Display name для '{index}' является пустой строкой"
 
-    print(f"\n✅ INDEX_DISPLAY_NAMES корректно соответствует INDEX_MAPPING:")
+    # ИСПРАВЛЕНО: убран f-префикс - нет полей замены
+    print("\n✅ INDEX_DISPLAY_NAMES корректно соответствует INDEX_MAPPING:")
     for index in sorted(INDEX_MAPPING.keys()):
         print(f"  {index} -> {INDEX_DISPLAY_NAMES[index]}")
 
@@ -910,7 +914,8 @@ def test_json_container_structure(mock_report_descriptions):
     assert len(report_names) == len(set(report_names)), \
         "Обнаружены дублирующиеся имена отчетов"
 
-    print(f"\n✅ Структура JSON контейнера валидна:")
+    # ИСПРАВЛЕНО: убран f-префикс - нет полей замены в первой строке
+    print("\n✅ Структура JSON контейнера валидна:")
     print(f"  • Отчетов: {data['total_reports']}")
     print(f"  • Индексов: {data['total_indices']}")
     print(f"  • Размер JSON: {len(container):,} символов")
@@ -984,7 +989,8 @@ def test_batch_response_parsing():
     # Сценарий 5: Ошибка - нет JSON в тексте
     with pytest.raises(ValueError, match="Не найден JSON"):
         parse_batch_response("Это просто текст без JSON")
-    print(f"✅ Сценарий 5: Отсутствие JSON вызывает ValueError")
+    # ИСПРАВЛЕНО: убран f-префикс - нет полей замены
+    print("✅ Сценарий 5: Отсутствие JSON вызывает ValueError")
 
     # Сценарий 6: Ошибка - нет ключа 'evaluations'
     invalid_structure = '{"results": [{"id": 1}]}'
@@ -1022,7 +1028,8 @@ def test_batch_evaluations_validation():
     is_valid, errors = validate_batch_evaluations(valid_evaluations, expected_count=3)
     assert is_valid, f"Ожидалось валидные данные, ошибки: {errors}"
     assert len(errors) == 0
-    print(f"✅ Сценарий 1: Корректные данные валидны")
+    # ИСПРАВЛЕНО: убран f-префикс - нет полей замены
+    print("✅ Сценарий 1: Корректные данные валидны")
 
     # Сценарий 2: Неверное количество оценок
     is_valid, errors = validate_batch_evaluations(valid_evaluations, expected_count=5)
@@ -1065,7 +1072,8 @@ def test_batch_evaluations_validation():
     is_valid, errors = validate_batch_evaluations(out_of_range, expected_count=1)
     assert not is_valid
     assert any("вне диапазона 0-100" in e for e in errors)
-    print(f"✅ Сценарий 6: Relevance вне диапазона обнаружен")
+    # ИСПРАВЛЕНО: убран f-префикс - нет полей замены
+    print("✅ Сценарий 6: Relevance вне диапазона обнаружен")
 
     # Сценарий 7: Relevance не число
     not_a_number = [

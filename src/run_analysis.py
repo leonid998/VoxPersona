@@ -27,6 +27,10 @@ from relevance_evaluator import evaluate_report_relevance, load_report_descripti
 from index_selector import select_most_relevant_index, INDEX_MAPPING, INDEX_DISPLAY_NAMES, get_top_relevant_indices, format_index_recommendations
 from question_enhancer import enhance_question_for_index
 
+# Константы для UI и индексов
+MIN_RELEVANCE_SCORE = 10.0  # Минимальный порог релевантности для включения в рекомендации
+INDEX_SURVEY_REPORTS = "Отчеты по обследованию"  # Используется в 4 местах
+
 # Маппинг имен индексов Router Agent -> rags
 # Router Agent использует транслитерированные имена (Dizayn, Intervyu),
 # а rags использует русские имена (Дизайн, Интервью)
@@ -37,11 +41,8 @@ ROUTER_TO_RAG_MAPPING: dict[str, str] = {
     "Iskhodniki_obsledovanie": "Исходники обследование",
     "Itogovye_otchety": "Итоговые отчеты",
     "Otchety_po_dizaynu": "Отчеты по дизайну",
-    "Otchety_po_obsledovaniyu": "Отчеты по обследованию"
+    "Otchety_po_obsledovaniyu": INDEX_SURVEY_REPORTS
 }
-
-# Константы для UI сообщений
-MIN_RELEVANCE_SCORE = 10.0  # Минимальный порог релевантности для включения в рекомендации
 
 
 def load_market_research_files(rag_name: str) -> str:
@@ -112,7 +113,7 @@ def load_market_research_files(rag_name: str) -> str:
             "file_pattern": None,
             "search_type": "folder"
         },
-        "Отчеты по обследованию": {
+        INDEX_SURVEY_REPORTS: {
             "folder_pattern": "Обследование отчеты",
             "file_pattern": None,
             "search_type": "folder"
@@ -431,7 +432,7 @@ def init_rags(existing_rags: dict | None = None) -> dict:
 
         # === НОВЫЕ ИНДЕКСЫ МИ (Маркетинговое исследование) ===
         (None, "Отчеты по дизайну", "market_research"),
-        (None, "Отчеты по обследованию", "market_research"),
+        (None, INDEX_SURVEY_REPORTS, "market_research"),
         (None, "Итоговые отчеты", "market_research"),
         (None, "Исходники дизайн", "market_research"),
         (None, "Исходники обследование", "market_research"),
@@ -481,7 +482,7 @@ def init_rags(existing_rags: dict | None = None) -> dict:
             # === КОНЕЦ ВЫБОРА ИСТОЧНИКА ===
 
             # === РАСШИРЕННОЕ УСЛОВИЕ: 7 FAISS индексов (2 старых + 5 новых МИ) ===
-            if rag_name in ["Интервью", "Дизайн", "Отчеты по дизайну", "Отчеты по обследованию", "Итоговые отчеты", "Исходники дизайн", "Исходники обследование"]:
+            if rag_name in ["Интервью", "Дизайн", "Отчеты по дизайну", INDEX_SURVEY_REPORTS, "Итоговые отчеты", "Исходники дизайн", "Исходники обследование"]:
                 rag_db = create_db_in_memory(content_str)
                 rags[rag_name] = rag_db
                 logging.info(f"✅ FAISS индекс для {rag_name} сформирован успешно")
@@ -659,6 +660,325 @@ async def show_expanded_query_menu(
             raise
 
 
+async def _get_router_recommendations(text: str, chat_id: int) -> list[tuple] | None:
+    """
+    Получает рекомендации индексов от Router Agent для отображения в UI.
+
+    Args:
+        text: Улучшенный вопрос пользователя
+        chat_id: ID чата для логирования
+
+    Returns:
+        list[tuple] | None: Список топ-K индексов [(index_name, score), ...] или None при ошибке
+    """
+    try:
+        logging.info("[Router Recommendations] Получение рекомендаций индексов для меню...")
+
+        # Загружаем описания отчетов
+        report_descriptions = load_report_descriptions()
+        logging.info(f"[Router Recommendations] Загружено {len(report_descriptions)} описаний отчетов")
+
+        # Оцениваем релевантность всех отчетов к улучшенному вопросу
+        report_relevance = await evaluate_report_relevance(text, report_descriptions)
+
+        # Получаем топ-3 индекса с минимальным порогом релевантности
+        top_indices = get_top_relevant_indices(
+            report_relevance,
+            top_k=3,
+            min_score=MIN_RELEVANCE_SCORE
+        )
+
+        logging.info(f"[Router Recommendations] Получено {len(top_indices)} рекомендаций")
+        for idx, (index_name, score) in enumerate(top_indices, 1):
+            logging.info(f"  {idx}. {index_name}: {score:.1f}%")
+
+        return top_indices
+
+    except Exception as e:
+        logging.warning(f"[Router Recommendations] Ошибка получения рекомендаций: {e}")
+        logging.warning("[Router Recommendations] Продолжаем без рекомендаций индексов")
+        return None
+
+
+async def _process_manual_index_selection(
+    chat_id: int,
+    text_to_search: str,
+    user_selected_index: str,
+    rags: dict,
+    top_indices: list[tuple] | None
+) -> tuple[str, str, bool]:
+    """
+    Обрабатывает ручной выбор индекса пользователем.
+
+    Args:
+        chat_id: ID чата
+        text_to_search: Текст запроса для поиска
+        user_selected_index: Выбранный пользователем индекс
+        rags: Словарь RAG индексов
+        top_indices: Топ-K рекомендаций для улучшения вопроса
+
+    Returns:
+        tuple[str, str, bool]: (улучшенный_запрос, имя_сценария, успех)
+    """
+    logging.info(f"[Manual Index] Обнаружен ручной выбор индекса: {user_selected_index}")
+    logging.info("[Manual Index] Пропускаем автоматический Router Agent")
+
+    try:
+        # Загружаем описания отчетов для улучшения вопроса
+        report_descriptions = load_report_descriptions()
+        logging.info(f"[Manual Index] Загружено {len(report_descriptions)} описаний отчетов")
+
+        # Улучшаем вопрос для выбранного индекса с контекстом топ-3
+        enhanced_question = enhance_question_for_index(
+            text_to_search,
+            user_selected_index,
+            report_descriptions,
+            top_indices=top_indices
+        )
+        logging.info(f"[Manual Index] Вопрос улучшен для индекса '{user_selected_index}'")
+        logging.debug(f"[Manual Index] Улучшенный вопрос: {enhanced_question[:150]}...")
+
+        # Маппинг на RAG индекс
+        scenario_name = ROUTER_TO_RAG_MAPPING.get(user_selected_index, user_selected_index)
+        logging.info(f"[Manual Index] Маппинг индекса: '{user_selected_index}' → '{scenario_name}'")
+
+        # Проверка что выбранный индекс существует в rags
+        if scenario_name not in rags:
+            raise ValueError(f"Индекс '{scenario_name}' не найден в доступных rags: {list(rags.keys())}")
+
+        # Очищаем ручной выбор из user_states
+        user_states[chat_id].pop("selected_index", None)
+        logging.info("[Manual Index] Ручной выбор использован и очищен")
+
+        return enhanced_question, scenario_name, True
+
+    except Exception as e:
+        logging.error(f"[Manual Index] Ошибка при обработке ручного выбора: {e}")
+        logging.warning("[Manual Index] Откат к автоматическому Router Agent")
+        # При ошибке - удаляем невалидный ручной выбор
+        user_states.get(chat_id, {}).pop("selected_index", None)
+        return text_to_search, "", False
+
+
+async def _run_router_agent(
+    text_to_search: str,
+    rags: dict,
+    top_indices: list[tuple] | None
+) -> tuple[str, str, object, str]:
+    """
+    Запускает Router Agent для автоматического выбора оптимального индекса.
+
+    Args:
+        text_to_search: Текст запроса для поиска
+        rags: Словарь RAG индексов
+        top_indices: Топ-K рекомендаций для улучшения вопроса
+
+    Returns:
+        tuple[str, str, object, str]: (улучшенный_запрос, имя_сценария, rag_объект, категория)
+
+    Raises:
+        ValueError: При невозможности определить сценарий через Router Agent и fallback
+    """
+    try:
+        logging.info("[Router] Запуск Router Agent для выбора оптимального индекса...")
+
+        # Этап 1: Загрузка описаний всех отчетов
+        logging.info("[Router] Загрузка описаний 22 отчетов...")
+        report_descriptions = load_report_descriptions()
+        logging.debug(f"[Router] Загружено {len(report_descriptions)} описаний отчетов")
+
+        # Этап 2: Оценка релевантности всех отчетов к запросу
+        logging.info(f"[Router] Оценка релевантности отчетов для запроса: {text_to_search[:100]}...")
+        report_relevance = await evaluate_report_relevance(text_to_search, report_descriptions)
+        logging.debug(f"[Router] Результаты оценки релевантности: {report_relevance}")
+
+        # Этап 3: Выбор наиболее релевантного индекса
+        logging.info("[Router] Выбор наиболее релевантного индекса на основе оценок...")
+        selected_index = select_most_relevant_index(report_relevance, INDEX_MAPPING)
+        logging.info(f"[Router] Выбран индекс: {selected_index}")
+
+        # Получаем топ-3 индексов если не были переданы
+        if top_indices is None:
+            top_indices = get_top_relevant_indices(
+                report_relevance,
+                top_k=3,
+                min_score=MIN_RELEVANCE_SCORE
+            )
+            logging.info(f"[Router] Получено {len(top_indices)} топ-индексов для улучшения вопроса")
+
+        # Этап 4: Улучшение вопроса для выбранного индекса
+        logging.info(f"[Router] Улучшение вопроса для индекса '{selected_index}'...")
+        enhanced_question = enhance_question_for_index(
+            text_to_search,
+            selected_index,
+            report_descriptions,
+            top_indices=top_indices
+        )
+        logging.info(f"[Router] Улучшенный вопрос: {enhanced_question[:150]}...")
+
+        # Маппинг имен индексов Router Agent -> rags
+        scenario_name = ROUTER_TO_RAG_MAPPING.get(selected_index, selected_index)
+        logging.info(f"[Router] Маппинг индекса: '{selected_index}' → '{scenario_name}'")
+
+        # Проверка что выбранный индекс существует в rags
+        if scenario_name not in rags:
+            raise ValueError(f"Индекс '{scenario_name}' не найден в доступных rags: {list(rags.keys())}")
+
+        rag = rags[scenario_name]
+        category = scenario_name
+        logging.info(f"[Router] Используется RAG индекс: {scenario_name}, категория: {category}")
+
+        return enhanced_question, scenario_name, rag, category
+
+    except Exception as e:
+        # Fallback: откат к старой системе классификации
+        logging.warning(f"[Router] Ошибка Router Agent: {e}")
+        logging.warning("[Router] Откат к fallback-системе классификации (classify_query)...")
+
+        try:
+            category = classify_query(text_to_search)
+            logging.info(f"[Fallback] Определен сценарий: {category}")
+
+            if category.lower() == "дизайн":
+                scenario_name = "Дизайн"
+            elif category.lower() == "интервью":
+                scenario_name = "Интервью"
+            else:
+                raise ValueError(f"Fallback classify_query не смог определить сценарий: {category}")
+
+            rag = rags[scenario_name]
+            logging.info(f"[Fallback] Используется RAG индекс: {scenario_name}, категория: {category}")
+
+            return text_to_search, scenario_name, rag, category
+
+        except Exception as fallback_error:
+            logging.error(f"[Fallback] Критическая ошибка в fallback-системе: {fallback_error}")
+            raise ValueError(f"Не удалось определить сценарий ни через Router Agent, ни через fallback: {fallback_error}")
+
+
+def _validate_search_query(text_to_search: str) -> None:
+    """
+    Проверяет что запрос не содержит UI-информацию.
+
+    Args:
+        text_to_search: Текст запроса для проверки
+    """
+    ui_indicators = ["[Рекомендация:", "🎯", "📊", "**Рекомендуемые индексы:**", "Отчеты по"]
+    contains_ui = any(indicator in text_to_search for indicator in ui_indicators)
+
+    if contains_ui:
+        logging.warning(f"[RAG Search] ВНИМАНИЕ: text_to_search может содержать UI-информацию!")
+        logging.warning(f"[RAG Search] Это может снизить качество поиска")
+        logging.warning(f"[RAG Search] Первые 200 символов: {text_to_search[:200]}...")
+
+    logging.info(f"[RAG Search] Отправка в поиск (чистый вопрос): {text_to_search[:150]}...")
+    logging.debug(f"[RAG Search] Полный text_to_search ({len(text_to_search)} символов): {text_to_search}")
+
+
+async def _save_user_message_to_conversation(
+    chat_id: int,
+    message_id: int,
+    text: str,
+    conversation_id: str,
+    deep_search: bool
+) -> None:
+    """
+    Сохраняет вопрос пользователя в историю диалога.
+
+    Args:
+        chat_id: ID чата
+        message_id: ID сообщения
+        text: Текст вопроса
+        conversation_id: ID диалога
+        deep_search: Тип поиска (глубокий/быстрый)
+    """
+    from conversation_manager import conversation_manager
+    from conversations import ConversationMessage
+    from datetime import datetime
+
+    user_message = ConversationMessage(
+        timestamp=datetime.now().isoformat(),
+        message_id=message_id,
+        type="user_question",
+        text=text,
+        tokens=0,
+        sent_as=None,
+        file_path=None,
+        search_type="deep" if deep_search else "fast"
+    )
+
+    conversation_manager.add_message(
+        user_id=chat_id,
+        conversation_id=conversation_id,
+        message=user_message
+    )
+
+
+async def _execute_search_and_send_response(
+    chat_id: int,
+    app: Client,
+    text_to_search: str,
+    original_text: str,
+    deep_search: bool,
+    content: str,
+    rag: object,
+    category: str,
+    username: str,
+    conversation_id: str | None
+) -> None:
+    """
+    Выполняет поиск и отправляет результат пользователю.
+
+    Args:
+        chat_id: ID чата
+        app: Pyrogram Client
+        text_to_search: Улучшенный запрос для поиска
+        original_text: Исходный текст пользователя
+        deep_search: Тип поиска
+        content: Контент отчетов
+        rag: RAG объект
+        category: Категория запроса
+        username: Имя пользователя
+        conversation_id: ID диалога
+    """
+    if deep_search:
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text="Запущено Глубокое Исследование",
+            message_type="status_message"
+        )
+        logging.info("Запущено Глубокое исследование")
+        answer = run_deep_search(content, text=text_to_search, chat_id=chat_id, app=app, category=category)
+    else:
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text="Запущен быстрый поиск",
+            message_type="status_message"
+        )
+        logging.info("Запущен быстрый поиск")
+        answer = run_fast_search(text=text_to_search, rag=rag)
+
+    formatted_response = f"*Категория запроса:* {category}\n\n{answer}"
+
+    # Умная отправка с автоматическим выбором между сообщением и MD файлом
+    await smart_send_text_unified(
+        text=formatted_response,
+        chat_id=chat_id,
+        app=app,
+        username=username,
+        question=original_text,
+        search_type="deep" if deep_search else "fast",
+        parse_mode=ParseMode.MARKDOWN,
+        conversation_id=conversation_id
+    )
+
+    max_log_length = 3000
+    answer_to_log = answer if len(answer) <= max_log_length else answer[:max_log_length] + "... [обрезано]"
+    logging.info(f"Ответ отправлен | Ответ: {answer_to_log}")
+
+
 async def run_dialog_mode(
     message,
     app: Client,
@@ -666,7 +986,7 @@ async def run_dialog_mode(
     deep_search: bool = False,
     conversation_id: str = None,
     skip_expansion: bool = False,
-    top_indices: List[tuple] | None = None  # ЗАДАЧА 2.3: топ-3 индексов для улучшения качества
+    top_indices: list[tuple] | None = None
 ):
     """
     Основная функция режима диалога.
@@ -688,62 +1008,14 @@ async def run_dialog_mode(
     text = message.text
     chat_id = message.chat.id
 
-    # ============ НАЧАЛО НОВОГО КОДА: QUERY EXPANSION ============
-    # FIX (2025-11-09 Session 6): Добавлена поддержка пропуска expand_query
-    # ЗАЧЕМ: При нажатии "Отправить в поиск" вопрос УЖЕ улучшен, повторный expand не нужен
-    # БЫЛО: Двойное улучшение → бесконечный цикл меню
-    # СТАЛО: skip_expansion=True → прямой переход к RAG поиску
-    # Связь: TASKS/2025-11-09_query_expansion_errors/inspection.md (Session 6 - КОРЕНЬ ПРОБЛЕМЫ)
-
+    # ============ ФАЗА 1: QUERY EXPANSION ============
     if not skip_expansion:
-        # Улучшение вопроса через Query Expansion
         expansion_result = expand_query(text)
 
-        # Проверка: использован ли descry.md и улучшен ли вопрос
+        # Если вопрос улучшен - показываем меню с рекомендациями
         if expansion_result["used_descry"] and expansion_result["expanded"] != text:
-            # ============ ROUTER AGENT: Получение рекомендаций ДО показа меню ============
-            # ФАЗА 5: Вызываем Router Agent для получения топ-3 рекомендуемых индексов
-            # Эти рекомендации показываются в UI меню, но НЕ используются для поиска
-            # (поиск выполняется Router Agent при нажатии "Отправить")
+            top_indices = await _get_router_recommendations(expansion_result["expanded"], chat_id)
 
-            top_indices = None  # По умолчанию нет рекомендаций
-
-            try:
-                logging.info("[Router Recommendations] Получение рекомендаций индексов для меню...")
-
-                # Загружаем описания отчетов
-                # ВАЖНО: Используем load_report_descriptions() из relevance_evaluator.py
-                # который возвращает ПОЛНЫЕ имена отчетов, соответствующие REPORT_TO_INDEX_MAPPING
-                report_descriptions = load_report_descriptions()
-                logging.info(f"[Router Recommendations] Загружено {len(report_descriptions)} описаний отчетов")
-
-                # Оцениваем релевантность всех отчетов к улучшенному вопросу
-                # Используем УЛУЧШЕННЫЙ вопрос для более точных рекомендаций
-                report_relevance = await evaluate_report_relevance(
-                    expansion_result["expanded"],
-                    report_descriptions
-                )
-
-                # Получаем топ-3 индекса с минимальным порогом релевантности
-                top_indices = get_top_relevant_indices(
-                    report_relevance,
-                    top_k=3,
-                    min_score=MIN_RELEVANCE_SCORE
-                )
-
-                logging.info(f"[Router Recommendations] Получено {len(top_indices)} рекомендаций")
-                for idx, (index_name, score) in enumerate(top_indices, 1):
-                    logging.info(f"  {idx}. {index_name}: {score:.1f}%")
-
-            except Exception as e:
-                # При ошибке Router Agent - показываем меню без рекомендаций
-                logging.warning(f"[Router Recommendations] Ошибка получения рекомендаций: {e}")
-                logging.warning("[Router Recommendations] Продолжаем без рекомендаций индексов")
-                top_indices = None
-
-            # ============ КОНЕЦ ROUTER AGENT ============
-
-            # Показать пользователю улучшенный вопрос с опциями
             await show_expanded_query_menu(
                 chat_id=chat_id,
                 app=app,
@@ -752,274 +1024,75 @@ async def run_dialog_mode(
                 conversation_id=conversation_id,
                 deep_search=deep_search,
                 refine_count=0,
-                top_indices=top_indices  # НОВЫЙ аргумент: передаем рекомендации для отображения
+                top_indices=top_indices
             )
             return  # Ожидаем callback от пользователя
 
-        # Если улучшение не применено - используем исходный вопрос
         text_to_search = expansion_result.get("expanded", text)
     else:
-        # Пропуск Query Expansion - используем вопрос как есть
-        # Этот путь используется при skip_expansion=True (например, из handle_expand_send)
         text_to_search = text
 
-    # ============ КОНЕЦ НОВОГО КОДА: QUERY EXPANSION ============
-
-    # ============================================================
-    # Проверка ручного выбора индекса пользователем
-    # ============================================================
-    # Если пользователь вручную выбрал индекс через UI - используем его вместо Router Agent
+    # ============ ФАЗА 2: ВЫБОР ИНДЕКСА ============
     user_selected_index = user_states.get(chat_id, {}).get("selected_index")
 
     if user_selected_index:
-        # Пользователь вручную выбрал индекс - пропускаем автоматический Router Agent
-        logging.info(f"[Manual Index] Обнаружен ручной выбор индекса: {user_selected_index}")
-        logging.info(f"[Manual Index] Пропускаем автоматический Router Agent")
-
-        try:
-            # Загружаем описания отчетов для улучшения вопроса
-            # ВАЖНО: Используем load_report_descriptions() из relevance_evaluator.py
-            # который возвращает ПОЛНЫЕ имена отчетов, соответствующие REPORT_TO_INDEX_MAPPING
-            report_descriptions = load_report_descriptions()
-            logging.info(f"[Manual Index] Загружено {len(report_descriptions)} описаний отчетов")
-
-            # ЗАДАЧА 2.3: Улучшаем вопрос для ВЫБРАННОГО индекса с контекстом топ-3
-            enhanced_question = enhance_question_for_index(
-                text_to_search,
-                user_selected_index,
-                report_descriptions,
-                top_indices=top_indices  # ЗАДАЧА 2.3: передаем топ-3 индексов
-            )
-            logging.info(f"[Manual Index] Вопрос улучшен для индекса '{user_selected_index}'")
-            logging.debug(f"[Manual Index] Улучшенный вопрос: {enhanced_question[:150]}...")
-
-            # Обновляем запрос на улучшенный
-            text_to_search = enhanced_question
-
-            # Маппинг на RAG индекс (используем глобальную константу)
-            scenario_name = ROUTER_TO_RAG_MAPPING.get(user_selected_index, user_selected_index)
-            logging.info(f"[Manual Index] Маппинг индекса: '{user_selected_index}' → '{scenario_name}'")
-
-            # Проверка что выбранный индекс существует в rags
-            if scenario_name not in rags:
-                raise ValueError(f"Индекс '{scenario_name}' не найден в доступных rags: {list(rags.keys())}")
-
-            # Очищаем ручной выбор из user_states (использовали один раз)
-            user_states[chat_id].pop("selected_index", None)
-            logging.info(f"[Manual Index] ✅ Ручной выбор использован и очищен")
-
-            # Пропускаем блок Router Agent ниже (переменная scenario_name уже установлена)
-            skip_router_agent = True
-
-        except Exception as e:
-            logging.error(f"[Manual Index] ❌ Ошибка при обработке ручного выбора: {e}")
-            logging.warning(f"[Manual Index] Откат к автоматическому Router Agent")
-            skip_router_agent = False
-            # При ошибке - удаляем невалидный ручной выбор
-            user_states.get(chat_id, {}).pop("selected_index", None)
+        # Ручной выбор индекса пользователем
+        text_to_search, scenario_name, success = await _process_manual_index_selection(
+            chat_id, text_to_search, user_selected_index, rags, top_indices
+        )
+        skip_router_agent = success
     else:
-        # Ручной выбор не обнаружен - используем автоматический Router Agent
         skip_router_agent = False
 
-    # ============================================================
-    # Router Agent: выбор индекса на основе релевантности отчетов
-    # ============================================================
+    # Автоматический Router Agent если ручной выбор не использован
     if not skip_router_agent:
-        try:
-            logging.info("[Router] Запуск Router Agent для выбора оптимального индекса...")
+        text_to_search, scenario_name, rag, category = await _run_router_agent(
+            text_to_search, rags, top_indices
+        )
+    else:
+        # При ручном выборе получаем rag и category из scenario_name
+        rag = rags[scenario_name]
+        category = scenario_name
 
-            # Этап 1: Загрузка описаний всех отчетов (внутри try для обработки ошибок)
-            # ВАЖНО: Используем load_report_descriptions() из relevance_evaluator.py
-            # который возвращает ПОЛНЫЕ имена отчетов, соответствующие REPORT_TO_INDEX_MAPPING
-            logging.info("[Router] Загрузка описаний 22 отчетов...")
-            report_descriptions = load_report_descriptions()
-            logging.debug(f"[Router] Загружено {len(report_descriptions)} описаний отчетов")
-
-            # Этап 2: Оценка релевантности всех отчетов к запросу пользователя
-            logging.info(f"[Router] Оценка релевантности отчетов для запроса: {text_to_search[:100]}...")
-            report_relevance = await evaluate_report_relevance(text_to_search, report_descriptions)
-            logging.debug(f"[Router] Результаты оценки релевантности: {report_relevance}")
-
-            # Этап 3: Выбор наиболее релевантного индекса
-            logging.info("[Router] Выбор наиболее релевантного индекса на основе оценок...")
-            selected_index = select_most_relevant_index(report_relevance, INDEX_MAPPING)
-            logging.info(f"[Router] ✅ Выбран индекс: {selected_index}")
-
-            # ЗАДАЧА 2.3: Получаем топ-3 индексов для передачи в enhance_question_for_index
-            # если top_indices не был передан (автоматический Router Agent)
-            if top_indices is None:
-                top_indices = get_top_relevant_indices(
-                    report_relevance,
-                    top_k=3,
-                    min_score=MIN_RELEVANCE_SCORE
-                )
-                logging.info(f"[Router] Получено {len(top_indices)} топ-индексов для улучшения вопроса")
-
-            # Этап 4: Улучшение вопроса для выбранного индекса
-            logging.info(f"[Router] Улучшение вопроса для индекса '{selected_index}'...")
-            enhanced_question = enhance_question_for_index(
-                text_to_search,
-                selected_index,
-                report_descriptions,
-                top_indices=top_indices  # ЗАДАЧА 2.3: передаем топ-3 индексов
-            )
-            logging.info(f"[Router] Улучшенный вопрос: {enhanced_question[:150]}...")
-
-            # Обновление запроса и выбор RAG индекса
-            text_to_search = enhanced_question
-
-            # Маппинг имен индексов Router Agent -> rags (используем глобальную константу)
-            scenario_name = ROUTER_TO_RAG_MAPPING.get(selected_index, selected_index)
-            logging.info(f"[Router] Маппинг индекса: '{selected_index}' → '{scenario_name}'")
-
-            # Проверка что выбранный индекс существует в rags
-            if scenario_name not in rags:
-                raise ValueError(f"Индекс '{scenario_name}' не найден в доступных rags: {list(rags.keys())}")
-
-            rag = rags[scenario_name]
-
-            # ИСПРАВЛЕНИЕ #3: Определение category для совместимости с остальным кодом
-            category = scenario_name  # Используем русское название индекса как категорию
-            logging.info(f"[Router] Используется RAG индекс: {scenario_name}, категория: {category}")
-
-        except Exception as e:
-            # Fallback: откат к старой системе классификации при любой ошибке
-            logging.warning(f"[Router] ⚠️ Ошибка Router Agent: {e}")
-            logging.warning("[Router] Откат к fallback-системе классификации (classify_query)...")
-
-            try:
-                # Старая система классификации
-                category = classify_query(text_to_search)
-                logging.info(f"[Fallback] Определен сценарий: {category}")
-
-                if category.lower() == "дизайн":
-                    scenario_name = "Дизайн"
-                elif category.lower() == "интервью":
-                    scenario_name = "Интервью"
-                else:
-                    raise ValueError(f"Fallback classify_query не смог определить сценарий: {category}")
-
-                rag = rags[scenario_name]
-                # ИСПРАВЛЕНИЕ: category уже определен выше (classify_query вернул значение)
-                logging.info(f"[Fallback] ✅ Используется RAG индекс: {scenario_name}, категория: {category}")
-
-            except Exception as fallback_error:
-                logging.error(f"[Fallback] ❌ Критическая ошибка в fallback-системе: {fallback_error}")
-                raise ValueError(f"Не удалось определить сценарий ни через Router Agent, ни через fallback: {fallback_error}")
-
-    # Формирование контента отчетов для выбранного сценария
+    # ============ ФАЗА 3: ПОДГОТОВКА КОНТЕНТА ============
     try:
         content = build_reports_grouped(scenario_name=scenario_name, report_type=None)
         content = grouped_reports_to_string(content)
     except Exception as content_error:
-        logging.error(f"❌ Ошибка при формировании контента отчетов: {content_error}")
-        content = ""  # Fallback на пустой контент
+        logging.error(f"Ошибка при формировании контента отчетов: {content_error}")
+        content = ""
 
-    # ============================================================
-    # ЗАДАЧА 2.2: Проверка text_to_search перед отправкой в RAG
-    # ============================================================
-    # ВАЖНО: В RAG поиск должен идти только чистый вопрос без UI-информации
-    # Рекомендации индексов показываются в show_expanded_query_menu, но НЕ передаются сюда
-
-    # Проверка что text_to_search не содержит UI-информацию (признаки загрязнения)
-    ui_indicators = ["[Рекомендация:", "🎯", "📊", "**Рекомендуемые индексы:**", "Отчеты по"]
-    contains_ui = any(indicator in text_to_search for indicator in ui_indicators)
-
-    if contains_ui:
-        logging.warning(f"[RAG Search] ВНИМАНИЕ: text_to_search может содержать UI-информацию!")
-        logging.warning(f"[RAG Search] Это может снизить качество поиска")
-        logging.warning(f"[RAG Search] Первые 200 символов: {text_to_search[:200]}...")
-
-    # Логирование того, что отправляется в RAG
-    logging.info(f"[RAG Search] Отправка в поиск (чистый вопрос): {text_to_search[:150]}...")
-    logging.debug(f"[RAG Search] Полный text_to_search ({len(text_to_search)} символов): {text_to_search}")
-    # ============================================================
+    # Валидация запроса
+    _validate_search_query(text_to_search)
 
     # Получаем username
     username = await get_username_from_chat(chat_id, app)
 
-    # Сохраняем вопрос пользователя в conversations (если передан conversation_id)
-    # ВАЖНО: Сохраняем ИСХОДНЫЙ вопрос пользователя, а не улучшенный
+    # Сохраняем вопрос в историю диалога
     if conversation_id:
-        from conversation_manager import conversation_manager
-        from conversations import ConversationMessage
-        from datetime import datetime
-
-        user_message = ConversationMessage(
-            timestamp=datetime.now().isoformat(),
-            message_id=message.id,  # Используем реальный Telegram message ID
-            type="user_question",
-            text=text,  # Сохраняем ИСХОДНЫЙ текст пользователя
-            tokens=0,  # Токены вопроса не считаем
-            sent_as=None,
-            file_path=None,
-            search_type="deep" if deep_search else "fast"
+        await _save_user_message_to_conversation(
+            chat_id, message.id, text, conversation_id, deep_search
         )
 
-        conversation_manager.add_message(
-            user_id=chat_id,
-            conversation_id=conversation_id,
-            message=user_message
-        )
-
+    # ============ ФАЗА 4: ВЫПОЛНЕНИЕ ПОИСКА ============
     try:
-        if deep_search:
-            # Отправляем системное сообщение-статус через MessageTracker
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="Запущено Глубокое Исследование",
-                message_type="status_message"
-            )
-            logging.info("Запущено Глубокое исследование")
-
-            # report_type_code = classify_report_type(text_to_search, prompt_name=prompt_name)
-            # report_type = CLASSIFY_INTERVIEW[report_type_code] if scenario_name == "Интервью" else CLASSIFY_DESIGN[report_type_code]
-            # content = rags[report_type]
-            # logging.info(f"Тип отчета: {report_type}")
-
-            # Используем УЛУЧШЕННЫЙ вопрос для глубокого поиска
-            answer = run_deep_search(content, text=text_to_search, chat_id=chat_id, app=app, category=category)
-        else:
-            # Отправляем системное сообщение-статус через MessageTracker
-            await track_and_send(
-                chat_id=chat_id,
-                app=app,
-                text="Запущен быстрый поиск",
-                message_type="status_message"
-            )
-            logging.info("Запущен быстрый поиск")
-
-            # content = build_reports_grouped(scenario_name=scenario_name, report_type=None)
-            # content = grouped_reports_to_string(content)
-            # rag = rags[scenario_name]
-
-            # Используем УЛУЧШЕННЫЙ вопрос для быстрого поиска
-            answer = run_fast_search(text=text_to_search, rag=rag)
-
-        formatted_response = f"*Категория запроса:* {category}\n\n{answer}"
-
-        # Используем умную отправку с автоматическим выбором между сообщением и MD файлом
-        # В вопросе отображаем ИСХОДНЫЙ текст пользователя
-        await smart_send_text_unified(
-            text=formatted_response,
+        await _execute_search_and_send_response(
             chat_id=chat_id,
             app=app,
+            text_to_search=text_to_search,
+            original_text=text,
+            deep_search=deep_search,
+            content=content,
+            rag=rag,
+            category=category,
             username=username,
-            question=text,  # Отображаем ИСХОДНЫЙ вопрос пользователя
-            search_type="deep" if deep_search else "fast",
-            parse_mode=ParseMode.MARKDOWN,
             conversation_id=conversation_id
         )
-
-        max_log_length = 3000
-        answer_to_log = answer if len(answer) <= max_log_length else answer[:max_log_length] + "... [обрезано]"
-        logging.info(f"Ответ отправлен | Ответ: {answer_to_log}")
 
     except Exception as e:
         error_message = f"Произошла ошибка: {str(e)}"
         logging.error(f"Произошла ошибка: {e}", exc_info=True)
-        await app.send_message(chat_id, error_message) #TODO: не забыть удалить в продакшене
+        await app.send_message(chat_id, error_message)
     finally:
         # После ответа показываем меню выбора режима
         await send_menu(
@@ -1092,8 +1165,8 @@ async def run_analysis_pass(
         sp_th.join()
         try:
             app.delete_messages(chat_id, msg_.id)
-        except:
-            pass
+        except Exception:
+            pass  # Игнорируем ошибки удаления сообщения
 
     return audit_text
 
@@ -1180,7 +1253,7 @@ async def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str
 
             logging.info("Отчет с неизученными факторами сформирован")
             # Вывести результат пользователю (уже внутри run_analysis_pass)
-        json_result = await run_analysis_pass(
+        await run_analysis_pass(
             chat_id=chat_id,
             source_text=result1 + "\n" + result2,
             label=label,
@@ -1211,7 +1284,7 @@ async def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str
 
         logging.info("Отчёт сформирован")
 
-        json_result = await run_analysis_pass(
+        await run_analysis_pass(
             chat_id=chat_id,
             source_text=result,
             label=label,

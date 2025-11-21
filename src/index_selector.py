@@ -190,7 +190,9 @@ def select_most_relevant_index(
             logger.warning(f"Индекс '{index_name}': ни один отчет не найден в report_relevance")
 
     # Проверка: если все индексы имеют релевантность 0
-    if all(score == 0.0 for score in index_scores.values()):
+    # ИСПРАВЛЕНО: использование abs() для сравнения float вместо ==
+    # чтобы избежать проблем с плавающей точкой
+    if all(abs(score) < 1e-9 for score in index_scores.values()):
         logger.warning(
             "Все индексы имеют релевантность 0.0, возвращаем индекс по умолчанию"
         )

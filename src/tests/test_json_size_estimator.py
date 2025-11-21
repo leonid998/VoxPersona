@@ -337,7 +337,9 @@ class TestGetTruncationStrategy:
         )
 
         # 10000 / 20000 = 50%
-        assert result['usage_percent'] == 50.0
+        # ИСПРАВЛЕНО: использование pytest.approx() для сравнения float
+        # чтобы избежать проблем с плавающей точкой
+        assert result['usage_percent'] == pytest.approx(50.0)
 
 
 class TestRealWorldScenario:

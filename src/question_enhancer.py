@@ -52,6 +52,114 @@ DESCRIPTION_TRUNCATE_LENGTH = 500  # Длина для обрезки описа
 logger = logging.getLogger(__name__)
 
 
+def _validate_enhancement_inputs(
+    original_question: str,
+    selected_index: str,
+    report_descriptions: Dict[str, str],
+    api_key: str | None
+) -> tuple[str, str]:
+    """
+    Валидация входных параметров для enhance_question_for_index.
+
+    Извлечено из enhance_question_for_index для снижения Cognitive Complexity.
+    SonarCloud: CC 19 -> <=15
+
+    Args:
+        original_question: Исходный вопрос пользователя
+        selected_index: Название выбранного индекса
+        report_descriptions: Словарь описаний отчетов
+        api_key: API ключ (может быть None)
+
+    Returns:
+        tuple[str, str]: (validated_question, resolved_api_key)
+
+    Raises:
+        ValueError: При невалидных входных данных
+    """
+    # Валидация original_question
+    if not original_question or not original_question.strip():
+        logger.error("Получен пустой вопрос")
+        raise ValueError("original_question не может быть пустым")
+
+    # Валидация длины вопроса (защита от prompt injection)
+    validated_question = original_question
+    if len(original_question) > MAX_QUESTION_LENGTH:
+        logger.warning(
+            f"Вопрос пользователя слишком длинный ({len(original_question)} символов). "
+            f"Обрезаем до {MAX_QUESTION_LENGTH}."
+        )
+        validated_question = original_question[:MAX_QUESTION_LENGTH]
+
+    # Валидация selected_index
+    if selected_index not in INDEX_MAPPING:
+        logger.error(f"Неизвестный индекс: '{selected_index}'")
+        raise ValueError(
+            f"selected_index '{selected_index}' не найден в INDEX_MAPPING. "
+            f"Доступные индексы: {list(INDEX_MAPPING.keys())}"
+        )
+
+    # Валидация report_descriptions
+    if not report_descriptions:
+        logger.error("Получен пустой словарь описаний отчетов")
+        raise ValueError("report_descriptions не может быть пустым")
+
+    # Получить и валидировать API key
+    resolved_api_key = api_key if api_key is not None else ANTHROPIC_API_KEY
+
+    if not resolved_api_key:
+        logger.error("ANTHROPIC_API_KEY не установлен")
+        raise ValueError(
+            "ANTHROPIC_API_KEY не установлен. "
+            "Проверьте файл .env или передайте api_key явно."
+        )
+
+    return validated_question, resolved_api_key
+
+
+def _validate_and_sanitize_result(
+    enhanced_question: str,
+    original_question: str
+) -> str | None:
+    """
+    Валидация и очистка результата от Claude API.
+
+    Извлечено из enhance_question_for_index для снижения Cognitive Complexity.
+    SonarCloud: CC 19 -> <=15
+
+    Args:
+        enhanced_question: Ответ от Claude API
+        original_question: Исходный вопрос (для fallback)
+
+    Returns:
+        str | None: Очищенный улучшенный вопрос или None при ошибке валидации
+    """
+    # Проверка на ошибку API
+    if enhanced_question == CLAUDE_ERROR_MESSAGE or not enhanced_question:
+        logger.warning("API вернул ошибку. Возвращаем original_question")
+        return None
+
+    # Убрать кавычки если модель добавила (вопреки инструкции)
+    sanitized = enhanced_question.strip().strip('"').strip("'")
+
+    # Проверка минимальной длины
+    if len(sanitized) < MIN_ENHANCED_LENGTH:
+        logger.warning(
+            f"Улучшенный вопрос слишком короткий ({len(sanitized)} символов). "
+            f"Возвращаем original_question"
+        )
+        return None
+
+    # Проверка максимальной длины
+    if len(sanitized) > MAX_ENHANCED_LENGTH:
+        logger.warning(
+            f"Улучшенный вопрос слишком длинный ({len(sanitized)} символов). "
+            f"Обрезаем до {MAX_ENHANCED_LENGTH} символов."
+        )
+        sanitized = sanitized[:MAX_ENHANCED_LENGTH]
+
+    return sanitized
+
+
 def format_index_descriptions(
     selected_index: str,
     filtered_descriptions: Dict[str, str]
@@ -273,47 +381,14 @@ def enhance_question_for_index(
         True
     """
     # === 1. Валидация входных данных ===
-
-    if not original_question or not original_question.strip():
-        logger.error("Получен пустой вопрос")
-        raise ValueError("original_question не может быть пустым")
-
-
-    # Валидация длины вопроса (защита от prompt injection)
-    # WHY: Пользователь может передать очень длинный вопрос или подозрительный паттерн
-    # Ограничиваем длину для безопасности и экономии токенов
-    if len(original_question) > MAX_QUESTION_LENGTH:
-        logger.warning(
-            f"Вопрос пользователя слишком длинный ({len(original_question)} символов). "
-            f"Обрезаем до {MAX_QUESTION_LENGTH}."
-        )
-        original_question = original_question[:MAX_QUESTION_LENGTH]
-
-    if selected_index not in INDEX_MAPPING:
-        logger.error(f"Неизвестный индекс: '{selected_index}'")
-        raise ValueError(
-            f"selected_index '{selected_index}' не найден в INDEX_MAPPING. "
-            f"Доступные индексы: {list(INDEX_MAPPING.keys())}"
-        )
-
-    if not report_descriptions:
-        logger.error("Получен пустой словарь описаний отчетов")
-        raise ValueError("report_descriptions не может быть пустым")
-
-    # Получить API key
-    if api_key is None:
-        api_key = ANTHROPIC_API_KEY
-
-    if not api_key:
-        logger.error("ANTHROPIC_API_KEY не установлен")
-        raise ValueError(
-            "ANTHROPIC_API_KEY не установлен. "
-            "Проверьте файл .env или передайте api_key явно."
-        )
+    # Извлечено в _validate_enhancement_inputs() для снижения CC
+    validated_question, resolved_api_key = _validate_enhancement_inputs(
+        original_question, selected_index, report_descriptions, api_key
+    )
 
     logger.info(
         f"Начинаем улучшение вопроса для индекса '{selected_index}': "
-        f"'{original_question[:100]}...'"
+        f"'{validated_question[:100]}...'"
     )
 
     # Логируем информацию о top_indices если переданы
@@ -373,7 +448,7 @@ def enhance_question_for_index(
     # === 4. Построение промпта ===
 
     prompt = build_enhancement_prompt(
-        original_question=original_question,
+        original_question=validated_question,
         selected_index=selected_index,
         index_descriptions=index_descriptions,
         top_indices_context=top_indices_context  # ЗАДАЧА 2.3: передаем контекст
@@ -394,59 +469,35 @@ def enhance_question_for_index(
             system=None,  # Промпт уже содержит всю необходимую информацию
             max_tokens=MAX_TOKENS,
             model=HAIKU_MODEL,
-            api_key=api_key
+            api_key=resolved_api_key
         )
 
         elapsed = time.time() - start_time
 
         # === 6. Валидация и возврат результата ===
+        # Извлечено в _validate_and_sanitize_result() для снижения CC
+        sanitized_result = _validate_and_sanitize_result(
+            enhanced_question, validated_question
+        )
 
-        # Проверка на ошибку API (send_msg_to_model возвращает err при ошибке)
-        # Проверка на ошибку API
-        # WHY: send_msg_to_model возвращает CLAUDE_ERROR_MESSAGE при ошибке вместо исключения
-        # Используем константу из constants.py вместо хрупкой строковой проверки
-        if enhanced_question == CLAUDE_ERROR_MESSAGE or not enhanced_question:
-            logger.warning(
-                f"API вернул ошибку. Возвращаем original_question"
-            )
-            return original_question
-
-
-        # Убрать кавычки если модель добавила (вопреки инструкции)
-        enhanced_question = enhanced_question.strip().strip('"').strip("'")
-
-        # Проверка длины (ожидаем 150-300 символов)
-        # WHY: Порог MIN_ENHANCED_LENGTH вместо 50 - чтобы не отсекать короткие но валидные ответы
-        # после удаления кавычек (например, "'Улучшенный вопрос в кавычках'" -> 28 символов)
-        if len(enhanced_question) < MIN_ENHANCED_LENGTH:
-            logger.warning(
-                f"Улучшенный вопрос слишком короткий ({len(enhanced_question)} символов). "
-                f"Возвращаем original_question"
-            )
-            return original_question
-
-        if len(enhanced_question) > MAX_ENHANCED_LENGTH:
-            logger.warning(
-                f"Улучшенный вопрос слишком длинный ({len(enhanced_question)} символов). "
-                f"Обрезаем до {MAX_ENHANCED_LENGTH} символов."
-            )
-            enhanced_question = enhanced_question[:MAX_ENHANCED_LENGTH]
+        if sanitized_result is None:
+            return validated_question
 
         logger.info(
             f"Вопрос улучшен за {elapsed:.2f}s. "
-            f"Длина: {len(original_question)} → {len(enhanced_question)} символов"
+            f"Длина: {len(validated_question)} -> {len(sanitized_result)} символов"
         )
-        logger.debug(f"Улучшенный вопрос: '{enhanced_question}'")
+        logger.debug(f"Улучшенный вопрос: '{sanitized_result}'")
 
-        return enhanced_question
+        return sanitized_result
 
     except Exception as e:
-        # Fallback: вернуть original_question при любой ошибке
+        # Fallback: вернуть validated_question при любой ошибке
         logger.exception(
             f"Ошибка улучшения вопроса: {e}. "
-            f"Возвращаем original_question"
+            f"Возвращаем validated_question"
         )
-        return original_question
+        return validated_question
 
 
 if __name__ == "__main__":

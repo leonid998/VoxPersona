@@ -58,6 +58,9 @@ JSON_CACHE_PATH = Path(__file__).parent.parent / "cache" / "json_container_cache
 # Версия формата кэша (для совместимости)
 CACHE_VERSION = "1.0"
 
+# Константы сообщений об ошибках
+ERROR_EMPTY_QUESTION = "Вопрос не может быть пустым"
+
 logger = logging.getLogger(__name__)
 
 
@@ -347,7 +350,8 @@ def get_cached_json_container(
     try:
         save_json_cache(container, cache_path)
         logger.info(f"JSON-контейнер создан и сохранен в кэш: {cache_path}")
-    except (PermissionError, OSError) as e:
+    except OSError as e:
+        # ИСПРАВЛЕНО: убран PermissionError из except, так как это подкласс OSError
         # Не удалось сохранить кэш - продолжаем работу без него
         logger.warning(f"Не удалось сохранить кэш: {e}")
 
@@ -683,7 +687,7 @@ def build_batch_relevance_prompt(question: str, json_container: str) -> str:
     """
     # Валидация входных данных
     if not question or not question.strip():
-        raise ValueError("Вопрос не может быть пустым")
+        raise ValueError(ERROR_EMPTY_QUESTION)
 
     if not json_container or not json_container.strip():
         raise ValueError("JSON-контейнер не может быть пустым")
@@ -790,6 +794,94 @@ def parse_batch_response(response_text: str) -> Dict[str, Any]:
     return data
 
 
+def _validate_evaluation_id(
+    eval_item: Dict[str, Any],
+    index: int,
+    seen_ids: set
+) -> List[str]:
+    """
+    Валидирует поле 'id' в оценке.
+
+    Args:
+        eval_item: Словарь с данными оценки
+        index: Индекс оценки в списке
+        seen_ids: Множество уже встреченных id (модифицируется in-place)
+
+    Returns:
+        List[str]: Список ошибок валидации (пустой если все ок)
+    """
+    errors = []
+    if "id" not in eval_item:
+        errors.append(f"Оценка #{index}: отсутствует поле 'id'")
+    else:
+        eval_id = eval_item["id"]
+        if eval_id in seen_ids:
+            errors.append(f"Оценка #{index}: дублирующийся id={eval_id}")
+        seen_ids.add(eval_id)
+    return errors
+
+
+def _validate_evaluation_name(
+    eval_item: Dict[str, Any],
+    index: int,
+    seen_names: set
+) -> List[str]:
+    """
+    Валидирует поле 'name' в оценке.
+
+    Args:
+        eval_item: Словарь с данными оценки
+        index: Индекс оценки в списке
+        seen_names: Множество уже встреченных имен (модифицируется in-place)
+
+    Returns:
+        List[str]: Список ошибок валидации (пустой если все ок)
+    """
+    errors = []
+    if "name" not in eval_item:
+        errors.append(f"Оценка #{index}: отсутствует поле 'name'")
+    else:
+        name = eval_item["name"]
+        if name in seen_names:
+            errors.append(f"Оценка #{index}: дублирующееся имя '{name}'")
+        seen_names.add(name)
+    return errors
+
+
+def _validate_evaluation_relevance(
+    eval_item: Dict[str, Any],
+    index: int
+) -> List[str]:
+    """
+    Валидирует поле 'relevance' в оценке.
+
+    Args:
+        eval_item: Словарь с данными оценки
+        index: Индекс оценки в списке
+
+    Returns:
+        List[str]: Список ошибок валидации (пустой если все ок)
+    """
+    errors = []
+    if "relevance" not in eval_item:
+        errors.append(f"Оценка #{index}: отсутствует поле 'relevance'")
+    else:
+        relevance = eval_item["relevance"]
+        # Проверка типа
+        if not isinstance(relevance, (int, float)):
+            errors.append(
+                f"Оценка #{index} ({eval_item.get('name', '?')}): "
+                f"relevance должен быть числом, получено {type(relevance)}"
+            )
+        # Проверка диапазона
+        elif not (0 <= relevance <= 100):
+            errors.append(
+                f"Оценка #{index} ({eval_item.get('name', '?')}): "
+                f"relevance={relevance} вне диапазона 0-100"
+            )
+    return errors
+
+
 def validate_batch_evaluations(
     evaluations: List[Dict[str, Any]],
     expected_count: int = 22
@@ -824,43 +916,14 @@ def validate_batch_evaluations(
         )
 
     # Проверка каждой оценки
-    seen_ids = set()
-    seen_names = set()
+    seen_ids: set = set()
+    seen_names: set = set()
 
     for i, eval_item in enumerate(evaluations):
-        # Проверка обязательных полей
-        if "id" not in eval_item:
-            errors.append(f"Оценка #{i}: отсутствует поле 'id'")
-        else:
-            eval_id = eval_item["id"]
-            if eval_id in seen_ids:
-                errors.append(f"Оценка #{i}: дублирующийся id={eval_id}")
-            seen_ids.add(eval_id)
-
-        if "name" not in eval_item:
-            errors.append(f"Оценка #{i}: отсутствует поле 'name'")
-        else:
-            name = eval_item["name"]
-            if name in seen_names:
-                errors.append(f"Оценка #{i}: дублирующееся имя '{name}'")
-            seen_names.add(name)
-
-        if "relevance" not in eval_item:
-            errors.append(f"Оценка #{i}: отсутствует поле 'relevance'")
-        else:
-            relevance = eval_item["relevance"]
-            # Проверка типа
-            if not isinstance(relevance, (int, float)):
-                errors.append(
-                    f"Оценка #{i} ({eval_item.get('name', '?')}): "
-                    f"relevance должен быть числом, получено {type(relevance)}"
-                )
-            # Проверка диапазона
-            elif not (0 <= relevance <= 100):
-                errors.append(
-                    f"Оценка #{i} ({eval_item.get('name', '?')}): "
-                    f"relevance={relevance} вне диапазона 0-100"
-                )
+        # Валидация полей через выделенные функции
+        errors.extend(_validate_evaluation_id(eval_item, i, seen_ids))
+        errors.extend(_validate_evaluation_name(eval_item, i, seen_names))
+        errors.extend(_validate_evaluation_relevance(eval_item, i))
 
     is_valid = len(errors) == 0
     return is_valid, errors
@@ -903,6 +966,80 @@ def convert_evaluations_to_dict(evaluations: List[Dict[str, Any]]) -> Dict[str, 
         result[name] = relevance_float
 
     return result
+
+
+async def _make_batch_api_call(
+    client: anthropic.AsyncAnthropic,
+    prompt: str
+) -> str:
+    """
+    Выполняет API запрос к Claude для batch-оценки.
+
+    Args:
+        client: Асинхронный клиент Anthropic
+        prompt: Промпт для отправки
+
+    Returns:
+        str: Текст ответа от API
+
+    Raises:
+        asyncio.TimeoutError: При превышении таймаута
+        RateLimitError: При превышении лимита запросов
+        Exception: При других ошибках API
+    """
+    response = await asyncio.wait_for(
+        client.messages.create(
+            model=HAIKU_MODEL,
+            max_tokens=BATCH_MAX_TOKENS,
+            temperature=TEMPERATURE,
+            messages=[{"role": "user", "content": prompt}]
+        ),
+        timeout=BATCH_REQUEST_TIMEOUT
+    )
+    return response.content[0].text
+
+
+def _process_batch_response(
+    response_text: str,
+    start_time: float
+) -> Dict[str, float]:
+    """
+    Обрабатывает ответ от API и возвращает словарь оценок.
+
+    Args:
+        response_text: Текст ответа от Claude API
+        start_time: Время начала запроса для логирования
+
+    Returns:
+        Dict[str, float]: {имя_отчета: оценка_релевантности (0-100)}
+
+    Raises:
+        ValueError: При ошибке парсинга JSON
+    """
+    logger.debug(f"Получен ответ от API: {len(response_text)} символов")
+
+    # Парсинг ответа
+    parsed_data = parse_batch_response(response_text)
+    evaluations = parsed_data["evaluations"]
+
+    # Валидация оценок
+    is_valid, errors = validate_batch_evaluations(evaluations)
+
+    if not is_valid:
+        logger.warning(f"Проблемы с валидацией оценок: {errors}")
+        # Продолжаем с тем что есть, но логируем ошибки
+
+    # Преобразование в словарь
+    relevance_scores = convert_evaluations_to_dict(evaluations)
+
+    elapsed = time.time() - start_time
+
+    logger.info(
+        f"Batch-оценка релевантности завершена за {elapsed:.2f}s. "
+        f"Обработано {len(relevance_scores)} отчетов."
+    )
+
+    return relevance_scores
 
 
 async def evaluate_batch_relevance(
@@ -953,7 +1090,7 @@ async def evaluate_batch_relevance(
     """
     # Валидация входных данных
     if not question or not question.strip():
-        raise ValueError("Вопрос не может быть пустым")
+        raise ValueError(ERROR_EMPTY_QUESTION)
 
     if not json_container or not json_container.strip():
         raise ValueError("JSON-контейнер не может быть пустым")
@@ -980,54 +1117,17 @@ async def evaluate_batch_relevance(
 
     # Retry с exponential backoff
     backoff = 1
-
     start_time = time.time()
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # Async запрос к Claude API с таймаутом
-            response = await asyncio.wait_for(
-                client.messages.create(
-                    model=HAIKU_MODEL,
-                    max_tokens=BATCH_MAX_TOKENS,
-                    temperature=TEMPERATURE,
-                    messages=[{"role": "user", "content": prompt}]
-                ),
-                timeout=BATCH_REQUEST_TIMEOUT
-            )
+            # Выполнить API запрос через вспомогательную функцию
+            response_text = await _make_batch_api_call(client, prompt)
 
-            # Извлечь текст ответа
-            response_text = response.content[0].text
+            # Обработать ответ и вернуть результаты
+            return _process_batch_response(response_text, start_time)
 
-            logger.debug(f"Получен ответ от API: {len(response_text)} символов")
-
-            # Парсинг ответа
-            parsed_data = parse_batch_response(response_text)
-            evaluations = parsed_data["evaluations"]
-
-            # Валидация оценок
-            is_valid, errors = validate_batch_evaluations(evaluations)
-
-            if not is_valid:
-                logger.warning(f"Проблемы с валидацией оценок: {errors}")
-                # Продолжаем с тем что есть, но логируем ошибки
-
-            # Преобразование в словарь
-            relevance_scores = convert_evaluations_to_dict(evaluations)
-
-            elapsed = time.time() - start_time
-
-            logger.info(
-                f"Batch-оценка релевантности завершена за {elapsed:.2f}s. "
-                f"Обработано {len(relevance_scores)} отчетов."
-            )
-
-            # Топ-3 логируется в вызывающей функции evaluate_report_relevance()
-            # чтобы избежать дублирования в логах
-
-            return relevance_scores
-
-        except RateLimitError as e:
+        except RateLimitError:
             if attempt == MAX_RETRIES:
                 logger.error(
                     f"Rate limit после {MAX_RETRIES} попыток. "
@@ -1313,7 +1413,7 @@ async def evaluate_report_relevance(
     """
     # Валидация входных данных
     if not question or not question.strip():
-        raise ValueError("Вопрос не может быть пустым")
+        raise ValueError(ERROR_EMPTY_QUESTION)
 
     # Получить API key
     if api_key is None:
