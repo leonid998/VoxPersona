@@ -688,9 +688,9 @@ def test_convert_evaluations_to_dict_clamps_values():
 
     result = convert_evaluations_to_dict(evaluations)
 
-    assert result["High"] == 100.0  # Clamped to 100
-    assert result["Low"] == 0.0     # Clamped to 0
-    assert result["Normal"] == 50.0
+    assert result["High"] == pytest.approx(100.0)  # Clamped to 100
+    assert result["Low"] == pytest.approx(0.0)     # Clamped to 0
+    assert result["Normal"] == pytest.approx(50.0)
 
 
 # === ТЕСТЫ EVALUATE_BATCH_RELEVANCE ===
@@ -895,7 +895,7 @@ async def test_evaluate_single_report_success(
 
         # Проверка результата
         assert result[0] == "Световой_дизайн"
-        assert result[1] == 85.0
+        assert result[1] == pytest.approx(85.0)
 
 
 @pytest.mark.asyncio
@@ -930,7 +930,7 @@ async def test_evaluate_single_report_parsing_complex_answer():
         )
 
         # Должно извлечь первое число (75.5)
-        assert result[1] == 75.5
+        assert result[1] == pytest.approx(75.5)
 
 
 @pytest.mark.asyncio
@@ -962,7 +962,7 @@ async def test_evaluate_single_report_unparseable_answer():
         )
 
         # Fallback на 0.0
-        assert result[1] == 0.0
+        assert result[1] == pytest.approx(0.0)
 
 
 @pytest.mark.asyncio
@@ -994,7 +994,7 @@ async def test_evaluate_single_report_out_of_range():
         )
 
         # Должно быть clamped к 100
-        assert result_high[1] == 100.0
+        assert result_high[1] == pytest.approx(100.0)
 
     # Тест значения < 0
     mock_response_low = MagicMock()
@@ -1016,7 +1016,7 @@ async def test_evaluate_single_report_out_of_range():
         )
 
         # Должно быть clamped к 0
-        assert result_low[1] == 0.0
+        assert result_low[1] == pytest.approx(0.0)
 
 
 @pytest.mark.asyncio
@@ -1071,7 +1071,7 @@ async def test_evaluate_single_report_rate_limit_retry():
             )
 
             # Должен был сделать retry и получить успешный результат
-            assert result[1] == 80.0
+            assert result[1] == pytest.approx(80.0)
             # Должен был выполнить sleep перед retry
             mock_sleep.assert_called_once()
 
@@ -1104,7 +1104,7 @@ async def test_evaluate_single_report_timeout():
         )
 
         # Должен вернуть fallback 0.0 из-за timeout
-        assert result[1] == 0.0
+        assert result[1] == pytest.approx(0.0)
 
 
 # === ТЕСТЫ ОСНОВНОЙ ФУНКЦИИ С BATCH МЕХАНИЗМОМ ===

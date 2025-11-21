@@ -212,7 +212,7 @@ def select_most_relevant_index(
         key=lambda x: (-x[1], x[0])  # По убыванию score, затем по имени
     )[:3]
 
-    logger.info(f"Топ-3 индекса:")
+    logger.info("Топ-3 индекса:")  # SonarCloud fix: removed empty f-string prefix
     for i, (idx, score) in enumerate(top_3_indices, 1):
         logger.info(f"  {i}. {idx}: {score:.4f}")
 

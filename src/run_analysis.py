@@ -31,16 +31,22 @@ from question_enhancer import enhance_question_for_index
 MIN_RELEVANCE_SCORE = 10.0  # Минимальный порог релевантности для включения в рекомендации
 INDEX_SURVEY_REPORTS = "Отчеты по обследованию"  # Используется в 4 местах
 
+# SonarCloud fix: duplicated literals - вынесены в константы
+CATEGORY_INTERVIEW = "Интервью"
+CATEGORY_DESIGN_SOURCES = "Исходники обследование"
+CATEGORY_FINAL_REPORTS = "Итоговые отчеты"
+CATEGORY_DESIGN_REPORTS = "Отчеты по дизайну"
+
 # Маппинг имен индексов Router Agent -> rags
 # Router Agent использует транслитерированные имена (Dizayn, Intervyu),
 # а rags использует русские имена (Дизайн, Интервью)
 ROUTER_TO_RAG_MAPPING: dict[str, str] = {
     "Dizayn": "Дизайн",
-    "Intervyu": "Интервью",
+    "Intervyu": CATEGORY_INTERVIEW,
     "Iskhodniki_dizayn": "Исходники дизайн",
-    "Iskhodniki_obsledovanie": "Исходники обследование",
-    "Itogovye_otchety": "Итоговые отчеты",
-    "Otchety_po_dizaynu": "Отчеты по дизайну",
+    "Iskhodniki_obsledovanie": CATEGORY_DESIGN_SOURCES,
+    "Itogovye_otchety": CATEGORY_FINAL_REPORTS,
+    "Otchety_po_dizaynu": CATEGORY_DESIGN_REPORTS,
     "Otchety_po_obsledovaniyu": INDEX_SURVEY_REPORTS
 }
 
@@ -108,7 +114,7 @@ def load_market_research_files(rag_name: str) -> str:
 
     # Маппинг индексов на критерии поиска
     rag_configs = {
-        "Отчеты по дизайну": {
+        CATEGORY_DESIGN_REPORTS: {
             "folder_pattern": "Дизайн отчеты",
             "file_pattern": None,
             "search_type": "folder"
@@ -118,7 +124,7 @@ def load_market_research_files(rag_name: str) -> str:
             "file_pattern": None,
             "search_type": "folder"
         },
-        "Итоговые отчеты": {
+        CATEGORY_FINAL_REPORTS: {
             "folder_pattern": "Итоговые отчеты",
             "file_pattern": None,
             "search_type": "folder"
@@ -128,7 +134,7 @@ def load_market_research_files(rag_name: str) -> str:
             "file_pattern": "аудит",  # Регистронезависимо
             "search_type": "file"
         },
-        "Исходники обследование": {
+        CATEGORY_DESIGN_SOURCES: {
             "folder_pattern": None,
             "file_pattern": "обследование",  # Регистронезависимо
             "search_type": "file"
@@ -420,22 +426,22 @@ def init_rags(existing_rags: dict | None = None) -> dict:
     # === РАСШИРЕННАЯ КОНФИГУРАЦИЯ: 9 существующих + 5 новых МИ индексов ===
     rag_configs = [
         # Существующие индексы (PostgreSQL)
-        ("Интервью", None, None),
+        (CATEGORY_INTERVIEW, None, None),
         ("Дизайн", None, None),
-        ("Интервью", "Оценка методологии интервью", None),
-        ("Интервью", "Отчет о связках", None),
-        ("Интервью", "Общие факторы", None),
-        ("Интервью", "Факторы в этом заведении", None),
+        (CATEGORY_INTERVIEW, "Оценка методологии интервью", None),
+        (CATEGORY_INTERVIEW, "Отчет о связках", None),
+        (CATEGORY_INTERVIEW, "Общие факторы", None),
+        (CATEGORY_INTERVIEW, "Факторы в этом заведении", None),
         ("Дизайн", "Оценка методологии аудита", None),
         ("Дизайн", "Соответствие программе аудита", None),
         ("Дизайн", "Структурированный отчет аудита", None),
 
         # === НОВЫЕ ИНДЕКСЫ МИ (Маркетинговое исследование) ===
-        (None, "Отчеты по дизайну", "market_research"),
+        (None, CATEGORY_DESIGN_REPORTS, "market_research"),
         (None, INDEX_SURVEY_REPORTS, "market_research"),
-        (None, "Итоговые отчеты", "market_research"),
+        (None, CATEGORY_FINAL_REPORTS, "market_research"),
         (None, "Исходники дизайн", "market_research"),
-        (None, "Исходники обследование", "market_research"),
+        (None, CATEGORY_DESIGN_SOURCES, "market_research"),
     ]
 
     for config in rag_configs:
@@ -463,7 +469,7 @@ def init_rags(existing_rags: dict | None = None) -> dict:
                 # ✅ ПРОБЛЕМА #5: Добавлен type hint list[str] | None
                 exclude_types: list[str] | None = None
 
-                if rag_name == "Интервью":
+                if rag_name == CATEGORY_INTERVIEW:
                     exclude_types = ["Оценка методологии интервью"]
                     logging.info(f"📋 Индекс 'Интервью': исключаем типы {exclude_types}")
                 elif rag_name == "Дизайн":
@@ -482,7 +488,7 @@ def init_rags(existing_rags: dict | None = None) -> dict:
             # === КОНЕЦ ВЫБОРА ИСТОЧНИКА ===
 
             # === РАСШИРЕННОЕ УСЛОВИЕ: 7 FAISS индексов (2 старых + 5 новых МИ) ===
-            if rag_name in ["Интервью", "Дизайн", "Отчеты по дизайну", INDEX_SURVEY_REPORTS, "Итоговые отчеты", "Исходники дизайн", "Исходники обследование"]:
+            if rag_name in [CATEGORY_INTERVIEW, "Дизайн", CATEGORY_DESIGN_REPORTS, INDEX_SURVEY_REPORTS, CATEGORY_FINAL_REPORTS, "Исходники дизайн", CATEGORY_DESIGN_SOURCES]:
                 rag_db = create_db_in_memory(content_str)
                 rags[rag_name] = rag_db
                 logging.info(f"✅ FAISS индекс для {rag_name} сформирован успешно")
@@ -700,7 +706,8 @@ async def _get_router_recommendations(text: str, chat_id: int) -> list[tuple] | 
         return None
 
 
-async def _process_manual_index_selection(
+# SonarCloud fix: async without await - убран async keyword
+def _process_manual_index_selection(
     chat_id: int,
     text_to_search: str,
     user_selected_index: str,
@@ -842,7 +849,7 @@ async def _run_router_agent(
             if category.lower() == "дизайн":
                 scenario_name = "Дизайн"
             elif category.lower() == "интервью":
-                scenario_name = "Интервью"
+                scenario_name = CATEGORY_INTERVIEW
             else:
                 raise ValueError(f"Fallback classify_query не смог определить сценарий: {category}")
 
@@ -1037,7 +1044,8 @@ async def run_dialog_mode(
 
     if user_selected_index:
         # Ручной выбор индекса пользователем
-        text_to_search, scenario_name, success = await _process_manual_index_selection(
+        # SonarCloud fix: функция больше не async, вызываем синхронно
+        text_to_search, scenario_name, success = _process_manual_index_selection(
             chat_id, text_to_search, user_selected_index, rags, top_indices
         )
         skip_router_agent = success
@@ -1185,7 +1193,7 @@ async def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str
 
     # Определяем scenario_name для примера
     if "int_" in callback_data:
-        scenario_name = "Интервью"
+        scenario_name = CATEGORY_INTERVIEW
     elif "design" in callback_data:
         scenario_name = "Дизайн"
     else:
@@ -1210,7 +1218,7 @@ async def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str
     json_prompts = [(p, rp) for (p, rp, is_json_prompt) in prompts_list if is_json_prompt]
     ordinary_prompts = [(p, rp) for (p, rp, is_json_prompt) in prompts_list if not is_json_prompt]
 
-    if scenario_name == "Интервью" and report_type_desc == "Общие факторы":
+    if scenario_name == CATEGORY_INTERVIEW and report_type_desc == "Общие факторы":
         logging.info("Готовлю два отчёта")
         # prompts_list -> [(prompt_text, run_part, is_json_prompts), ...]
 
@@ -1298,7 +1306,7 @@ async def run_analysis_with_spinner(chat_id: int, processed_texts: dict[int, str
 
         logging.info("Проведён количественный анализ")
 
-    if scenario_name == "Интервью":
+    if scenario_name == CATEGORY_INTERVIEW:
         await send_menu(chat_id, app, "Какой отчёт хотите посмотреть дальше?", interview_menu_markup())
     elif scenario_name == "Дизайн":
         await send_menu(chat_id, app, "Какой отчёт хотите посмотреть дальше?", design_menu_markup())

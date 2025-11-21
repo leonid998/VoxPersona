@@ -340,33 +340,33 @@ class TestClassifyQueryBaselines:
 
         # ====== ВЫВОД BASELINE МЕТРИК ======
         print(f"\n{'='*70}")
-        print(f"BASELINE МЕТРИКИ classify_query")
+        print("BASELINE МЕТРИКИ classify_query")  # SonarCloud fix: removed empty f-string prefix
         print(f"{'='*70}")
         print(f"\nДАТА ТЕСТИРОВАНИЯ: {Path(__file__).stat().st_mtime}")
-        print(f"\nОБЩАЯ СТАТИСТИКА:")
+        print("\nОБЩАЯ СТАТИСТИКА:")  # SonarCloud fix: removed empty f-string prefix
         print(f"  Всего вопросов: {len(results)}")
         print(f"  Успешно обработано: {sum(1 for r in results if r['actual_category'] != 'ERROR')}")
         print(f"  Ошибок: {sum(1 for r in results if r['actual_category'] == 'ERROR')}")
 
-        print(f"\nРАСПРЕДЕЛЕНИЕ ПО КАТЕГОРИЯМ:")
+        print("\nРАСПРЕДЕЛЕНИЕ ПО КАТЕГОРИЯМ:")  # SonarCloud fix: removed empty f-string prefix
         for cat, count in sorted(categories.items()):
             percentage = (count / len(results)) * 100
             print(f"  {cat:25} : {count:3} ({percentage:5.1f}%)")
 
-        print(f"\nСООТВЕТСТВИЕ ОЖИДАНИЯМ:")
+        print("\nСООТВЕТСТВИЕ ОЖИДАНИЯМ:")  # SonarCloud fix: removed empty f-string prefix
         match_percentage = (matches / len(results)) * 100 if results else 0
         print(f"  Совпадений: {matches}/{len(results)} ({match_percentage:.1f}%)")
         # ИСПРАВЛЕНО: убран f-префикс из строк без полей замены
         print("  (Совпадение = вопрос о дизайне классифицирован как 'дизайн'")
         print("            ИЛИ вопрос об интервью классифицирован как 'интервью')")
 
-        print(f"\nВРЕМЕННЫЕ МЕТРИКИ:")
+        print("\nВРЕМЕННЫЕ МЕТРИКИ:")  # SonarCloud fix: removed empty f-string prefix
         print(f"  Среднее время на вопрос: {avg_time:.3f} сек")
         print(f"  Минимальное время: {min_time:.3f} сек")
         print(f"  Максимальное время: {max_time:.3f} сек")
         print(f"  Общее время теста: {total_time_elapsed:.1f} сек ({total_time_elapsed/60:.1f} мин)")
 
-        print(f"\nДЕТАЛИ РЕЗУЛЬТАТОВ:")
+        print("\nДЕТАЛИ РЕЗУЛЬТАТОВ:")  # SonarCloud fix: removed empty f-string prefix
         print(f"{'№':<3} {'Вопрос':<35} {'Ожидается':<12} {'Получено':<12} {'Совпадение':<8} {'Время (сек)':<10}")
         print(f"{'-'*80}")
         for r in results[:10]:  # Первые 10 для демонстрации

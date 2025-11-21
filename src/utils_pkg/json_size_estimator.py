@@ -235,7 +235,7 @@ class JSONSizeEstimator:
 
     def _determine_strategy(
         self,
-        total_chars: int,
+        total_chars: int,  # noqa: ARG002 - сохранен для API совместимости
         estimated_tokens: int,
         file_count: int,
     ) -> tuple[str, int | None]:
@@ -243,12 +243,16 @@ class JSONSizeEstimator:
         Определяет оптимальную стратегию работы с описаниями.
 
         Args:
-            total_chars: Общее количество символов.
+            total_chars: Общее количество символов (сохранен для API совместимости).
             estimated_tokens: Оценочное количество токенов.
             file_count: Количество файлов.
 
         Returns:
             Кортеж (стратегия, рекомендуемая_длина_обрезки).
+
+        Note:
+            Параметр total_chars сохранен для обратной совместимости API,
+            так как используется в тестах и внешних вызовах.
         """
         # Если все помещается с запасом (менее 50% лимита)
         if estimated_tokens < self.token_limit * 0.5:

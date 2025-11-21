@@ -394,7 +394,7 @@ class TestConvertEvaluationsToDict:
 
         result = convert_evaluations_to_dict(evaluations)
 
-        assert result["Test"] == 75.5
+        assert result["Test"] == pytest.approx(75.5)
 
     def test_convert_clamp_negative(self):
         """Тест clamp отрицательных значений до 0."""
@@ -404,7 +404,7 @@ class TestConvertEvaluationsToDict:
 
         result = convert_evaluations_to_dict(evaluations)
 
-        assert result["Test"] == 0.0
+        assert result["Test"] == pytest.approx(0.0)
 
     def test_convert_clamp_over_100(self):
         """Тест clamp значений > 100 до 100."""
@@ -414,7 +414,7 @@ class TestConvertEvaluationsToDict:
 
         result = convert_evaluations_to_dict(evaluations)
 
-        assert result["Test"] == 100.0
+        assert result["Test"] == pytest.approx(100.0)
 
     def test_convert_missing_name(self):
         """Тест обработки отсутствующего имени."""
@@ -425,7 +425,7 @@ class TestConvertEvaluationsToDict:
         result = convert_evaluations_to_dict(evaluations)
 
         assert "Unknown" in result
-        assert result["Unknown"] == 50.0
+        assert result["Unknown"] == pytest.approx(50.0)
 
     def test_convert_missing_relevance(self):
         """Тест обработки отсутствующей релевантности."""
@@ -435,7 +435,7 @@ class TestConvertEvaluationsToDict:
 
         result = convert_evaluations_to_dict(evaluations)
 
-        assert result["Test"] == 0.0
+        assert result["Test"] == pytest.approx(0.0)
 
     def test_convert_invalid_relevance_type(self):
         """Тест обработки невалидного типа релевантности."""
@@ -445,7 +445,7 @@ class TestConvertEvaluationsToDict:
 
         result = convert_evaluations_to_dict(evaluations)
 
-        assert result["Test"] == 0.0
+        assert result["Test"] == pytest.approx(0.0)
 
     def test_convert_empty_list(self):
         """Тест преобразования пустого списка."""
@@ -688,7 +688,7 @@ class TestBatchRequestIntegration:
         parsed = parse_batch_response(valid_response_json)
 
         # Шаг 2: Валидация
-        is_valid, errors = validate_batch_evaluations(parsed["evaluations"])
+        is_valid, _ = validate_batch_evaluations(parsed["evaluations"])  # SonarCloud fix: unused variable errors replaced with _
         assert is_valid is True
 
         # Шаг 3: Конвертация

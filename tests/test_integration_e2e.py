@@ -299,6 +299,110 @@ async def test_full_router_workflow():
 # Test 2: Тест на golden dataset (>=80% точности)
 # ============================================================================
 
+# SonarCloud fix: refactored for lower complexity - extracted helper functions
+
+def _load_report_descriptions_or_skip():
+    """
+    Загружает описания отчетов или пропускает тест.
+
+    Returns:
+        dict: Словарь с описаниями отчетов
+
+    Raises:
+        pytest.skip: Если директория с описаниями не найдена
+    """
+    try:
+        return load_report_descriptions()
+    except FileNotFoundError:
+        pytest.skip("Директория с описаниями отчетов не найдена")
+
+
+async def _evaluate_single_question(question: str, expected_index: str,
+                                     report_descriptions: dict) -> dict:
+    """
+    Оценивает один вопрос и возвращает результаты.
+
+    Args:
+        question: Текст вопроса
+        expected_index: Ожидаемый индекс
+        report_descriptions: Описания отчетов
+
+    Returns:
+        dict: Результат оценки с метриками accuracy@1 и recall@3
+    """
+    relevance = await evaluate_report_relevance(question, report_descriptions)
+    top_indices = get_top_relevant_indices(relevance, INDEX_MAPPING, top_k=3)
+
+    top_3_names = [idx for idx, score in top_indices]
+    selected_index = top_3_names[0] if top_3_names else DEFAULT_INDEX
+
+    is_correct_at_1 = selected_index == expected_index
+    is_correct_at_3 = expected_index in top_3_names
+
+    return {
+        "question": question,
+        "expected": expected_index,
+        "selected": selected_index,
+        "top_3": top_3_names,
+        "correct_at_1": is_correct_at_1,
+        "correct_at_3": is_correct_at_3,
+        "top_scores": top_indices
+    }
+
+
+def _print_progress(i: int, total: int, result: dict) -> None:
+    """Выводит прогресс обработки вопроса."""
+    status = "✅" if result["correct_at_3"] else "❌"
+    at_1_mark = "🎯" if result["correct_at_1"] else ""
+    print(f"  [{i}/{total}] {status}{at_1_mark} {result['question'][:45]}...")
+
+
+def _print_metrics_report(correct_at_1: int, correct_at_3: int, total: int) -> None:
+    """Выводит отчет по метрикам accuracy и recall."""
+    accuracy_at_1 = correct_at_1 / total * 100
+    recall_at_3 = correct_at_3 / total * 100
+
+    print("\n" + "="*60)
+    print("📊 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ ROUTER AGENT")
+    print("="*60)
+    print(f"\n📈 Метрики:")
+    print(f"  • Accuracy@1: {accuracy_at_1:.1f}% ({correct_at_1}/{total})")
+    print(f"  • Recall@3:   {recall_at_3:.1f}% ({correct_at_3}/{total})")
+
+
+def _print_errors_report(results: list) -> None:
+    """Выводит отчет по ошибкам (не попали в топ-3)."""
+    errors = [r for r in results if not r["correct_at_3"]]
+
+    if not errors:
+        print("\n🎉 Все правильные индексы в топ-3!")
+        return
+
+    print(f"\n❌ Не попали в топ-3 ({len(errors)}):")
+    for e in errors:
+        print(f"\n  Q: {e['question']}")
+        print(f"    Ожидали: {e['expected']}")
+        print(f"    Топ-3: {', '.join(e['top_3'])}")
+
+
+def _print_index_stats(results: list) -> None:
+    """Выводит статистику по индексам."""
+    print(f"\n📈 Статистика по индексам (recall@3):")
+
+    index_stats = {}
+    for r in results:
+        exp = r["expected"]
+        if exp not in index_stats:
+            index_stats[exp] = {"total": 0, "in_top3": 0}
+        index_stats[exp]["total"] += 1
+        if r["correct_at_3"]:
+            index_stats[exp]["in_top3"] += 1
+
+    for idx, stats in sorted(index_stats.items()):
+        idx_recall = stats["in_top3"] / stats["total"] * 100 if stats["total"] > 0 else 0
+        print(f"  {idx}: {idx_recall:.0f}% ({stats['in_top3']}/{stats['total']})")
+
+
 @pytest.mark.asyncio
 @pytest.mark.slow
 async def test_router_on_golden_dataset(golden_dataset):
@@ -317,97 +421,38 @@ async def test_router_on_golden_dataset(golden_dataset):
         Тест помечен @pytest.mark.slow - занимает ~60-90 секунд
         Каждый вопрос требует 1 batch API запрос к Claude Haiku
     """
-    # Загрузка описаний отчетов
-    # Используем load_report_descriptions() из relevance_evaluator.py
-    # который возвращает ПОЛНЫЕ имена отчетов
-    try:
-        report_descriptions = load_report_descriptions()
-    except FileNotFoundError:
-        pytest.skip("Директория с описаниями отчетов не найдена")
+    # SonarCloud fix: refactored for lower complexity
+    report_descriptions = _load_report_descriptions_or_skip()
 
-    correct_at_1 = 0  # Accuracy@1 - точный выбор
-    correct_at_3 = 0  # Recall@3 - в топ-3
+    correct_at_1 = 0
+    correct_at_3 = 0
     total = len(golden_dataset)
     results = []
 
     print(f"\n🔄 Тестирование Router Agent (рекомендательный режим) на {total} вопросах...")
 
     for i, item in enumerate(golden_dataset, 1):
-        question = item["question"]
-        expected_index = item["expected_index"]
+        result = await _evaluate_single_question(
+            item["question"],
+            item["expected_index"],
+            report_descriptions
+        )
 
-        # Запускаем Router Agent - получаем топ-3 рекомендации (1 batch запрос)
-        relevance = await evaluate_report_relevance(question, report_descriptions)
-        top_indices = get_top_relevant_indices(relevance, INDEX_MAPPING, top_k=3)
-
-        # Извлекаем названия индексов из топ-3
-        top_3_names = [idx for idx, score in top_indices]
-        selected_index = top_3_names[0] if top_3_names else DEFAULT_INDEX
-
-        # Проверяем accuracy@1 и recall@3
-        is_correct_at_1 = selected_index == expected_index
-        is_correct_at_3 = expected_index in top_3_names
-
-        if is_correct_at_1:
+        if result["correct_at_1"]:
             correct_at_1 += 1
-        if is_correct_at_3:
+        if result["correct_at_3"]:
             correct_at_3 += 1
 
-        results.append({
-            "question": question,
-            "expected": expected_index,
-            "selected": selected_index,
-            "top_3": top_3_names,
-            "correct_at_1": is_correct_at_1,
-            "correct_at_3": is_correct_at_3,
-            "top_scores": top_indices
-        })
+        results.append(result)
+        _print_progress(i, total, result)
 
-        # Прогресс - показываем recall@3
-        status = "✅" if is_correct_at_3 else "❌"
-        at_1_mark = "🎯" if is_correct_at_1 else ""
-        print(f"  [{i}/{total}] {status}{at_1_mark} {question[:45]}...")
-
-    accuracy_at_1 = correct_at_1 / total * 100
-    recall_at_3 = correct_at_3 / total * 100
-
-    # Детальный отчет
-    # ИСПРАВЛЕНО: убран f-префикс из строк без полей замены
-    print("\n" + "="*60)
-    print("📊 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ ROUTER AGENT")
-    print("="*60)
-    print(f"\n📈 Метрики:")
-    print(f"  • Accuracy@1: {accuracy_at_1:.1f}% ({correct_at_1}/{total})")
-    print(f"  • Recall@3:   {recall_at_3:.1f}% ({correct_at_3}/{total})")
-
-    # Отчет по ошибкам (где не попали в топ-3)
-    errors = [r for r in results if not r["correct_at_3"]]
-    if errors:
-        print(f"\n❌ Не попали в топ-3 ({len(errors)}):")
-        for e in errors:
-            print(f"\n  Q: {e['question']}")
-            print(f"    Ожидали: {e['expected']}")
-            print(f"    Топ-3: {', '.join(e['top_3'])}")
-    else:
-        # ИСПРАВЛЕНО: убран f-префикс - нет полей замены
-        print("\n🎉 Все правильные индексы в топ-3!")
-
-    # Статистика по индексам
-    print(f"\n📈 Статистика по индексам (recall@3):")
-    index_stats = {}
-    for r in results:
-        exp = r["expected"]
-        if exp not in index_stats:
-            index_stats[exp] = {"total": 0, "in_top3": 0}
-        index_stats[exp]["total"] += 1
-        if r["correct_at_3"]:
-            index_stats[exp]["in_top3"] += 1
-
-    for idx, stats in sorted(index_stats.items()):
-        idx_recall = stats["in_top3"] / stats["total"] * 100 if stats["total"] > 0 else 0
-        print(f"  {idx}: {idx_recall:.0f}% ({stats['in_top3']}/{stats['total']})")
+    # Вывод отчетов
+    _print_metrics_report(correct_at_1, correct_at_3, total)
+    _print_errors_report(results)
+    _print_index_stats(results)
 
     # Проверка порога recall@3
+    recall_at_3 = correct_at_3 / total * 100
     assert recall_at_3 >= MIN_RECALL_AT_3_THRESHOLD, \
         f"Recall@3 Router Agent {recall_at_3:.1f}% ниже порога {MIN_RECALL_AT_3_THRESHOLD}%"
 
@@ -456,7 +501,7 @@ async def test_router_fallback_on_error(mock_report_descriptions):
 
         # Если функция добавила fallback значения - все должны быть 0.0
         if relevance:
-            assert all(score == 0.0 for score in relevance.values()), \
+            assert all(score == pytest.approx(0.0) for score in relevance.values()), \
                 f"При ошибке API все оценки должны быть 0.0, получено: {relevance}"
 
         print(f"✅ Fallback при ошибке batch API работает: {len(relevance)} оценок")
@@ -563,7 +608,7 @@ async def test_router_performance():
     except FileNotFoundError:
         pytest.skip("Директория с описаниями отчетов не найдена")
 
-    print(f"\n⏱️ Замер производительности Router Agent...")
+    print("\n  Замер производительности Router Agent...")  # SonarCloud fix: removed empty f-string prefix
 
     start = time.time()
 
@@ -579,7 +624,7 @@ async def test_router_performance():
 
     elapsed = time.time() - start
 
-    print(f"\n📊 Результаты производительности:")
+    print("\n  Результаты производительности:")  # SonarCloud fix: removed empty f-string prefix
     print(f"  Время выполнения: {elapsed:.2f} сек")
     print(f"  Оценено отчетов: {len(relevance)}")
     print(f"  Выбран индекс: {index}")
@@ -950,7 +995,7 @@ def test_batch_response_parsing():
     assert "evaluations" in result1
     assert len(result1["evaluations"]) == 2
     assert result1["evaluations"][0]["relevance"] == 85
-    print(f"✅ Сценарий 1: Чистый JSON распарсен корректно")
+    print("✅ Сценарий 1: Чистый JSON распарсен корректно")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 2: JSON в markdown блоке
     markdown_json = """Вот результаты оценки:
@@ -969,7 +1014,7 @@ def test_batch_response_parsing():
     assert "evaluations" in result2
     assert len(result2["evaluations"]) == 1
     assert result2["evaluations"][0]["name"] == "TestReport"
-    print(f"✅ Сценарий 2: JSON в markdown блоке распарсен корректно")
+    print("✅ Сценарий 2: JSON в markdown блоке распарсен корректно")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 3: JSON с текстом до и после (без markdown)
     text_with_json = """Анализ завершен. Результаты:
@@ -979,12 +1024,12 @@ def test_batch_response_parsing():
     result3 = parse_batch_response(text_with_json)
     assert "evaluations" in result3
     assert result3["evaluations"][0]["relevance"] == 50
-    print(f"✅ Сценарий 3: JSON с окружающим текстом распарсен корректно")
+    print("✅ Сценарий 3: JSON с окружающим текстом распарсен корректно")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 4: Ошибка - пустой ответ
     with pytest.raises(ValueError, match="Пустой ответ"):
         parse_batch_response("")
-    print(f"✅ Сценарий 4: Пустой ответ вызывает ValueError")
+    print("✅ Сценарий 4: Пустой ответ вызывает ValueError")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 5: Ошибка - нет JSON в тексте
     with pytest.raises(ValueError, match="Не найден JSON"):
@@ -996,9 +1041,9 @@ def test_batch_response_parsing():
     invalid_structure = '{"results": [{"id": 1}]}'
     with pytest.raises(ValueError, match="отсутствует ключ 'evaluations'"):
         parse_batch_response(invalid_structure)
-    print(f"✅ Сценарий 6: Отсутствие 'evaluations' вызывает ValueError")
+    print("✅ Сценарий 6: Отсутствие 'evaluations' вызывает ValueError")  # SonarCloud fix: removed empty f-string prefix
 
-    print(f"\n✅ Все сценарии парсинга batch ответа пройдены")
+    print("\n✅ Все сценарии парсинга batch ответа пройдены")  # SonarCloud fix: removed empty f-string prefix
 
 
 # ============================================================================
@@ -1035,7 +1080,7 @@ def test_batch_evaluations_validation():
     is_valid, errors = validate_batch_evaluations(valid_evaluations, expected_count=5)
     assert not is_valid
     assert any("Ожидалось 5 оценок" in e for e in errors)
-    print(f"✅ Сценарий 2: Неверное количество обнаружено")
+    print("✅ Сценарий 2: Неверное количество обнаружено")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 3: Отсутствует поле 'id'
     missing_id = [
@@ -1044,7 +1089,7 @@ def test_batch_evaluations_validation():
     is_valid, errors = validate_batch_evaluations(missing_id, expected_count=1)
     assert not is_valid
     assert any("отсутствует поле 'id'" in e for e in errors)
-    print(f"✅ Сценарий 3: Отсутствие 'id' обнаружено")
+    print("✅ Сценарий 3: Отсутствие 'id' обнаружено")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 4: Отсутствует поле 'relevance'
     missing_relevance = [
@@ -1053,7 +1098,7 @@ def test_batch_evaluations_validation():
     is_valid, errors = validate_batch_evaluations(missing_relevance, expected_count=1)
     assert not is_valid
     assert any("отсутствует поле 'relevance'" in e for e in errors)
-    print(f"✅ Сценарий 4: Отсутствие 'relevance' обнаружено")
+    print("✅ Сценарий 4: Отсутствие 'relevance' обнаружено")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 5: Дублирующийся ID
     duplicate_id = [
@@ -1063,7 +1108,7 @@ def test_batch_evaluations_validation():
     is_valid, errors = validate_batch_evaluations(duplicate_id, expected_count=2)
     assert not is_valid
     assert any("дублирующийся id" in e for e in errors)
-    print(f"✅ Сценарий 5: Дублирующийся ID обнаружен")
+    print("✅ Сценарий 5: Дублирующийся ID обнаружен")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 6: Relevance вне диапазона
     out_of_range = [
@@ -1082,9 +1127,9 @@ def test_batch_evaluations_validation():
     is_valid, errors = validate_batch_evaluations(not_a_number, expected_count=1)
     assert not is_valid
     assert any("должен быть числом" in e for e in errors)
-    print(f"✅ Сценарий 7: Нечисловой relevance обнаружен")
+    print("✅ Сценарий 7: Нечисловой relevance обнаружен")  # SonarCloud fix: removed empty f-string prefix
 
-    print(f"\n✅ Все сценарии валидации batch оценок пройдены")
+    print("\n✅ Все сценарии валидации batch оценок пройдены")  # SonarCloud fix: removed empty f-string prefix
 
 
 # ============================================================================
@@ -1113,10 +1158,10 @@ def test_evaluations_to_dict_conversion():
     result = convert_evaluations_to_dict(evaluations)
 
     assert len(result) == 3
-    assert result["Report_A"] == 85.0
-    assert result["Report_B"] == 30.5
-    assert result["Report_C"] == 0.0
-    print(f"✅ Сценарий 1: Корректные данные конвертированы")
+    assert result["Report_A"] == pytest.approx(85.0)
+    assert result["Report_B"] == pytest.approx(30.5)
+    assert result["Report_C"] == pytest.approx(0.0)
+    print("✅ Сценарий 1: Корректные данные конвертированы")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 2: Значения вне диапазона (должны быть clamp)
     out_of_range = [
@@ -1126,9 +1171,9 @@ def test_evaluations_to_dict_conversion():
 
     result = convert_evaluations_to_dict(out_of_range)
 
-    assert result["High"] == 100.0, "Значения > 100 должны быть clamp к 100"
-    assert result["Low"] == 0.0, "Значения < 0 должны быть clamp к 0"
-    print(f"✅ Сценарий 2: Значения вне диапазона clamped корректно")
+    assert result["High"] == pytest.approx(100.0), "Значения > 100 должны быть clamp к 100"
+    assert result["Low"] == pytest.approx(0.0), "Значения < 0 должны быть clamp к 0"
+    print("✅ Сценарий 2: Значения вне диапазона clamped корректно")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 3: Невалидные типы (строка вместо числа)
     invalid_types = [
@@ -1137,8 +1182,8 @@ def test_evaluations_to_dict_conversion():
 
     result = convert_evaluations_to_dict(invalid_types)
 
-    assert result["Invalid"] == 0.0, "Невалидные значения должны стать 0.0"
-    print(f"✅ Сценарий 3: Невалидные типы обработаны (fallback 0.0)")
+    assert result["Invalid"] == pytest.approx(0.0), "Невалидные значения должны стать 0.0"
+    print("✅ Сценарий 3: Невалидные типы обработаны (fallback 0.0)")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 4: Отсутствует поле relevance
     missing_field = [
@@ -1147,8 +1192,8 @@ def test_evaluations_to_dict_conversion():
 
     result = convert_evaluations_to_dict(missing_field)
 
-    assert result["Missing"] == 0.0, "Отсутствующий relevance должен стать 0.0"
-    print(f"✅ Сценарий 4: Отсутствующий relevance обработан (fallback 0.0)")
+    assert result["Missing"] == pytest.approx(0.0), "Отсутствующий relevance должен стать 0.0"
+    print("✅ Сценарий 4: Отсутствующий relevance обработан (fallback 0.0)")  # SonarCloud fix: removed empty f-string prefix
 
     # Сценарий 5: Integer и float смешанные
     mixed_types = [
@@ -1160,9 +1205,9 @@ def test_evaluations_to_dict_conversion():
 
     assert isinstance(result["Int"], float)
     assert isinstance(result["Float"], float)
-    print(f"✅ Сценарий 5: Все значения конвертированы в float")
+    print("✅ Сценарий 5: Все значения конвертированы в float")  # SonarCloud fix: removed empty f-string prefix
 
-    print(f"\n✅ Все сценарии конвертации оценок пройдены")
+    print("\n✅ Все сценарии конвертации оценок пройдены")  # SonarCloud fix: removed empty f-string prefix
 
 
 # ============================================================================

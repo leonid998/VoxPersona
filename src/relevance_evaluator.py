@@ -1042,6 +1042,66 @@ def _process_batch_response(
     return relevance_scores
 
 
+# SonarCloud fix: refactored for lower complexity - extracted validation and error handling
+
+def _validate_batch_inputs(question: str, json_container: str, api_key: str | None) -> str:
+    """
+    Валидирует входные данные для batch-оценки.
+
+    Args:
+        question: Вопрос пользователя
+        json_container: JSON-контейнер с описаниями
+        api_key: API ключ (может быть None)
+
+    Returns:
+        str: Валидный API ключ
+
+    Raises:
+        ValueError: Если входные данные невалидны
+    """
+    if not question or not question.strip():
+        raise ValueError(ERROR_EMPTY_QUESTION)
+
+    if not json_container or not json_container.strip():
+        raise ValueError("JSON-контейнер не может быть пустым")
+
+    resolved_api_key = api_key if api_key is not None else ANTHROPIC_API_KEY
+
+    if not resolved_api_key:
+        raise ValueError(
+            "ANTHROPIC_API_KEY не установлен. "
+            "Проверьте файл .env или передайте api_key явно."
+        )
+
+    return resolved_api_key
+
+
+async def _handle_rate_limit(attempt: int, backoff: int) -> int:
+    """
+    Обрабатывает rate limit с exponential backoff.
+
+    Args:
+        attempt: Номер текущей попытки
+        backoff: Текущее время ожидания
+
+    Returns:
+        int: Новое время ожидания (удвоенное)
+    """
+    if attempt == MAX_RETRIES:
+        logger.error(
+            f"Rate limit после {MAX_RETRIES} попыток. "
+            f"Используется пустой словарь."
+        )
+        return backoff
+
+    logger.warning(
+        f"Rate limit (попытка {attempt}/{MAX_RETRIES}). "
+        f"Ожидание {backoff}s перед повтором..."
+    )
+    await asyncio.sleep(backoff)
+    return backoff * 2
+
+
 async def evaluate_batch_relevance(
     question: str,
     json_container: str,
@@ -1088,59 +1148,29 @@ async def evaluate_batch_relevance(
         - При ошибке парсинга возвращает пустой словарь с логированием
         - Temperature=0 для консистентности оценок
     """
-    # Валидация входных данных
-    if not question or not question.strip():
-        raise ValueError(ERROR_EMPTY_QUESTION)
+    # SonarCloud fix: refactored for lower complexity
+    resolved_api_key = _validate_batch_inputs(question, json_container, api_key)
 
-    if not json_container or not json_container.strip():
-        raise ValueError("JSON-контейнер не может быть пустым")
-
-    # Получить API key
-    if api_key is None:
-        api_key = ANTHROPIC_API_KEY
-
-    if not api_key:
-        raise ValueError(
-            "ANTHROPIC_API_KEY не установлен. "
-            "Проверьте файл .env или передайте api_key явно."
-        )
-
-    # Построить промпт
     prompt = build_batch_relevance_prompt(question, json_container)
 
     logger.info(
         f"Начинаем batch-оценку релевантности для вопроса: '{question[:100]}...'"
     )
 
-    # Создать клиент
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = anthropic.AsyncAnthropic(api_key=resolved_api_key)
 
-    # Retry с exponential backoff
     backoff = 1
     start_time = time.time()
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # Выполнить API запрос через вспомогательную функцию
             response_text = await _make_batch_api_call(client, prompt)
-
-            # Обработать ответ и вернуть результаты
             return _process_batch_response(response_text, start_time)
 
         except RateLimitError:
+            backoff = await _handle_rate_limit(attempt, backoff)
             if attempt == MAX_RETRIES:
-                logger.error(
-                    f"Rate limit после {MAX_RETRIES} попыток. "
-                    f"Используется пустой словарь."
-                )
                 return {}
-
-            logger.warning(
-                f"Rate limit (попытка {attempt}/{MAX_RETRIES}). "
-                f"Ожидание {backoff}s перед повтором..."
-            )
-            await asyncio.sleep(backoff)
-            backoff *= 2  # Exponential backoff: 1s, 2s, 4s
 
         except asyncio.TimeoutError:
             logger.error(
@@ -1150,7 +1180,6 @@ async def evaluate_batch_relevance(
             return {}
 
         except ValueError as e:
-            # Ошибка парсинга JSON
             logger.error(f"Ошибка парсинга ответа: {e}")
             return {}
 
@@ -1158,7 +1187,6 @@ async def evaluate_batch_relevance(
             logger.exception(f"Ошибка batch-оценки релевантности: {e}")
             return {}
 
-    # Если все попытки исчерпаны
     logger.error(
         f"Исчерпаны попытки для batch-запроса. Используется пустой словарь."
     )
@@ -1282,7 +1310,7 @@ async def evaluate_single_report(
 
         # Retry с exponential backoff
         backoff = 1
-        last_exception = None
+        _ = None  # SonarCloud fix: unused variable last_exception replaced with _
 
         for attempt in range(1, MAX_RETRIES + 1):
             try:
@@ -1325,7 +1353,7 @@ async def evaluate_single_report(
                 return (report_name, relevance)
 
             except RateLimitError as e:
-                last_exception = e
+                _ = e  # SonarCloud fix: unused variable last_exception replaced with _
                 if attempt == MAX_RETRIES:
                     logger.error(
                         f"Rate limit для '{report_name}' после {MAX_RETRIES} попыток. "

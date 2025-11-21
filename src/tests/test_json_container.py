@@ -195,7 +195,7 @@ class TestAllReportsIncluded:
         data = json.loads(json_string)
 
         assert data["total_reports"] == 22, f"Должно быть 22 отчета, получено {data['total_reports']}"
-        assert len(data["reports"]) == 22, f"В списке reports должно быть 22 элемента"
+        assert len(data["reports"]) == 22, "В списке reports должно быть 22 элемента"  # SonarCloud fix: removed empty f-string prefix
 
     def test_all_report_names_present(self, full_descriptions):
         """
@@ -371,7 +371,7 @@ class TestJsonIsValid:
         json_string = build_json_container(full_descriptions)
 
         try:
-            data = json.loads(json_string)
+            _ = json.loads(json_string)  # SonarCloud fix: unused variable data replaced with _
         except json.JSONDecodeError as e:
             pytest.fail(f"Невалидный JSON с полными данными: {e}")
 
@@ -543,7 +543,7 @@ class TestIntegration:
         assert stats["total_indices"] == 7
 
         # Вывод информации для отладки
-        print(f"\n=== Статистика JSON-контейнера ===")
+        print("\n=== Статистика JSON-контейнера ===")  # SonarCloud fix: removed empty f-string prefix
         print(f"Размер: {stats['total_chars']:,} символов")
         print(f"Токенов: ~{stats['estimated_tokens']:,}")
         print(f"Отчетов: {stats['total_reports']}")
