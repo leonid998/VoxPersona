@@ -15,6 +15,7 @@ JSON-контейнер и оцениваются за один API запрос
     - build_json_container() - упаковка 22 описаний в JSON
     - build_batch_relevance_prompt() - формирование промпта для batch-оценки
     - evaluate_batch_relevance() - выполнение batch-запроса к Claude API
+    - get_cached_json_container() - загрузка/сохранение кэша JSON-контейнера
 
 Примеры использования см. в tests/test_relevance_evaluator.py
 """
@@ -22,9 +23,12 @@ JSON-контейнер и оцениваются за один API запрос
 import asyncio
 import json
 import logging
+import os
 import re
+import tempfile
 import time
 import unicodedata
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -47,6 +51,12 @@ BATCH_REQUEST_TIMEOUT = 60  # Таймаут для batch-запроса (сек
 
 # Путь к директории с описаниями отчетов
 REPORT_DESCRIPTIONS_DIR = Path(__file__).parent.parent / "Description" / "Report content"
+
+# Путь к файлу кэша JSON-контейнера
+JSON_CACHE_PATH = Path(__file__).parent.parent / "cache" / "json_container_cache.json"
+
+# Версия формата кэша (для совместимости)
+CACHE_VERSION = "1.0"
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +114,244 @@ INDEX_DISPLAY_NAMES: Dict[str, str] = {
     "Iskhodniki_dizayn": "Исходники (Дизайн)",
     "Iskhodniki_obsledovanie": "Исходники (Обследование)"
 }
+
+
+# === ФУНКЦИИ КЭШИРОВАНИЯ JSON-КОНТЕЙНЕРА ===
+
+
+def get_default_cache_path() -> Path:
+    """
+    Возвращает путь к файлу кэша JSON-контейнера.
+
+    Создает директорию cache/ если она не существует.
+
+    Returns:
+        Path: Абсолютный путь к файлу кэша
+
+    Example:
+        >>> path = get_default_cache_path()
+        >>> path.name
+        'json_container_cache.json'
+    """
+    cache_dir = JSON_CACHE_PATH.parent
+
+    # Создать директорию cache/ если не существует
+    if not cache_dir.exists():
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Создана директория кэша: {cache_dir}")
+
+    return JSON_CACHE_PATH
+
+
+def save_json_cache(container: str, cache_path: Path) -> None:
+    """
+    Сохраняет JSON-контейнер в файл кэша с метаданными.
+
+    Использует атомарную запись через временный файл для предотвращения
+    повреждения кэша при сбоях во время записи.
+
+    Args:
+        container: JSON-строка контейнера от build_json_container()
+        cache_path: Путь к файлу кэша
+
+    Raises:
+        PermissionError: Если нет прав на запись в файл
+        OSError: При других ошибках записи
+
+    Example:
+        >>> container = build_json_container(descriptions)
+        >>> save_json_cache(container, get_default_cache_path())
+    """
+    temp_fd = None
+    temp_path = None
+
+    try:
+        # Парсим контейнер для извлечения метаданных
+        container_data = json.loads(container)
+        total_reports = container_data.get("total_reports", 0)
+        total_indices = container_data.get("total_indices", 0)
+
+        # Структура файла кэша с метаданными и версией
+        cache_data = {
+            "version": CACHE_VERSION,
+            "created_at": datetime.now().isoformat(),
+            "total_reports": total_reports,
+            "total_indices": total_indices,
+            "container": container
+        }
+
+        # Создать директорию если не существует
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Атомарная запись через временный файл
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=cache_path.parent,
+            suffix='.tmp',
+            prefix='cache_'
+        )
+
+        with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+            temp_fd = None  # os.fdopen взял ownership
+            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+
+        # Атомарное перемещение
+        os.replace(temp_path, cache_path)
+        temp_path = None  # Успешно перемещен
+
+        logger.debug(
+            f"Кэш JSON-контейнера сохранен: {cache_path} "
+            f"({total_reports} отчетов, {total_indices} индексов)"
+        )
+
+    except PermissionError as e:
+        logger.error(f"Нет прав на запись в файл кэша {cache_path}: {e}")
+        raise
+    except json.JSONDecodeError as e:
+        logger.error(f"Ошибка парсинга JSON-контейнера для сохранения: {e}")
+        raise
+    except OSError as e:
+        logger.error(f"Ошибка записи файла кэша {cache_path}: {e}")
+        raise
+    finally:
+        # Очистка временного файла если остался
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass  # Игнорируем ошибки при очистке
+
+
+def load_json_cache(cache_path: Path) -> str:
+    """
+    Загружает JSON-контейнер из файла кэша.
+
+    Проверяет версию кэша и валидирует содержимое контейнера.
+
+    Args:
+        cache_path: Путь к файлу кэша
+
+    Returns:
+        str: JSON-строка контейнера (только поле "container")
+
+    Raises:
+        FileNotFoundError: Если файл кэша не существует
+        json.JSONDecodeError: Если файл содержит невалидный JSON
+        KeyError: Если в файле отсутствует поле "container"
+        ValueError: Если версия кэша несовместима или содержимое невалидно
+
+    Example:
+        >>> container = load_json_cache(get_default_cache_path())
+        >>> data = json.loads(container)
+        >>> data["total_reports"]
+        22
+    """
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cache_data = json.load(f)
+
+        # Проверка версии кэша
+        cache_version = cache_data.get("version")
+        if cache_version != CACHE_VERSION:
+            raise ValueError(
+                f"Несовместимая версия кэша: {cache_version}, "
+                f"ожидается {CACHE_VERSION}. Удалите файл кэша для пересоздания."
+            )
+
+        # Извлекаем только контейнер
+        if "container" not in cache_data:
+            raise KeyError(f"В файле кэша отсутствует поле 'container': {cache_path}")
+
+        container = cache_data["container"]
+
+        # Валидация содержимого
+        if not container or not isinstance(container, str):
+            raise ValueError(f"Невалидное содержимое container в кэше: {cache_path}")
+
+        # Проверка что это валидный JSON с нужной структурой
+        try:
+            container_data = json.loads(container)
+            required_fields = ["reports", "total_reports", "total_indices"]
+            missing = [f for f in required_fields if f not in container_data]
+            if missing:
+                raise ValueError(f"Отсутствуют обязательные поля: {missing}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"container не является валидным JSON: {e}")
+
+        # Логируем метаданные кэша
+        created_at = cache_data.get("created_at", "unknown")
+        total_reports = cache_data.get("total_reports", 0)
+
+        logger.debug(
+            f"Кэш загружен: создан {created_at}, "
+            f"{total_reports} отчетов"
+        )
+
+        return container
+
+    except FileNotFoundError:
+        logger.debug(f"Файл кэша не найден: {cache_path}")
+        raise
+    except json.JSONDecodeError as e:
+        logger.error(f"Ошибка парсинга файла кэша {cache_path}: {e}")
+        raise
+    except PermissionError as e:
+        logger.error(f"Нет прав на чтение файла кэша {cache_path}: {e}")
+        raise
+
+
+def get_cached_json_container(
+    report_descriptions: Dict[str, str],
+    cache_path: Path | None = None
+) -> str:
+    """
+    Получает JSON-контейнер из кэша или создает новый.
+
+    Если файл кэша существует - загружает контейнер из него.
+    Если нет - вызывает build_json_container(), сохраняет в кэш и возвращает.
+
+    Args:
+        report_descriptions: Словарь {имя_отчета: описание}
+        cache_path: Путь к файлу кэша. Если None, используется JSON_CACHE_PATH
+
+    Returns:
+        str: JSON-строка контейнера
+
+    Example:
+        >>> descriptions = load_report_descriptions()
+        >>> container = get_cached_json_container(descriptions)
+        >>> # При первом вызове создает кэш
+        >>> # При последующих - загружает из кэша
+
+    Notes:
+        - Для пересборки кэша просто удалите файл cache/json_container_cache.json
+        - Кэш персистентный (хранится в файловой системе)
+    """
+    if cache_path is None:
+        cache_path = get_default_cache_path()
+
+    # Проверяем существование кэша
+    if cache_path.exists():
+        try:
+            container = load_json_cache(cache_path)
+            logger.info(f"JSON-контейнер загружен из кэша: {cache_path}")
+            return container
+        except (json.JSONDecodeError, KeyError, PermissionError, ValueError) as e:
+            # Кэш поврежден или несовместим - пересоздаем
+            logger.warning(f"Кэш поврежден или несовместим, пересоздаем: {e}")
+
+    # Кэш не существует или поврежден - создаем новый
+    logger.info("Создание нового JSON-контейнера...")
+    container = build_json_container(report_descriptions)
+
+    # Сохраняем в кэш
+    try:
+        save_json_cache(container, cache_path)
+        logger.info(f"JSON-контейнер создан и сохранен в кэш: {cache_path}")
+    except (PermissionError, OSError) as e:
+        # Не удалось сохранить кэш - продолжаем работу без него
+        logger.warning(f"Не удалось сохранить кэш: {e}")
+
+    return container
 
 
 def load_report_descriptions() -> Dict[str, str]:
@@ -1093,17 +1341,16 @@ async def evaluate_report_relevance(
     # === BATCH-МЕХАНИЗМ ОЦЕНКИ РЕЛЕВАНТНОСТИ ===
     #
     # Вместо 22 параллельных запросов используем один batch-запрос:
-    # 1. build_json_container() упаковывает все 22 описания отчетов в структурированный JSON
-    #    Это позволяет передать всю информацию в одном запросе к Claude API
+    # 1. get_cached_json_container() загружает кэш или создает новый JSON-контейнер
+    #    Это позволяет не пересобирать контейнер при каждом запросе
     #
     # 2. evaluate_batch_relevance() отправляет JSON-контейнер и получает оценки для всех отчетов
     #    Возвращает Dict[str, float] - тот же формат что и раньше
     #    Это снижает количество API вызовов с 22 до 1, уменьшая latency и стоимость
 
-    # Упаковать все описания отчетов в единый JSON-контейнер
-    # JSON содержит структуру: reports (22 шт), indices (7 категорий), метаданные
-    json_container = build_json_container(report_descriptions)
-    logger.info(f"JSON-контейнер создан: {len(json_container)} символов")
+    # Получить JSON-контейнер из кэша или создать новый
+    json_container = get_cached_json_container(report_descriptions)
+    logger.info(f"JSON-контейнер готов: {len(json_container)} символов")
 
     # Выполнить batch-оценку релевантности за один API запрос
     # evaluate_batch_relevance() внутри вызывает build_batch_relevance_prompt()

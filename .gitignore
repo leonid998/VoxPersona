@@ -118,3 +118,6 @@ text_without_roles/
 
 # Task management (internal documentation)
 TASKS/
+
+# Cache for JSON container (Router Agent)
+cache/
