@@ -2580,6 +2580,9 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
         st["deep_search"] = deep_search
         st["top_indices"] = top_indices
         st["raw_search_mode"] = True  # Флаг для обхода повторного улучшения
+        # ИСПРАВЛЕНИЕ CODE REVIEW (2025-11-23):
+        # Устанавливаем корректный step для согласованности с handle_query_send_as_is
+        st["step"] = "awaiting_index_selection"
         user_states[chat_id] = st
 
         from markups import make_index_selection_markup
@@ -2588,9 +2591,16 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
         await send_menu(chat_id, app, INDEX_SELECTION_MENU_TEXT, make_index_selection_markup())
         await callback.answer("Выберите индекс для поиска")
 
-    finally:
-        # Гарантированная очистка временных данных (даже при ошибках)
+        # ИСПРАВЛЕНИЕ КРИТИЧЕСКАЯ ПРОБЛЕМА 2 (2025-11-23):
+        # Удален finally блок с user_states.pop(temp_key, None)
+        # Данные expansion_* нужны при выборе индекса (строки 3100-3107),
+        # поэтому очистка перенесена в _execute_search_without_expansion
+
+    except Exception as e:
+        # При ошибке очищаем данные
         user_states.pop(temp_key, None)
+        logger.error(f"[handle_expand_send] Error: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка", show_alert=True)
 
 async def handle_expand_refine(callback: CallbackQuery, app: Client):
     """
@@ -2751,6 +2761,10 @@ async def handle_query_send_as_is(callback: CallbackQuery, app: Client):
     # Устанавливаем флаг raw_search_mode для отслеживания пути без улучшения
     st = user_states.get(chat_id, {})
     st["raw_search_mode"] = True
+    # ИСПРАВЛЕНИЕ КРИТИЧЕСКАЯ ПРОБЛЕМА 3 (2025-11-23):
+    # Устанавливаем корректный step для выбора индекса,
+    # иначе step остается прежним (например "awaiting_expansion_choice")
+    st["step"] = "awaiting_index_selection"
     user_states[chat_id] = st
 
     from markups import make_index_selection_markup
@@ -3094,10 +3108,13 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         conversation_id = st.get("conversation_id", "")
 
         # Fallback: поиск по expansion_{hash} ключам (там хранятся данные улучшения)
+        # ИСПРАВЛЕНИЕ КРИТИЧЕСКАЯ ПРОБЛЕМА 1 (2025-11-23):
+        # Данные expansion_{hash} хранятся в user_states (верхний уровень),
+        # а не в user_states[chat_id]. См. markups.py:452-453
         if not question:
-            for key in st.keys():
+            for key in list(user_states.keys()):  # user_states, НЕ st
                 if key.startswith("expansion_"):
-                    expansion_data = st[key]
+                    expansion_data = user_states[key]
                     question = expansion_data.get("expanded", "")
                     deep_search = expansion_data.get("deep_search", False)
                     conversation_id = expansion_data.get("conversation_id", "")
@@ -3166,6 +3183,13 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
             st_ev.set()
             sp_th.join()
 
+        # ИСПРАВЛЕНИЕ КРИТИЧЕСКАЯ ПРОБЛЕМА 2 (дополнение, 2025-11-23):
+        # Очистка expansion_* данных после успешного выполнения поиска
+        # Ранее данные удалялись преждевременно в handle_expand_send
+        for key in list(user_states.keys()):
+            if key.startswith("expansion_"):
+                user_states.pop(key, None)
+
         await callback.answer(f"Поиск в индексе: {display_name}")
         return
 
@@ -3181,15 +3205,18 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
     top_indices = None  # ДОБАВЛЕНО: извлечение top_indices для передачи в show_expanded_query_menu
 
     # Fallback: поиск по expansion_{hash} ключам
+    # ИСПРАВЛЕНИЕ CODE REVIEW (2025-11-23):
+    # Данные expansion_{hash} хранятся в user_states (верхний уровень),
+    # а не в user_states[chat_id] (st). Аналогично исправлению в строках 3108-3118
     if not original_question:
-        for key in st.keys():
+        for key in list(user_states.keys()):  # user_states, НЕ st
             if key.startswith("expansion_"):
-                expansion_data = st[key]
+                expansion_data = user_states[key]  # user_states, НЕ st
                 original_question = expansion_data.get("original", "")
                 expanded_question = expansion_data.get("expanded", "")
                 conversation_id = expansion_data.get("conversation_id", "")
                 deep_search = expansion_data.get("deep_search", False)
-                top_indices = expansion_data.get("top_indices", None)  # ДОБАВЛЕНО
+                top_indices = expansion_data.get("top_indices", None)
                 break
 
     # Валидация: проверка наличия данных
