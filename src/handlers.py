@@ -2473,6 +2473,14 @@ def register_handlers(app: Client):
 
         except Exception as e:
             logging.exception(f"Ошибка в callback_query_handler: {e}")
+            # Уведомляем пользователя об ошибке
+            try:
+                await app.send_message(
+                    c_id,
+                    "Произошла ошибка. Используйте /start для возврата в главное меню."
+                )
+            except Exception as notify_err:
+                logger.error(f"Не удалось уведомить пользователя: {notify_err}")
 
 # ============ QUERY EXPANSION HANDLERS (ФАЗА 4) ============
 def check_session_ttl(temp_key: str) -> tuple[bool, dict | None]:
@@ -3077,6 +3085,10 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
     """
     chat_id = callback.message.chat.id
 
+    # Логирование для отладки
+    logger.info(f"[handle_index_selected] chat_id={chat_id}, index_name={index_name}")
+    logger.info(f"[handle_index_selected] user_states keys: {list(user_states.get(chat_id, {}).keys())}")
+
     # Инициализация состояния если не существует
     if chat_id not in user_states:
         user_states[chat_id] = {}
@@ -3162,6 +3174,7 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
             from run_analysis import run_dialog_mode
 
             # ИСПРАВЛЕНИЕ #6b: Получение top_indices для передачи в run_dialog_mode
+            # Примечание: проверка rags выполнена выше (строка 3158)
             # Согласно inspection.md п.6 - несогласованность передачи top_indices
             # При raw_search_mode и skip_expansion=True Router Agent НЕ вызывается,
             # поэтому top_indices нужно получить здесь для улучшения качества поиска
