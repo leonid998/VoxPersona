@@ -3041,9 +3041,25 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         user_states[chat_id].pop("raw_search_mode", None)
 
         # Запускаем поиск напрямую
-        question = st.get("pending_question", "")
+        # ИСПРАВЛЕНИЕ: Ищем улучшенный вопрос в expansion_{hash} ключах
+        # (аналогично логике в строках 3116-3126 для оригинальной логики выбора индекса)
+        question = st.get("expanded_question", "")
         deep_search = st.get("deep_search", False)
         conversation_id = st.get("conversation_id", "")
+
+        # Fallback: поиск по expansion_{hash} ключам (там хранятся данные улучшения)
+        if not question:
+            for key in st.keys():
+                if key.startswith("expansion_"):
+                    expansion_data = st[key]
+                    question = expansion_data.get("expanded", "")
+                    deep_search = expansion_data.get("deep_search", False)
+                    conversation_id = expansion_data.get("conversation_id", "")
+                    break
+
+        # Финальный fallback на pending_question
+        if not question:
+            question = st.get("pending_question", "")
 
         if not question:
             await callback.answer("Вопрос не найден.", show_alert=True)

@@ -622,13 +622,17 @@ async def show_expanded_query_menu(
         index_display_name = INDEX_DISPLAY_NAMES.get(selected_index, selected_index)
         index_info += f"🎯 **Выбран индекс:** {index_display_name}\n\n"
 
-    text = (
+    # Формируем текст с улучшенным вопросом (отправляется как info_message - не удаляется)
+    info_text = (
         f"📝 **Ваш вопрос:**\n"
         f"_{original}_\n\n"
         f"🔍 **Улучшенный вопрос:**\n"
         f"*{expanded_display}*\n\n"
-        f"{index_info}Отправить улучшенный вопрос в {'глубокое исследование' if deep_search else 'быстрый поиск'}?"
+        f"{index_info}"
     )
+
+    # Текст для меню с кнопками (короткий, удаляется при смене контекста)
+    menu_text = f"Отправить улучшенный вопрос в {'глубокое исследование' if deep_search else 'быстрый поиск'}?"
 
 
     # Полноценная клавиатура с hash и user_states
@@ -643,16 +647,27 @@ async def show_expanded_query_menu(
         top_indices=top_indices  # ЗАДАЧА 2.3: Передаем топ-3 индексов для сохранения в user_states
     )
 
-    # Отправляем меню с защитой от MESSAGE_TOO_LONG
+    # ШАГ 3.3: Разделяем отправку на info_message и menu
+    # Это решает проблему: текст с улучшенным вопросом остается видимым при выборе индекса
+    # info_message НЕ удаляется автоматически (в отличие от menu)
     try:
-        await send_menu(chat_id, app, text, markup)
+        # 1. Отправляем текст с улучшенным вопросом как info_message (не удаляется)
+        await track_and_send(
+            chat_id=chat_id,
+            app=app,
+            text=info_text,
+            message_type="info_message"
+        )
+
+        # 2. Отправляем кнопки как отдельное menu
+        await send_menu(chat_id, app, menu_text, markup)
     except Exception as e:
         # Если всё равно превышен лимит (например, из-за original вопроса) - используем fallback
         if "MESSAGE_TOO_LONG" in str(e):
             logger = logging.getLogger(__name__)
             logger.error(
                 f"[Query Expansion] MESSAGE_TOO_LONG even after truncation! "
-                f"Text length: {len(text)} chars. Chat ID: {chat_id}. "
+                f"Text length: {len(info_text)} chars. Chat ID: {chat_id}. "
                 f"Sending minimal fallback message."
             )
             # Минимальное сообщение-fallback
@@ -770,7 +785,8 @@ def _process_manual_index_selection(
 async def _run_router_agent(
     text_to_search: str,
     rags: dict,
-    top_indices: list[tuple] | None
+    top_indices: list[tuple] | None,
+    skip_enhancement: bool = False
 ) -> tuple[str, str, object, str]:
     """
     Запускает Router Agent для автоматического выбора оптимального индекса.
@@ -779,6 +795,7 @@ async def _run_router_agent(
         text_to_search: Текст запроса для поиска
         rags: Словарь RAG индексов
         top_indices: Топ-K рекомендаций для улучшения вопроса
+        skip_enhancement: Пропустить улучшение вопроса (True если вопрос уже улучшен через expand_query)
 
     Returns:
         tuple[str, str, object, str]: (улучшенный_запрос, имя_сценария, rag_объект, категория)
@@ -814,14 +831,21 @@ async def _run_router_agent(
             logging.info(f"[Router] Получено {len(top_indices)} топ-индексов для улучшения вопроса")
 
         # Этап 4: Улучшение вопроса для выбранного индекса
-        logging.info(f"[Router] Улучшение вопроса для индекса '{selected_index}'...")
-        enhanced_question = enhance_question_for_index(
-            text_to_search,
-            selected_index,
-            report_descriptions,
-            top_indices=top_indices
-        )
-        logging.info(f"[Router] Улучшенный вопрос: {enhanced_question[:150]}...")
+        # Пропускаем если вопрос уже улучшен через expand_query() (избегаем двойного улучшения)
+        if skip_enhancement:
+            # Вопрос уже улучшен через expand_query(), повторное улучшение не нужно
+            # Это решает проблему двойного улучшения вопроса
+            logging.info(f"[Router] Пропуск enhance_question_for_index (skip_enhancement=True)")
+            enhanced_question = text_to_search
+        else:
+            logging.info(f"[Router] Улучшение вопроса для индекса '{selected_index}'...")
+            enhanced_question = enhance_question_for_index(
+                text_to_search,
+                selected_index,
+                report_descriptions,
+                top_indices=top_indices
+            )
+            logging.info(f"[Router] Улучшенный вопрос: {enhanced_question[:150]}...")
 
         # Маппинг имен индексов Router Agent -> rags
         scenario_name = ROUTER_TO_RAG_MAPPING.get(selected_index, selected_index)
@@ -1055,8 +1079,11 @@ async def run_dialog_mode(
 
     # Автоматический Router Agent если ручной выбор не использован
     if not skip_router_agent:
+        # Передаем skip_expansion как skip_enhancement в Router Agent
+        # Если вопрос уже улучшен через expand_query(), не нужно улучшать его снова
+        # через enhance_question_for_index() - это решает проблему двойного улучшения
         text_to_search, scenario_name, rag, category = await _run_router_agent(
-            text_to_search, rags, top_indices
+            text_to_search, rags, top_indices, skip_enhancement=skip_expansion
         )
     else:
         # При ручном выборе получаем rag и category из scenario_name
