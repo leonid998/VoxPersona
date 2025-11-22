@@ -6,6 +6,8 @@ from conversations import ConversationMetadata
 import time
 import hashlib
 from typing import List, Tuple, Optional
+# Шаг 3.4: Добавлен импорт INDEX_DISPLAY_NAMES для корректного отображения названий индексов
+from index_selector import INDEX_DISPLAY_NAMES
 
 # Константы для session management
 SESSION_TTL_SECONDS = 3600  # 1 час TTL для сессий query expansion
@@ -347,6 +349,7 @@ def make_index_selection_markup() -> InlineKeyboardMarkup:
     Создает клавиатуру для ручного выбора RAG индекса.
 
     ФАЗА 3: Router Agent - UI для выбора индекса
+    Шаг 3.4: Обновлено для использования INDEX_DISPLAY_NAMES - решает проблему несогласованности названий
 
     Структура:
     - 7 кнопок для индексов (каждая на отдельной строке)
@@ -357,21 +360,22 @@ def make_index_selection_markup() -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup([
         # Индекс 1: Дизайн (структурированные данные)
-        [InlineKeyboardButton("Дизайн (Структурированные аудиты)", callback_data="idx_Dizayn")],
+        [InlineKeyboardButton(INDEX_DISPLAY_NAMES.get("Dizayn", "Аудит дизайна (Казань)"), callback_data="idx_Dizayn")],
         # Индекс 2: Интервью (транскрипции)
-        [InlineKeyboardButton("Интервью (Транскрипции)", callback_data="idx_Intervyu")],
+        [InlineKeyboardButton(INDEX_DISPLAY_NAMES.get("Intervyu", "Интервью (Казань)"), callback_data="idx_Intervyu")],
         # Индекс 3: Отчеты по дизайну (60 отелей)
-        [InlineKeyboardButton("Отчеты по дизайну (60 отелей)", callback_data="idx_Otchety_po_dizaynu")],
+        [InlineKeyboardButton(INDEX_DISPLAY_NAMES.get("Otchety_po_dizaynu", "Отчеты по дизайну (РФ)"), callback_data="idx_Otchety_po_dizaynu")],
         # Индекс 4: Отчеты по обследованию
-        [InlineKeyboardButton("Отчеты по обследованию", callback_data="idx_Otchety_po_obsledovaniyu")],
+        [InlineKeyboardButton(INDEX_DISPLAY_NAMES.get("Otchety_po_obsledovaniyu", "Отчеты по обследованию (РФ)"), callback_data="idx_Otchety_po_obsledovaniyu")],
         # Индекс 5: Итоговые отчеты
-        [InlineKeyboardButton("Итоговые отчеты", callback_data="idx_Itogovye_otchety")],
+        [InlineKeyboardButton(INDEX_DISPLAY_NAMES.get("Itogovye_otchety", "Итоговые отчеты (РФ)"), callback_data="idx_Itogovye_otchety")],
         # Индекс 6: Исходники (Дизайн)
-        [InlineKeyboardButton("Исходники (Дизайн)", callback_data="idx_Iskhodniki_dizayn")],
+        [InlineKeyboardButton(INDEX_DISPLAY_NAMES.get("Iskhodniki_dizayn", "Исходники дизайн (РФ)"), callback_data="idx_Iskhodniki_dizayn")],
         # Индекс 7: Исходники (Обследование)
-        [InlineKeyboardButton("Исходники (Обследование)", callback_data="idx_Iskhodniki_obsledovanie")],
+        [InlineKeyboardButton(INDEX_DISPLAY_NAMES.get("Iskhodniki_obsledovanie", "Исходники обследование (РФ)"), callback_data="idx_Iskhodniki_obsledovanie")],
         # Кнопка "Назад" (возврат к меню запроса)
-        [InlineKeyboardButton(f"{BUTTON_BACK} Назад", callback_data="back_to_query_menu")]
+        [# Шаг 3.2: Исправлено дублирование текста "Назад Назад" - решает проблему дублирования в UI
+        InlineKeyboardButton(f"{BUTTON_BACK}", callback_data="back_to_query_menu")]
     ])
 
 
@@ -393,7 +397,8 @@ def make_index_mode_selection_markup() -> InlineKeyboardMarkup:
         # Режим 2: Ручной выбор пользователем
         [InlineKeyboardButton("Выбрать индекс вручную", callback_data="search_manual_index")],
         # Кнопка назад
-        [InlineKeyboardButton(f"{BUTTON_BACK} Назад", callback_data="back_to_query_choice")]
+        [# Шаг 3.2: Исправлено дублирование текста "Назад Назад" - решает проблему дублирования в UI
+        InlineKeyboardButton(f"{BUTTON_BACK}", callback_data="back_to_query_choice")]
     ])
 
 
@@ -463,9 +468,11 @@ def make_query_expansion_markup(
 
     return InlineKeyboardMarkup([
         # Кнопка 1: Отправить улучшенный запрос в поиск
-        [InlineKeyboardButton("Отправить в поиск", callback_data=send_data)],
+        # Шаг 3.3: Изменен текст кнопки для ясности - решает проблему непонятного действия
+        [InlineKeyboardButton("Отправить как есть", callback_data=send_data)],
         # Кнопка 2: Уточнить запрос еще раз
-        [InlineKeyboardButton("Уточнить еще раз", callback_data=refine_data)],
+        # Шаг 3.3: Изменен текст кнопки для ясности - решает проблему непонятного действия
+        [InlineKeyboardButton("Улучшить ещё раз", callback_data=refine_data)],
         # Кнопка 3: Выбрать индекс вручную (НОВАЯ)
         [InlineKeyboardButton("Выбрать индекс вручную", callback_data="select_index_manual")],
         # Кнопка 4: Назад

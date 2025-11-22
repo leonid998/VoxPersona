@@ -958,10 +958,11 @@ async def _execute_search_and_send_response(
         logging.info("Запущено Глубокое исследование")
         answer = run_deep_search(content, text=text_to_search, chat_id=chat_id, app=app, category=category)
     else:
+        # Шаг 3.5: Изменен текст статуса на более информативный - решает проблему непонятного статуса
         await track_and_send(
             chat_id=chat_id,
             app=app,
-            text="Запущен быстрый поиск",
+            text="Анализирую...",
             message_type="status_message"
         )
         logging.info("Запущен быстрый поиск")

@@ -1123,10 +1123,11 @@ async def handle_menu_dialog(chat_id: int, app: Client):
         conversation_id = ensure_active_conversation(chat_id, username)
 
     # Устанавливаем состояние диалога
+    # Шаг 3.7: Установка быстрого поиска по умолчанию при старте - решает проблему отсутствия default режима
     user_states[chat_id] = {
         "conversation_id": conversation_id,
         "step": "dialog_mode",
-        "deep_search": st.get("deep_search", False)  # Сохраняем предыдущий режим
+        "deep_search": False  # Быстрый поиск по умолчанию
     }
 
     await send_menu(
