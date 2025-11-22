@@ -2820,57 +2820,91 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
         message_type="status_message"
     )
 
-    # Вызываем expand_query
-    from query_expander import expand_query
+    # ИСПРАВЛЕНО (2025-11-23): Изменен порядок вызовов для повышения точности улучшения
+    # БЫЛО: expand_query() -> _get_router_recommendations()
+    # СТАЛО: _get_router_recommendations() -> enhance_question_for_index()
+    # ЗАЧЕМ: Сначала определить наиболее релевантный индекс, потом улучшить вопрос ПОД ЭТОТ индекс
+    # Связь: Функция enhance_question_for_index использует описания отчетов конкретного индекса
+    # для создания более точного улучшенного вопроса
+
+    from run_analysis import show_expanded_query_menu, _get_router_recommendations
+    from question_enhancer import enhance_question_for_index
+    from relevance_evaluator import load_report_descriptions
 
     try:
-        expansion_result = expand_query(original_question)
+        # ШАГ 1: СНАЧАЛА определяем релевантный индекс через Router Agent
+        # ЗАЧЕМ: Чтобы улучшить вопрос именно под этот индекс (а не под общий контекст descry.md)
+        # ПОЧЕМУ важен порядок: expand_query использует общее описание БД (descry.md),
+        # а enhance_question_for_index использует описания отчетов конкретного индекса
+        top_indices = await _get_router_recommendations(original_question, chat_id)
+
+        if not top_indices:
+            # Не удалось получить рекомендации индексов
+            logging.warning(f"[Query Choice] Router Agent вернул пустой список для chat_id={chat_id}")
+            await callback.answer(
+                "⚠️ Не удалось определить индекс, отправляю оригинальный вопрос",
+                show_alert=True
+            )
+            await _execute_search_without_expansion(
+                chat_id, original_question, deep_search, conversation_id, app
+            )
+            return
+
+        # Определяем лучший индекс для улучшения вопроса
+        best_index = top_indices[0][0] if top_indices else None
+        logging.info(f"[Query Choice] Router Agent выбрал индекс: {best_index} для chat_id={chat_id}")
+
+        # ШАГ 2: Улучшаем вопрос с учетом выбранного индекса
+        # ЗАЧЕМ: enhance_question_for_index использует описания отчетов именно этого индекса,
+        # что даёт более точное улучшение, чем общий expand_query
+        report_descriptions = load_report_descriptions()
+
+        expanded_question = enhance_question_for_index(
+            original_question=original_question,
+            selected_index=best_index,
+            report_descriptions=report_descriptions,
+            top_indices=top_indices  # Контекст топ-3 для повышения качества улучшения
+        )
+
+        # Проверка: было ли улучшение успешным
+        # КРИТЕРИЙ: улучшенный вопрос должен отличаться от оригинала
+        if expanded_question and expanded_question != original_question:
+            # Успех: показываем меню с улучшенным вопросом и рекомендациями индексов
+            await show_expanded_query_menu(
+                chat_id=chat_id,
+                app=app,
+                original=original_question,
+                expanded=expanded_question,
+                conversation_id=conversation_id,
+                deep_search=deep_search,
+                refine_count=0,  # Первая попытка улучшения
+                top_indices=top_indices  # Рекомендации Router Agent для отображения в UI
+            )
+            logging.info(
+                f"[Query Choice] Successfully enhanced for chat_id={chat_id}, "
+                f"best_index={best_index}, top_indices={len(top_indices)}"
+            )
+            return  # Предотвращаем выполнение fallback блока
+        else:
+            # Улучшение не сработало (enhance_question_for_index вернул оригинал)
+            logging.warning(
+                f"[Query Choice] Enhancement failed for chat_id={chat_id}: "
+                f"enhanced == original, best_index={best_index}"
+            )
+            await callback.answer(
+                "⚠️ Улучшение не применилось, отправляю оригинальный вопрос",
+                show_alert=True
+            )
+            await _execute_search_without_expansion(
+                chat_id, original_question, deep_search, conversation_id, app
+            )
+            return
+
     except Exception as e:
-        # Обработка критической ошибки expand_query
-        logging.error(f"[Query Choice] expand_query failed: {e}", exc_info=True)
+        # Обработка критической ошибки (Router Agent или enhance_question_for_index)
+        logging.error(f"[Query Choice] Enhancement pipeline failed: {e}", exc_info=True)
         await callback.answer(
             "⚠️ Не удалось улучшить вопрос, отправляю оригинал",
-            show_alert=True
-        )
-        # Fallback: отправка без улучшения
-        await _execute_search_without_expansion(
-            chat_id, original_question, deep_search, conversation_id, app
-        )
-        return
-
-    # Проверка: было ли улучшение успешным
-    if expansion_result["used_descry"] and expansion_result["expanded"] != original_question:
-        # Успех: получаем рекомендации индексов от Router Agent
-        # ЗАЧЕМ: Пользователю нужно видеть какие индексы наиболее релевантны для его вопроса
-        # ПОЧЕМУ здесь: После успешного expand_query нужно проанализировать улучшенный вопрос
-        # Связь: Эталонная реализация в run_analysis.py:run_dialog_mode() строки 1049-1060
-        from run_analysis import show_expanded_query_menu, _get_router_recommendations
-
-        # Получаем рекомендации топ-K индексов на основе улучшенного вопроса
-        expanded_question = expansion_result["expanded"]
-        top_indices = await _get_router_recommendations(expanded_question, chat_id)
-
-        # Показываем меню с улучшенным вопросом и рекомендациями индексов
-        await show_expanded_query_menu(
-            chat_id=chat_id,
-            app=app,
-            original=expansion_result["original"],
-            expanded=expanded_question,
-            conversation_id=conversation_id,
-            deep_search=deep_search,
-            refine_count=0,  # Первая попытка улучшения
-            top_indices=top_indices  # Рекомендации Router Agent для отображения в UI
-        )
-        logging.info(f"[Query Choice] Successfully expanded for chat_id={chat_id}, top_indices={len(top_indices) if top_indices else 0}")
-        return  # ✅ ISSUE #1 FIX: предотвращаем выполнение else блока
-    else:
-        # Улучшение не сработало (например, descry.md пустой или expanded == original)
-        error_reason = expansion_result.get("error", "unknown")
-        logging.warning(
-            f"[Query Choice] Expansion failed for chat_id={chat_id}: {error_reason}"
-        )
-        await callback.answer(
-            "⚠️ Улучшение не применилось, отправляю оригинальный вопрос",
             show_alert=True
         )
         # Fallback: отправка без улучшения
