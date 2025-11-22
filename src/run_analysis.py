@@ -1130,11 +1130,29 @@ async def run_dialog_mode(
         logging.error(f"Произошла ошибка: {e}", exc_info=True)
         await app.send_message(chat_id, error_message)
     finally:
+        # КРИТИЧНО: Восстанавливаем step = "dialog_mode" после завершения поиска
+        # Это позволяет пользователю задать следующий вопрос без повторного входа в чат
+        if chat_id in user_states:
+            user_states[chat_id]["step"] = "dialog_mode"
+            # Очищаем временные данные поиска
+            user_states[chat_id].pop("pending_question", None)
+            user_states[chat_id].pop("raw_search_mode", None)
+            user_states[chat_id].pop("selected_index", None)  # Очищаем старый выбор индекса
+            logging.info(f"[State Restore] chat_id={chat_id} step restored to dialog_mode")
+        else:
+            # Создаем минимальное состояние если отсутствует
+            user_states[chat_id] = {
+                "step": "dialog_mode",
+                "deep_search": False
+            }
+            logging.info(f"[State Create] chat_id={chat_id} created with dialog_mode")
+
         # После ответа показываем меню выбора режима
         await send_menu(
             chat_id=chat_id,
             app=app,
-            text="Какую информацию вы хотели бы получить?",
+            text="⚡ **Режим: Быстрый поиск**\n\n"
+                 "Задайте следующий вопрос или выберите другой режим 👇",
             reply_markup=make_dialog_markup()
         )
 
