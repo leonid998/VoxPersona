@@ -3092,9 +3092,7 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         - Вызывается после handle_select_index_manual
         - Возвращается в show_expanded_query_menu (из run_analysis)
     """
-    # ШАГ 30.4: Объявляем global rags для доступа к базе знаний
-    global rags
-
+    # Примечание: rags - глобальная переменная, доступна для чтения без global
     chat_id = callback.message.chat.id
 
     # ШАГ 30.1: Детальное логирование для диагностики
