@@ -183,7 +183,7 @@ def generate_db_answer(query: str,
     messages = [{"role": "user", "content": f'Вопрос пользователя: {query}'}]
 
     # Используется актуальная модель Claude Sonnet 4.5 (fallback если model/REPORT_MODEL_NAME не заданы)
-    response = send_msg_to_model(messages=messages, model=model or REPORT_MODEL_NAME or "claude-sonnet-4-5-20250929", system=f'{system_prompt} Вот наиболее релевантные отчеты из бд: \n{message_content}')
+    response = send_msg_to_model(messages=messages, model=model or REPORT_MODEL_NAME or "claude-haiku-4-5-20251001", system=f'{system_prompt} Вот наиболее релевантные отчеты из бд: \n{message_content}')
     return response
 
 async def send_msg_to_model_async(
@@ -285,7 +285,7 @@ async def _process_single_chunk_async(
             session=session,
             messages=messages,
             system=extract_prompt,
-            model=REPORT_MODEL_NAME or "claude-sonnet-4-5-20250929",  # Исправлено: актуальная модель Claude Sonnet 4.5
+            model=REPORT_MODEL_NAME or "claude-haiku-4-5-20251001",  # Исправлено: актуальная модель Claude Sonnet 4.5
             api_key=api_key,
             err=f"Ошибка при извлечении чанка #{idx}"
         )
@@ -364,7 +364,7 @@ def _process_single_chunk_sync(
             messages=[{"role": "user", "content": user_content}],
             system=extract_prompt,
             err=f"Ошибка при извлечении чанка #{idx}",
-            model=REPORT_MODEL_NAME or "claude-sonnet-4-5-20250929",  # Исправлено: актуальная модель Claude Sonnet 4.5
+            model=REPORT_MODEL_NAME or "claude-haiku-4-5-20251001",  # Исправлено: актуальная модель Claude Sonnet 4.5
             api_key=api_key
         )
         results[idx] = resp
@@ -457,7 +457,7 @@ def send_msg_to_model(
     # Fallback на актуальную модель Claude Sonnet 4.5 если model не задана
     # Исправлено: ранее использовалась несуществующая модель claude-sonnet-4-20250514
     if model is None:
-        model = "claude-sonnet-4-5-20250929"
+        model = "claude-haiku-4-5-20251001"
 
 
     model_args = {

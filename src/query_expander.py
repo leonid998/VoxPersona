@@ -267,7 +267,7 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
         expanded = send_msg_to_model(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1000,  # Улучшенный вопрос редко превышает 200 токенов
-            model="claude-sonnet-4-5-20250929"  # Claude Sonnet 4.5 (актуальная версия из CLAUDE.md)
+            model="claude-haiku-4-5-20251001"  # Claude Sonnet 4.5 (актуальная версия из CLAUDE.md)
         )
 
         # Логирование полного ответа Claude
