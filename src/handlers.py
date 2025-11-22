@@ -2773,6 +2773,15 @@ async def handle_query_send_as_is(callback: CallbackQuery, app: Client):
     # Устанавливаем корректный step для выбора индекса,
     # иначе step остается прежним (например "awaiting_expansion_choice")
     st["step"] = "awaiting_index_selection"
+
+    # ИСПРАВЛЕНИЕ ШАГ 30.2 (2025-11-23):
+    # При raw_search_mode ЯВНО копируем pending_question в original_question,
+    # чтобы handle_index_selected мог найти вопрос при поиске без улучшения
+    # Проблема: при "Отправить как есть" expanded_question пусто, и поиск не находил вопрос
+    if "pending_question" in st:
+        st["original_question"] = st["pending_question"]
+        logger.info(f"[Raw Search Mode] Скопирован pending_question -> original_question для chat_id={chat_id}")
+
     user_states[chat_id] = st
 
     from markups import make_index_selection_markup
@@ -3083,11 +3092,23 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         - Вызывается после handle_select_index_manual
         - Возвращается в show_expanded_query_menu (из run_analysis)
     """
+    # ШАГ 30.4: Объявляем global rags для доступа к базе знаний
+    global rags
+
     chat_id = callback.message.chat.id
 
-    # Логирование для отладки
+    # ШАГ 30.1: Детальное логирование для диагностики
+    # ИСПРАВЛЕНИЕ code review: используем setdefault для избежания race condition
+    st = user_states.setdefault(chat_id, {})
     logger.info(f"[handle_index_selected] chat_id={chat_id}, index_name={index_name}")
-    logger.info(f"[handle_index_selected] user_states keys: {list(user_states.get(chat_id, {}).keys())}")
+    logger.info(f"[handle_index_selected] user_states[{chat_id}] keys: {list(st.keys())}")
+    logger.info(f"[handle_index_selected] step={st.get('step')}, raw_search_mode={st.get('raw_search_mode')}")
+    logger.info(f"[handle_index_selected] pending_question={st.get('pending_question', '')[:50] if st.get('pending_question') else 'None'}")
+    logger.info(f"[handle_index_selected] original_question={st.get('original_question', '')[:50] if st.get('original_question') else 'None'}")
+    logger.info(f"[handle_index_selected] expanded_question={st.get('expanded_question', '')[:50] if st.get('expanded_question') else 'None'}")
+
+    # ШАГ 30.3: Проверка rags перед поиском
+    logger.info(f"[handle_index_selected] rags loaded: {bool(rags)}, count={len(rags) if rags else 0}, keys={list(rags.keys()) if rags else []}")
 
     # Инициализация состояния если не существует
     if chat_id not in user_states:
@@ -3104,22 +3125,34 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
 
     logger.info(f"[Manual Index Selection] chat_id={chat_id} selected index: {index_name}")
 
-    # Извлечение данных текущего запроса из user_states
-    st = user_states.get(chat_id, {})
+    # ИСПРАВЛЕНИЕ code review: st уже получен через setdefault выше, повторное получение удалено
 
     # ФАЗА 3: Проверка raw_search_mode (поиск без улучшения)
     if st.get("raw_search_mode"):
         # Очищаем флаг
         user_states[chat_id].pop("raw_search_mode", None)
 
-        # Запускаем поиск напрямую
-        # ИСПРАВЛЕНИЕ: Ищем улучшенный вопрос в expansion_{hash} ключах
-        # (аналогично логике в строках 3116-3126 для оригинальной логики выбора индекса)
-        question = st.get("expanded_question", "")
+        # ШАГ 30.2: Исправленная логика поиска question при raw_search_mode
+        # При "Отправить как есть" expanded_question ПУСТО, поэтому сначала ищем original_question
+        # (который мы теперь копируем из pending_question в handle_query_send_as_is)
         deep_search = st.get("deep_search", False)
         conversation_id = st.get("conversation_id", "")
 
-        # Fallback: поиск по expansion_{hash} ключам (там хранятся данные улучшения)
+        # ПРИОРИТЕТ 1: original_question (заполняется в handle_query_send_as_is из pending_question)
+        question = st.get("original_question", "")
+        logger.info(f"[Raw Search] Поиск вопроса - original_question: {'найден' if question else 'пусто'}")
+
+        # ПРИОРИТЕТ 2: pending_question (если original_question не был установлен)
+        if not question:
+            question = st.get("pending_question", "")
+            logger.info(f"[Raw Search] Поиск вопроса - pending_question: {'найден' if question else 'пусто'}")
+
+        # ПРИОРИТЕТ 3: expanded_question (на случай если был вызван expand_query до этого)
+        if not question:
+            question = st.get("expanded_question", "")
+            logger.info(f"[Raw Search] Поиск вопроса - expanded_question: {'найден' if question else 'пусто'}")
+
+        # ПРИОРИТЕТ 4: Fallback на expansion_{hash} ключи
         # ИСПРАВЛЕНИЕ КРИТИЧЕСКАЯ ПРОБЛЕМА 1 (2025-11-23):
         # Данные expansion_{hash} хранятся в user_states (верхний уровень),
         # а не в user_states[chat_id]. См. markups.py:452-453
@@ -3127,14 +3160,11 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
             for key in list(user_states.keys()):  # user_states, НЕ st
                 if key.startswith("expansion_"):
                     expansion_data = user_states[key]
-                    question = expansion_data.get("expanded", "")
+                    question = expansion_data.get("expanded", "") or expansion_data.get("original", "")
                     deep_search = expansion_data.get("deep_search", False)
                     conversation_id = expansion_data.get("conversation_id", "")
+                    logger.info(f"[Raw Search] Поиск вопроса - expansion_data: {'найден' if question else 'пусто'}")
                     break
-
-        # Финальный fallback на pending_question
-        if not question:
-            question = st.get("pending_question", "")
 
         if not question:
             await callback.answer("Вопрос не найден.", show_alert=True)
@@ -3155,10 +3185,26 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         sp_th = threading.Thread(target=run_loading_animation, args=(chat_id, msg.id, st_ev, app))
         sp_th.start()
 
+        # ШАГ 30.3: Детальная проверка rags с конкретными сообщениями об ошибках
         if not rags:
             st_ev.set()
             sp_th.join()
-            await app.send_message(chat_id, "База знаний ещё загружается, попробуйте позже.")
+            await app.send_message(chat_id, "🔄 База знаний ещё загружается, попробуйте позже.")
+            logger.warning(f"[Raw Search] rags пусто для chat_id={chat_id}")
+            return
+
+        # ШАГ 30.3: Проверка существования индекса в rags (с учетом ROUTER_TO_RAG_MAPPING)
+        rag_key = ROUTER_TO_RAG_MAPPING.get(index_name, index_name)
+        if rag_key not in rags:
+            st_ev.set()
+            sp_th.join()
+            available_indices = list(rags.keys())
+            await app.send_message(
+                chat_id,
+                f"❌ Индекс '{index_name}' (ключ: '{rag_key}') не найден в базе знаний.\n"
+                f"Доступные индексы: {', '.join(available_indices)}"
+            )
+            logger.error(f"[Raw Search] Индекс '{index_name}' -> '{rag_key}' не найден. Доступно: {available_indices}")
             return
 
         try:
@@ -3173,12 +3219,11 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
 
             from run_analysis import run_dialog_mode
 
-            # ИСПРАВЛЕНИЕ #6b: Получение top_indices для передачи в run_dialog_mode
-            # Примечание: проверка rags выполнена выше (строка 3158)
-            # Согласно inspection.md п.6 - несогласованность передачи top_indices
-            # При raw_search_mode и skip_expansion=True Router Agent НЕ вызывается,
-            # поэтому top_indices нужно получить здесь для улучшения качества поиска
-            top_indices = await _get_router_recommendations(question, chat_id)
+            # ИСПРАВЛЕНИЕ code review: При raw_search_mode пользователь УЖЕ выбрал индекс вручную
+            # Не нужно вызывать Router Agent - это лишняя нагрузка на API
+            # Формируем top_indices напрямую из выбранного пользователем индекса
+            top_indices = [(index_name, 1.0)]  # Один индекс с максимальным score
+            logger.info(f"[Raw Search] Используем выбранный пользователем индекс: {index_name}")
 
             await run_dialog_mode(
                 message=mock_message,
