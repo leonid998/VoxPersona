@@ -1138,7 +1138,9 @@ async def run_dialog_mode(
             user_states[chat_id].pop("pending_question", None)
             user_states[chat_id].pop("raw_search_mode", None)
             user_states[chat_id].pop("selected_index", None)  # Очищаем старый выбор индекса
-            logging.info(f"[State Restore] chat_id={chat_id} step restored to dialog_mode")
+            # Сброс режима поиска в Быстрый поиск после завершения диалога (req: err_task.txt п.4)
+            user_states[chat_id]["deep_search"] = False
+            logging.info(f"[State Restore] chat_id={chat_id} step restored to dialog_mode, deep_search reset to False")
         else:
             # Создаем минимальное состояние если отсутствует
             user_states[chat_id] = {

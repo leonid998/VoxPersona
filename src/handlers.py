@@ -64,7 +64,7 @@ from analysis import (
 # Logger для handlers
 logger = logging.getLogger(__name__)
 
-from run_analysis import run_analysis_with_spinner, run_dialog_mode, ROUTER_TO_RAG_MAPPING
+from run_analysis import run_analysis_with_spinner, run_dialog_mode, ROUTER_TO_RAG_MAPPING, _get_router_recommendations
 
 from audio_utils import extract_audio_filename, define_audio_file_params, transcribe_audio_and_save
 
@@ -2835,18 +2835,28 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
 
     # Проверка: было ли улучшение успешным
     if expansion_result["used_descry"] and expansion_result["expanded"] != original_question:
-        # Успех: показываем улучшенный вопрос
-        from run_analysis import show_expanded_query_menu
+        # Успех: получаем рекомендации индексов от Router Agent
+        # ЗАЧЕМ: Пользователю нужно видеть какие индексы наиболее релевантны для его вопроса
+        # ПОЧЕМУ здесь: После успешного expand_query нужно проанализировать улучшенный вопрос
+        # Связь: Эталонная реализация в run_analysis.py:run_dialog_mode() строки 1049-1060
+        from run_analysis import show_expanded_query_menu, _get_router_recommendations
+
+        # Получаем рекомендации топ-K индексов на основе улучшенного вопроса
+        expanded_question = expansion_result["expanded"]
+        top_indices = await _get_router_recommendations(expanded_question, chat_id)
+
+        # Показываем меню с улучшенным вопросом и рекомендациями индексов
         await show_expanded_query_menu(
             chat_id=chat_id,
             app=app,
             original=expansion_result["original"],
-            expanded=expansion_result["expanded"],
+            expanded=expanded_question,
             conversation_id=conversation_id,
             deep_search=deep_search,
-            refine_count=0  # Первая попытка улучшения
+            refine_count=0,  # Первая попытка улучшения
+            top_indices=top_indices  # Рекомендации Router Agent для отображения в UI
         )
-        logging.info(f"[Query Choice] Successfully expanded for chat_id={chat_id}")
+        logging.info(f"[Query Choice] Successfully expanded for chat_id={chat_id}, top_indices={len(top_indices) if top_indices else 0}")
         return  # ✅ ISSUE #1 FIX: предотвращаем выполнение else блока
     else:
         # Улучшение не сработало (например, descry.md пустой или expanded == original)
@@ -2920,13 +2930,21 @@ async def _execute_search_without_expansion(
 
     try:
         from run_analysis import run_dialog_mode
+
+        # ИСПРАВЛЕНИЕ #6a: Получение top_indices для передачи в run_dialog_mode
+        # Согласно inspection.md п.6 - несогласованность передачи top_indices
+        # При skip_expansion=True Router Agent НЕ вызывается автоматически,
+        # поэтому top_indices нужно получить здесь для улучшения качества поиска
+        top_indices = await _get_router_recommendations(question, chat_id)
+
         await run_dialog_mode(
             message=mock_message,
             app=app,
             rags=rags,
             deep_search=deep_search,
             conversation_id=conversation_id,
-            skip_expansion=True
+            skip_expansion=True,
+            top_indices=top_indices  # ИСПРАВЛЕНИЕ #6a: Передача top_indices
         )
     except Exception as e:
         logging.error(f"[Query Choice] Error in _execute_search: {e}", exc_info=True)
@@ -3098,13 +3116,21 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
             mock_message = MockMessage(question, chat_id, int(time.time() * 1000000))
 
             from run_analysis import run_dialog_mode
+
+            # ИСПРАВЛЕНИЕ #6b: Получение top_indices для передачи в run_dialog_mode
+            # Согласно inspection.md п.6 - несогласованность передачи top_indices
+            # При raw_search_mode и skip_expansion=True Router Agent НЕ вызывается,
+            # поэтому top_indices нужно получить здесь для улучшения качества поиска
+            top_indices = await _get_router_recommendations(question, chat_id)
+
             await run_dialog_mode(
                 message=mock_message,
                 app=app,
                 rags=rags,
                 deep_search=deep_search,
                 conversation_id=conversation_id,
-                skip_expansion=True
+                skip_expansion=True,
+                top_indices=top_indices  # ИСПРАВЛЕНИЕ #6b: Передача top_indices
             )
         except Exception as e:
             logger.error(f"[Raw Search] Error: {e}", exc_info=True)

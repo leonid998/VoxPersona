@@ -4,7 +4,7 @@ import os
 from typing import Any
 from storage import safe_filename
 
-from config import STORAGE_DIRS, active_menus
+from config import STORAGE_DIRS, active_menus, user_states
 from markups import main_menu_markup, confirm_menu_markup, edit_menu_markup
 from constants import BUTTON_BACK
 
@@ -34,6 +34,13 @@ def files_menu_markup(category: str):
 
 async def send_main_menu(chat_id: int, app: Client):
     from menu_manager import send_menu
+
+    # Устанавливаем быстрый поиск по умолчанию при входе в чат (req: err_task.txt п.1)
+    if chat_id in user_states:
+        user_states[chat_id]["deep_search"] = False
+    else:
+        user_states[chat_id] = {"deep_search": False, "step": "dialog_mode"}
+
     await send_menu(chat_id, app, "🏠 Главное меню:", main_menu_markup())
 
 async def show_confirmation_menu(chat_id: int, state: dict[str, Any], app: Client):
