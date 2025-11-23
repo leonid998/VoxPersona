@@ -564,13 +564,15 @@ async def show_expanded_query_menu(
     deep_search: bool,
     refine_count: int = 0,
     selected_index: str | None = None,
-    top_indices: list | None = None  # НОВЫЙ параметр для рекомендаций Router Agent
+    top_indices: list | None = None,  # НОВЫЙ параметр для рекомендаций Router Agent
+    tokens_used: dict[str, int] | None = None  # НОВЫЙ параметр для показа токенов
 ):
     """
     Показывает оригинальный и улучшенный вопрос пользователю.
 
     ФАЗА 4: Обновлено - использует make_query_expansion_markup()
     ФАЗА 5: Добавлены рекомендации индексов от Router Agent
+    ФАЗА 6: Добавлен показ использованных токенов (v14)
 
     Args:
         chat_id: ID чата Telegram
@@ -583,6 +585,7 @@ async def show_expanded_query_menu(
         selected_index: Вручную выбранный индекс (None = автовыбор Router Agent)
         top_indices: Список топ-K рекомендуемых индексов от Router Agent (None = не показывать)
                     Формат: [(index_name, score), ...]
+        tokens_used: Словарь с токенами {"input_tokens": N, "output_tokens": N} (None = не показывать)
     """
     # FIX (2025-11-09): Защита от MESSAGE_TOO_LONG
     # ЗАЧЕМ: Telegram лимит 4096 символов на текстовое сообщение
@@ -622,6 +625,13 @@ async def show_expanded_query_menu(
         index_display_name = INDEX_DISPLAY_NAMES.get(selected_index, selected_index)
         index_info += f"🎯 **Выбран индекс:** {index_display_name}\n\n"
 
+    # === Формирование информации о токенах ===
+    # ФАЗА 6 (v14): Показ токенов использованных для улучшения вопроса и определения индексов
+    tokens_info = ""
+    if tokens_used and (tokens_used.get("input_tokens", 0) > 0 or tokens_used.get("output_tokens", 0) > 0):
+        total_tokens = tokens_used.get("input_tokens", 0) + tokens_used.get("output_tokens", 0)
+        tokens_info = f"📊 **Токены:** {tokens_used['input_tokens']} вх. / {tokens_used['output_tokens']} вых. (всего: {total_tokens})\n\n"
+
     # Формируем текст с улучшенным вопросом (отправляется как info_message - не удаляется)
     info_text = (
         f"📝 **Ваш вопрос:**\n"
@@ -629,6 +639,7 @@ async def show_expanded_query_menu(
         f"🔍 **Улучшенный вопрос:**\n"
         f"*{expanded_display}*\n\n"
         f"{index_info}"
+        f"{tokens_info}"
     )
 
     # Текст для меню с кнопками (короткий, удаляется при смене контекста)
@@ -676,7 +687,7 @@ async def show_expanded_query_menu(
             raise
 
 
-async def _get_router_recommendations(text: str, chat_id: int) -> list[tuple] | None:
+async def _get_router_recommendations(text: str, chat_id: int) -> tuple[list[tuple] | None, dict[str, int]]:
     """
     Получает рекомендации индексов от Router Agent для отображения в UI.
 
@@ -685,7 +696,9 @@ async def _get_router_recommendations(text: str, chat_id: int) -> list[tuple] | 
         chat_id: ID чата для логирования
 
     Returns:
-        list[tuple] | None: Список топ-K индексов [(index_name, score), ...] или None при ошибке
+        tuple[list[tuple] | None, dict[str, int]]:
+            (список_рекомендаций, {"input_tokens": N, "output_tokens": N})
+            Список топ-K индексов [(index_name, score), ...] или None при ошибке
     """
     try:
         logging.info("[Router Recommendations] Получение рекомендаций индексов для меню...")
@@ -695,7 +708,8 @@ async def _get_router_recommendations(text: str, chat_id: int) -> list[tuple] | 
         logging.info(f"[Router Recommendations] Загружено {len(report_descriptions)} описаний отчетов")
 
         # Оцениваем релевантность всех отчетов к улучшенному вопросу
-        report_relevance = await evaluate_report_relevance(text, report_descriptions)
+        # Возвращает также токены использованные для оценки
+        report_relevance, tokens_used = await evaluate_report_relevance(text, report_descriptions)
 
         # Получаем топ-3 индекса с минимальным порогом релевантности
         top_indices = get_top_relevant_indices(
@@ -705,15 +719,16 @@ async def _get_router_recommendations(text: str, chat_id: int) -> list[tuple] | 
         )
 
         logging.info(f"[Router Recommendations] Получено {len(top_indices)} рекомендаций")
+        logging.info(f"[Router Recommendations] Токены: вход={tokens_used['input_tokens']}, выход={tokens_used['output_tokens']}")
         for idx, (index_name, score) in enumerate(top_indices, 1):
             logging.info(f"  {idx}. {index_name}: {score:.1f}%")
 
-        return top_indices
+        return top_indices, tokens_used
 
     except Exception as e:
         logging.warning(f"[Router Recommendations] Ошибка получения рекомендаций: {e}")
         logging.warning("[Router Recommendations] Продолжаем без рекомендаций индексов")
-        return None
+        return None, {"input_tokens": 0, "output_tokens": 0}
 
 
 # SonarCloud fix: async without await - убран async keyword
@@ -746,7 +761,8 @@ def _process_manual_index_selection(
         logging.info(f"[Manual Index] Загружено {len(report_descriptions)} описаний отчетов")
 
         # Улучшаем вопрос для выбранного индекса с контекстом топ-3
-        enhanced_question = enhance_question_for_index(
+        # Возвращает tuple (enhanced_question, tokens_used)
+        enhanced_question, _ = enhance_question_for_index(
             text_to_search,
             user_selected_index,
             report_descriptions,
@@ -808,7 +824,8 @@ async def _run_router_agent(
 
         # Этап 2: Оценка релевантности всех отчетов к запросу
         logging.info(f"[Router] Оценка релевантности отчетов для запроса: {text_to_search[:100]}...")
-        report_relevance = await evaluate_report_relevance(text_to_search, report_descriptions)
+        # evaluate_report_relevance теперь возвращает tuple (results, tokens_used)
+        report_relevance, _ = await evaluate_report_relevance(text_to_search, report_descriptions)
         logging.debug(f"[Router] Результаты оценки релевантности: {report_relevance}")
 
         # Этап 3: Выбор наиболее релевантного индекса
@@ -834,7 +851,8 @@ async def _run_router_agent(
             enhanced_question = text_to_search
         else:
             logging.info(f"[Router] Улучшение вопроса для индекса '{selected_index}'...")
-            enhanced_question = enhance_question_for_index(
+            # enhance_question_for_index теперь возвращает tuple (enhanced_question, tokens_used)
+            enhanced_question, _ = enhance_question_for_index(
                 text_to_search,
                 selected_index,
                 report_descriptions,
@@ -1041,7 +1059,15 @@ async def run_dialog_mode(
 
         # Если вопрос улучшен - показываем меню с рекомендациями
         if expansion_result["used_descry"] and expansion_result["expanded"] != text:
-            top_indices = await _get_router_recommendations(expansion_result["expanded"], chat_id)
+            top_indices, router_tokens = await _get_router_recommendations(expansion_result["expanded"], chat_id)
+
+            # Агрегация токенов: expand_query + оценка релевантности индексов
+            expansion_tokens = expansion_result.get("tokens_used", {"input_tokens": 0, "output_tokens": 0})
+            total_tokens = {
+                "input_tokens": expansion_tokens["input_tokens"] + router_tokens["input_tokens"],
+                "output_tokens": expansion_tokens["output_tokens"] + router_tokens["output_tokens"]
+            }
+            logging.info(f"[Tokens Aggregation] expand_query: {expansion_tokens}, router: {router_tokens}, total: {total_tokens}")
 
             await show_expanded_query_menu(
                 chat_id=chat_id,
@@ -1051,7 +1077,8 @@ async def run_dialog_mode(
                 conversation_id=conversation_id,
                 deep_search=deep_search,
                 refine_count=0,
-                top_indices=top_indices
+                top_indices=top_indices,
+                tokens_used=total_tokens  # Передаем суммарные токены для показа
             )
             return  # Ожидаем callback от пользователя
 

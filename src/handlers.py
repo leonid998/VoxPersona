@@ -1083,6 +1083,11 @@ async def handle_mode_fast(callback: CallbackQuery, app: Client):
 
 async def handle_mode_deep(callback: CallbackQuery, app: Client):
     """Обработчик выбора глубокого исследования."""
+    # ВРЕМЕННО ОТКЛЮЧЕНО: Функция не оптимизирована (дорогая и долгая)
+    await callback.answer("Функция в разработке", show_alert=True)
+    return
+
+    # === КОД НИЖЕ ВРЕМЕННО ОТКЛЮЧЕН ===
     chat_id = callback.message.chat.id
 
     # Сохраняем существующее состояние
@@ -2700,17 +2705,22 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
         # Увеличиваем счетчик попыток
         expansion_result["refine_count"] = refine_count + 1
 
+        # Токены от expand_query
+        expansion_tokens = expansion_result.get("tokens_used", {"input_tokens": 0, "output_tokens": 0})
+
         # FIX R1: Пересчитываем top_indices для нового улучшенного вопроса
         # Это необходимо для актуальных рекомендаций в меню
         from relevance_evaluator import evaluate_report_relevance, load_report_descriptions
         from index_selector import get_top_relevant_indices
 
         new_top_indices = None
+        router_tokens = {"input_tokens": 0, "output_tokens": 0}
         try:
             # ВАЖНО: Используем load_report_descriptions() из relevance_evaluator.py
             # который возвращает ПОЛНЫЕ имена отчетов, соответствующие REPORT_TO_INDEX_MAPPING
             report_descriptions = load_report_descriptions()
-            report_relevance = await evaluate_report_relevance(
+            # evaluate_report_relevance теперь возвращает tuple (results, tokens_used)
+            report_relevance, router_tokens = await evaluate_report_relevance(
                 expansion_result["expanded"],
                 report_descriptions
             )
@@ -2720,6 +2730,13 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
             logger.warning(f"[Refine] Ошибка пересчета top_indices: {e}")
             # При ошибке используем старые top_indices если есть
             new_top_indices = expansion_data.get("top_indices", None)
+
+        # Агрегация токенов для показа пользователю
+        total_tokens = {
+            "input_tokens": expansion_tokens["input_tokens"] + router_tokens["input_tokens"],
+            "output_tokens": expansion_tokens["output_tokens"] + router_tokens["output_tokens"]
+        }
+        logger.info(f"[Refine] Токены: expand={expansion_tokens}, router={router_tokens}, total={total_tokens}")
 
         # Показываем новый улучшенный вопрос
         from run_analysis import show_expanded_query_menu
@@ -2733,7 +2750,8 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
             deep_search=deep_search,
             refine_count=refine_count + 1,  # ✅ ШАГ 4: Передаем инкрементированный счетчик
             selected_index=selected_index,   # FIX R1: Передаем selected_index
-            top_indices=new_top_indices      # FIX R1: Передаем пересчитанные top_indices
+            top_indices=new_top_indices,     # FIX R1: Передаем пересчитанные top_indices
+            tokens_used=total_tokens         # Показ использованных токенов
         )
 
         # callback.answer() уже вызван после валидации в начале функции
@@ -2924,7 +2942,8 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
         # ЗАЧЕМ: Чтобы улучшить вопрос именно под этот индекс (а не под общий контекст descry.md)
         # ПОЧЕМУ важен порядок: expand_query использует общее описание БД (descry.md),
         # а enhance_question_for_index использует описания отчетов конкретного индекса
-        top_indices = await _get_router_recommendations(original_question, chat_id)
+        # _get_router_recommendations теперь возвращает tuple (top_indices, tokens_used)
+        top_indices, router_tokens = await _get_router_recommendations(original_question, chat_id)
 
         if not top_indices:
             # Не удалось получить рекомендации индексов
@@ -2964,7 +2983,8 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
         # что даёт более точное улучшение, чем общий expand_query
         report_descriptions = load_report_descriptions()
 
-        expanded_question = enhance_question_for_index(
+        # enhance_question_for_index теперь возвращает tuple (expanded_question, tokens_used)
+        expanded_question, enhance_tokens = enhance_question_for_index(
             original_question=original_question,
             selected_index=best_index,
             report_descriptions=report_descriptions,
@@ -2974,6 +2994,13 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
         # Проверка: было ли улучшение успешным
         # КРИТЕРИЙ: улучшенный вопрос должен отличаться от оригинала
         if expanded_question and expanded_question != original_question:
+            # Агрегация токенов: router_tokens + enhance_tokens
+            total_tokens = {
+                "input_tokens": router_tokens["input_tokens"] + enhance_tokens["input_tokens"],
+                "output_tokens": router_tokens["output_tokens"] + enhance_tokens["output_tokens"]
+            }
+            logger.info(f"[Tokens Aggregation] router: {router_tokens}, enhance: {enhance_tokens}, total: {total_tokens}")
+
             # Успех: показываем меню с улучшенным вопросом и рекомендациями индексов
             await show_expanded_query_menu(
                 chat_id=chat_id,
@@ -2983,7 +3010,8 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
                 conversation_id=conversation_id,
                 deep_search=deep_search,
                 refine_count=0,  # Первая попытка улучшения
-                top_indices=top_indices  # Рекомендации Router Agent для отображения в UI
+                top_indices=top_indices,  # Рекомендации Router Agent для отображения в UI
+                tokens_used=total_tokens  # Показ использованных токенов
             )
             logging.info(
                 f"[Query Choice] Successfully enhanced for chat_id={chat_id}, "
@@ -3117,7 +3145,8 @@ async def _execute_search_without_expansion(
         # Согласно inspection.md п.6 - несогласованность передачи top_indices
         # При skip_expansion=True Router Agent НЕ вызывается автоматически,
         # поэтому top_indices нужно получить здесь для улучшения качества поиска
-        top_indices = await _get_router_recommendations(question, chat_id)
+        # _get_router_recommendations теперь возвращает tuple (top_indices, tokens_used)
+        top_indices, _ = await _get_router_recommendations(question, chat_id)
 
         await run_dialog_mode(
             message=mock_message,

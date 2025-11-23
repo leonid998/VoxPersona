@@ -328,7 +328,7 @@ def enhance_question_for_index(
     report_descriptions: Dict[str, str],
     api_key: str | None = None,
     top_indices: List[tuple] | None = None
-) -> str:
+) -> tuple[str, dict[str, int]]:
     """
     Улучшить вопрос пользователя для поиска в выбранном индексе.
 
@@ -355,8 +355,9 @@ def enhance_question_for_index(
                     Используется для улучшения качества enhanced_question
 
     Returns:
-        str: Улучшенный вопрос оптимизированный для семантического поиска
-             При ошибке возвращает original_question (fallback)
+        tuple[str, dict[str, int]]:
+            (улучшенный_вопрос, {"input_tokens": N, "output_tokens": N})
+            При ошибке возвращает original_question (fallback) с нулевыми токенами
 
     Raises:
         ValueError: Если original_question пустой или selected_index не в INDEX_MAPPING
@@ -371,7 +372,7 @@ def enhance_question_for_index(
         >>> descriptions = load_report_descriptions()
         >>> # С топ-3 индексами для улучшения качества
         >>> top_indices = [("Otchety_po_dizaynu", 85.3), ("Itogovye_otchety", 72.1)]
-        >>> enhanced = enhance_question_for_index(
+        >>> enhanced, tokens = enhance_question_for_index(
         ...     original_question="Какие проблемы с освещением в ресторане?",
         ...     selected_index="Otchety_po_dizaynu",
         ...     report_descriptions=descriptions,
@@ -411,7 +412,7 @@ def enhance_question_for_index(
             f"INDEX_MAPPING['{selected_index}'] содержит некорректные данные: "
             f"{type(report_names_in_index)}. Ожидался непустой список."
         )
-        return original_question
+        return original_question, {"input_tokens": 0, "output_tokens": 0}
 
 
     filtered_descriptions = {
@@ -426,7 +427,7 @@ def enhance_question_for_index(
             f"Ожидались: {report_names_in_index}"
         )
         logger.warning("Возвращаем original_question без улучшения")
-        return original_question
+        return original_question, {"input_tokens": 0, "output_tokens": 0}
 
     logger.debug(
         f"Отфильтровано {len(filtered_descriptions)} описаний отчетов "
@@ -464,12 +465,14 @@ def enhance_question_for_index(
         # WHY: Используем send_msg_to_model из analysis.py (синхронная функция)
         # потому что она уже имеет retry логику с exponential backoff
         # и обработку RateLimitError
-        enhanced_question = send_msg_to_model(
+        # return_usage=True для получения информации о токенах
+        enhanced_question, usage = send_msg_to_model(
             messages=[{"role": "user", "content": prompt}],
             system=None,  # Промпт уже содержит всю необходимую информацию
             max_tokens=MAX_TOKENS,
             model=HAIKU_MODEL,
-            api_key=resolved_api_key
+            api_key=resolved_api_key,
+            return_usage=True
         )
 
         elapsed = time.time() - start_time
@@ -481,15 +484,16 @@ def enhance_question_for_index(
         )
 
         if sanitized_result is None:
-            return validated_question
+            return validated_question, usage
 
         logger.info(
             f"Вопрос улучшен за {elapsed:.2f}s. "
-            f"Длина: {len(validated_question)} -> {len(sanitized_result)} символов"
+            f"Длина: {len(validated_question)} -> {len(sanitized_result)} символов. "
+            f"Токены: вход={usage['input_tokens']}, выход={usage['output_tokens']}"
         )
         logger.debug(f"Улучшенный вопрос: '{sanitized_result}'")
 
-        return sanitized_result
+        return sanitized_result, usage
 
     except Exception as e:
         # Fallback: вернуть validated_question при любой ошибке
@@ -497,7 +501,7 @@ def enhance_question_for_index(
             f"Ошибка улучшения вопроса: {e}. "
             f"Возвращаем validated_question"
         )
-        return validated_question
+        return validated_question, {"input_tokens": 0, "output_tokens": 0}
 
 
 if __name__ == "__main__":
@@ -537,7 +541,8 @@ if __name__ == "__main__":
         logger.info(f"Топ-3 индексов: {example_top_indices}")
 
         # Улучшить вопрос с контекстом топ-3
-        enhanced = enhance_question_for_index(
+        # Функция теперь возвращает tuple (enhanced, tokens_used)
+        enhanced, tokens_used = enhance_question_for_index(
             original_question=question,
             selected_index=selected_idx,
             report_descriptions=descriptions,
@@ -547,6 +552,7 @@ if __name__ == "__main__":
         print("\n" + "="*80)
         print("РЕЗУЛЬТАТ УЛУЧШЕНИЯ ВОПРОСА")
         print("="*80)
+        print(f"\nТокены: вход={tokens_used['input_tokens']}, выход={tokens_used['output_tokens']}")
         print(f"\nИсходный вопрос ({len(question)} символов):")
         print(f"  {question}")
         print(f"\nУлучшенный вопрос ({len(enhanced)} символов):")

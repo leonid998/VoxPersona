@@ -971,7 +971,7 @@ def convert_evaluations_to_dict(evaluations: List[Dict[str, Any]]) -> Dict[str, 
 async def _make_batch_api_call(
     client: anthropic.AsyncAnthropic,
     prompt: str
-) -> str:
+) -> tuple[str, dict[str, int]]:
     """
     Выполняет API запрос к Claude для batch-оценки.
 
@@ -980,7 +980,7 @@ async def _make_batch_api_call(
         prompt: Промпт для отправки
 
     Returns:
-        str: Текст ответа от API
+        tuple[str, dict]: (текст_ответа, {"input_tokens": N, "output_tokens": N})
 
     Raises:
         asyncio.TimeoutError: При превышении таймаута
@@ -996,22 +996,30 @@ async def _make_batch_api_call(
         ),
         timeout=BATCH_REQUEST_TIMEOUT
     )
-    return response.content[0].text
+    # Извлекаем информацию о токенах из ответа
+    usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens
+    }
+    return response.content[0].text, usage
 
 
 def _process_batch_response(
     response_text: str,
-    start_time: float
-) -> Dict[str, float]:
+    start_time: float,
+    usage: dict[str, int] | None = None
+) -> tuple[Dict[str, float], dict[str, int]]:
     """
-    Обрабатывает ответ от API и возвращает словарь оценок.
+    Обрабатывает ответ от API и возвращает словарь оценок с информацией о токенах.
 
     Args:
         response_text: Текст ответа от Claude API
         start_time: Время начала запроса для логирования
+        usage: Словарь с информацией о токенах {"input_tokens": N, "output_tokens": N}
 
     Returns:
-        Dict[str, float]: {имя_отчета: оценка_релевантности (0-100)}
+        tuple[Dict[str, float], dict[str, int]]:
+            (словарь_оценок, {"input_tokens": N, "output_tokens": N})
 
     Raises:
         ValueError: При ошибке парсинга JSON
@@ -1034,12 +1042,21 @@ def _process_batch_response(
 
     elapsed = time.time() - start_time
 
-    logger.info(
-        f"Batch-оценка релевантности завершена за {elapsed:.2f}s. "
-        f"Обработано {len(relevance_scores)} отчетов."
-    )
+    # Логирование с информацией о токенах
+    if usage:
+        logger.info(
+            f"Batch-оценка релевантности завершена за {elapsed:.2f}s. "
+            f"Обработано {len(relevance_scores)} отчетов. "
+            f"Токены: вход={usage['input_tokens']}, выход={usage['output_tokens']}"
+        )
+    else:
+        logger.info(
+            f"Batch-оценка релевантности завершена за {elapsed:.2f}s. "
+            f"Обработано {len(relevance_scores)} отчетов."
+        )
 
-    return relevance_scores
+    # Возвращаем оценки и токены
+    return relevance_scores, usage or {"input_tokens": 0, "output_tokens": 0}
 
 
 # SonarCloud fix: refactored for lower complexity - extracted validation and error handling
@@ -1106,7 +1123,7 @@ async def evaluate_batch_relevance(
     question: str,
     json_container: str,
     api_key: str | None = None
-) -> Dict[str, float]:
+) -> tuple[Dict[str, float], dict[str, int]]:
     """
     Выполняет batch-оценку релевантности всех отчетов за один API запрос.
 
@@ -1120,7 +1137,8 @@ async def evaluate_batch_relevance(
         api_key: API ключ Anthropic. Если None, используется ANTHROPIC_API_KEY из config
 
     Returns:
-        Dict[str, float]: {имя_отчета: оценка_релевантности (0-100)}
+        tuple[Dict[str, float], dict[str, int]]:
+            (словарь_оценок, {"input_tokens": N, "output_tokens": N})
         Формат совместим с evaluate_report_relevance()
 
     Raises:
@@ -1134,7 +1152,7 @@ async def evaluate_batch_relevance(
     Example:
         >>> descriptions = load_report_descriptions()
         >>> json_container = build_json_container(descriptions)
-        >>> results = await evaluate_batch_relevance(
+        >>> results, tokens = await evaluate_batch_relevance(
         ...     "Какое освещение в номерах?",
         ...     json_container
         ... )
@@ -1161,36 +1179,37 @@ async def evaluate_batch_relevance(
 
     backoff = 1
     start_time = time.time()
+    empty_usage = {"input_tokens": 0, "output_tokens": 0}
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response_text = await _make_batch_api_call(client, prompt)
-            return _process_batch_response(response_text, start_time)
+            response_text, usage = await _make_batch_api_call(client, prompt)
+            return _process_batch_response(response_text, start_time, usage)
 
         except RateLimitError:
             backoff = await _handle_rate_limit(attempt, backoff)
             if attempt == MAX_RETRIES:
-                return {}
+                return {}, empty_usage
 
         except asyncio.TimeoutError:
             logger.error(
                 f"Timeout ({BATCH_REQUEST_TIMEOUT}s) для batch-запроса. "
                 f"Используется пустой словарь."
             )
-            return {}
+            return {}, empty_usage
 
         except ValueError as e:
             logger.error(f"Ошибка парсинга ответа: {e}")
-            return {}
+            return {}, empty_usage
 
         except Exception as e:
             logger.exception(f"Ошибка batch-оценки релевантности: {e}")
-            return {}
+            return {}, empty_usage
 
     logger.error(
         f"Исчерпаны попытки для batch-запроса. Используется пустой словарь."
     )
-    return {}
+    return {}, empty_usage
 
 
 # Старый inline код перемещен в файл data/batch_relevance_prompt.md
@@ -1393,7 +1412,7 @@ async def evaluate_report_relevance(
     question: str,
     report_descriptions: Dict[str, str] | None = None,
     api_key: str | None = None
-) -> Dict[str, float]:
+) -> tuple[Dict[str, float], dict[str, int]]:
     """
     Оценить релевантность всех отчетов для вопроса пользователя.
 
@@ -1410,8 +1429,9 @@ async def evaluate_report_relevance(
         api_key: Anthropic API key. Если None, используется ANTHROPIC_API_KEY из config
 
     Returns:
-        Dict[str, float]: Словарь {имя_отчета: процент_релевантности}
-                         Релевантность в диапазоне 0-100
+        tuple[Dict[str, float], dict[str, int]]:
+            (словарь_оценок, {"input_tokens": N, "output_tokens": N})
+            Релевантность в диапазоне 0-100
 
     Raises:
         ValueError: Если question пустой или api_key недоступен
@@ -1424,7 +1444,7 @@ async def evaluate_report_relevance(
 
     Example:
         >>> # Автоматическая загрузка описаний
-        >>> results = await evaluate_report_relevance(
+        >>> results, tokens = await evaluate_report_relevance(
         ...     "проблемы с освещением в ресторане"
         ... )
         >>> len(results)
@@ -1434,7 +1454,7 @@ async def evaluate_report_relevance(
 
         >>> # С предзагруженными описаниями
         >>> descriptions = load_report_descriptions()
-        >>> results = await evaluate_report_relevance(
+        >>> results, tokens = await evaluate_report_relevance(
         ...     "как повысить заполняемость отеля",
         ...     report_descriptions=descriptions
         ... )
@@ -1482,9 +1502,9 @@ async def evaluate_report_relevance(
 
     # Выполнить batch-оценку релевантности за один API запрос
     # evaluate_batch_relevance() внутри вызывает build_batch_relevance_prompt()
-    # и возвращает Dict[str, float] - совместимо с предыдущим форматом
+    # и возвращает tuple[Dict[str, float], dict[str, int]] - совместимо с предыдущим форматом + токены
     start_time = time.time()
-    relevance_scores = await evaluate_batch_relevance(
+    relevance_scores, tokens_used = await evaluate_batch_relevance(
         question=question,
         json_container=json_container,
         api_key=api_key
@@ -1496,7 +1516,8 @@ async def evaluate_report_relevance(
 
     logger.info(
         f"Оценка релевантности завершена за {elapsed:.2f}s. "
-        f"Обработано {len(relevance_scores)} отчетов."
+        f"Обработано {len(relevance_scores)} отчетов. "
+        f"Токены: вход={tokens_used['input_tokens']}, выход={tokens_used['output_tokens']}"
     )
 
     # Логировать топ-3 наиболее релевантных отчета
@@ -1506,7 +1527,7 @@ async def evaluate_report_relevance(
         for rank, (name, score) in enumerate(top_3, 1):
             logger.info(f"  {rank}. {name}: {score:.1f}%")
 
-    return relevance_scores
+    return relevance_scores, tokens_used
 
 
 # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ОТЛАДКИ ===

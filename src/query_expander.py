@@ -222,7 +222,8 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
             "original": question,
             "expanded": question,
             "used_descry": False,
-            "error": "Вопрос слишком короткий"
+            "error": "Вопрос слишком короткий",
+            "tokens_used": {"input_tokens": 0, "output_tokens": 0}
         }
 
     # Шаг 2: Загрузка описания БД
@@ -237,7 +238,8 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
             "original": question,
             "expanded": question,
             "used_descry": False,
-            "error": "descry.md не найден или пуст"
+            "error": "descry.md не найден или пуст",
+            "tokens_used": {"input_tokens": 0, "output_tokens": 0}
         }
 
     # Шаг 4: Проверка размера descry.md
@@ -264,14 +266,17 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
         # ВАЖНО: Используется актуальная модель Claude Sonnet 4.5 (исправлено: ранее была несуществующая модель claude-sonnet-4-20250514)
         # Это гарантирует корректную работу API без ошибок 400
         # Модель указывается явно для консистентности с RAG системой
-        expanded = send_msg_to_model(
+        # return_usage=True для получения информации о токенах
+        expanded, usage = send_msg_to_model(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1000,  # Улучшенный вопрос редко превышает 200 токенов
-            model="claude-haiku-4-5-20251001"  # Claude Sonnet 4.5 (актуальная версия из CLAUDE.md)
+            model="claude-haiku-4-5-20251001",  # Claude Sonnet 4.5 (актуальная версия из CLAUDE.md)
+            return_usage=True
         )
 
         # Логирование полного ответа Claude
         logger.info(f"[Query Expansion] Claude response: {expanded}")
+        logger.info(f"[Query Expansion] Токены: вход={usage['input_tokens']}, выход={usage['output_tokens']}")
 
         # Шаг 6: Очистка и валидация ответа
         # Удаляем лишние пробелы и переносы строк
@@ -288,17 +293,19 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
                 "original": question,
                 "expanded": question,
                 "used_descry": True,  # descry использовался, но не помог
-                "error": "Claude вернул пустой ответ или не улучшил вопрос"
+                "error": "Claude вернул пустой ответ или не улучшил вопрос",
+                "tokens_used": usage  # Токены были потрачены даже при неудаче
             }
 
         # Шаг 7: Успешное улучшение
-        # Возвращаем улучшенный вопрос без ошибок
+        # Возвращаем улучшенный вопрос без ошибок с информацией о токенах
         logger.info(f"[Query Expansion] Successfully expanded question")
         return {
             "original": question,
             "expanded": expanded_clean,
             "used_descry": True,
-            "error": None
+            "error": None,
+            "tokens_used": usage  # Добавлено: информация о использованных токенах
         }
 
     except Exception as e:
@@ -310,5 +317,6 @@ def expand_query(question: str, max_retries: int = 3) -> Dict[str, str]:
             "original": question,
             "expanded": question,
             "used_descry": False,
-            "error": f"Ошибка API: {str(e)}"
+            "error": f"Ошибка API: {str(e)}",
+            "tokens_used": {"input_tokens": 0, "output_tokens": 0}  # Добавлено: нулевые токены при ошибке
         }

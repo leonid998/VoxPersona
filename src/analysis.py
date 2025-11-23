@@ -449,9 +449,26 @@ def send_msg_to_model(
         err: str=CLAUDE_ERROR_MESSAGE,
         max_tokens: int=20000,
         model: str | None=REPORT_MODEL_NAME,
-        api_key: str | None=ANTHROPIC_API_KEY
-        ) -> str:
+        api_key: str | None=ANTHROPIC_API_KEY,
+        return_usage: bool = False
+        ) -> str | tuple[str, dict[str, int]]:
+    """
+    Отправляет сообщения в модель Claude API.
 
+    Args:
+        messages: Список сообщений для отправки
+        system: Системный промпт (опционально)
+        err: Сообщение об ошибке при неудаче
+        max_tokens: Максимальное количество токенов в ответе
+        model: Название модели Claude
+        api_key: API ключ Anthropic
+        return_usage: Если True, возвращает tuple (text, usage_dict)
+                     где usage_dict = {"input_tokens": N, "output_tokens": N}
+
+    Returns:
+        str: Текст ответа модели (если return_usage=False)
+        tuple[str, dict]: (текст, {"input_tokens": N, "output_tokens": N}) (если return_usage=True)
+    """
     client = anthropic.Anthropic(api_key=api_key or "")
 
     # Fallback на актуальную модель Claude Sonnet 4.5 если model не задана
@@ -474,7 +491,17 @@ def send_msg_to_model(
     while True:
         try:
             response = client.messages.create(**model_args)
-            return response.content[0].text
+            text = response.content[0].text
+
+            # Извлечение информации о использовании токенов
+            if return_usage:
+                usage = {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens
+                }
+                return (text, usage)
+
+            return text
         except RateLimitError as e:
             if backoff > 16:
                 logging.exception(f"Rate limit persists after backoff: {e}")
@@ -484,6 +511,8 @@ def send_msg_to_model(
             backoff *= 2
         except Exception as e:
             logging.exception(f"{err}: {e}")
+            if return_usage:
+                return (err, {"input_tokens": 0, "output_tokens": 0})
             return err
 
 def auto_detect_category(text: str) -> str:
