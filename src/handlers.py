@@ -2595,8 +2595,20 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
 
         from markups import make_index_selection_markup
 
-        # CODE REVIEW FIX: Используем константу для единообразия
-        await send_menu(chat_id, app, INDEX_SELECTION_MENU_TEXT, make_index_selection_markup())
+        # ИСПРАВЛЕНИЕ ВАЖНОЕ 2 (2025-11-23):
+        # Включаем улучшенный вопрос в меню индексов для контекста
+        # CODE REVIEW FIX (2025-11-23): Добавлена защита от None значений
+        question = expansion_data.get("expanded") or expansion_data.get("original") or "Ваш вопрос"
+
+        # Формируем текст меню с улучшенным вопросом
+        index_menu_text = (
+            f"✨ **Улучшенный вопрос:**\n"
+            f"_{question}_\n\n"
+            f"**Выбор индекса для поиска**\n\n"
+            f"Выберите индекс, в котором искать ответ:"
+        )
+
+        await send_menu(chat_id, app, index_menu_text, make_index_selection_markup())
         await callback.answer("Выберите индекс для поиска")
 
         # ИСПРАВЛЕНИЕ КРИТИЧЕСКАЯ ПРОБЛЕМА 2 (2025-11-23):
@@ -2753,7 +2765,16 @@ async def show_query_choice_menu(chat_id: int, question: str, app: Client):
         [InlineKeyboardButton("◀️ Назад", callback_data="menu_dialog")]
     ])
 
-    await app.send_message(chat_id, text, reply_markup=markup, parse_mode=enums.ParseMode.MARKDOWN)
+    # ИСПРАВЛЕНИЕ КРИТИЧЕСКОЕ 1 (2025-11-23):
+    # Используем track_and_send для автоматической очистки предыдущих меню
+    # Это решает проблему захламления чата при быстром поиске
+    await track_and_send(
+        chat_id=chat_id,
+        app=app,
+        text=text,
+        reply_markup=markup,
+        message_type="menu"
+    )
 
 
 async def handle_query_send_as_is(callback: CallbackQuery, app: Client):
@@ -2791,8 +2812,19 @@ async def handle_query_send_as_is(callback: CallbackQuery, app: Client):
 
     from markups import make_index_selection_markup
 
-    # CODE REVIEW FIX: Используем константу для единообразия
-    await send_menu(chat_id, app, INDEX_SELECTION_MENU_TEXT, make_index_selection_markup())
+    # ИСПРАВЛЕНИЕ ВАЖНОЕ 1 (2025-11-23):
+    # Включаем вопрос пользователя в меню индексов для контекста
+    question = st.get("pending_question", st.get("original_question", "Ваш вопрос"))
+
+    # Формируем текст меню с вопросом пользователя
+    index_menu_text = (
+        f"📝 **Ваш вопрос:**\n"
+        f"_{question}_\n\n"
+        f"**Выбор индекса для поиска**\n\n"
+        f"Выберите индекс, в котором искать ответ:"
+    )
+
+    await send_menu(chat_id, app, index_menu_text, make_index_selection_markup())
     await callback.answer("Выберите индекс")
 
 

@@ -647,20 +647,15 @@ async def show_expanded_query_menu(
         top_indices=top_indices  # ЗАДАЧА 2.3: Передаем топ-3 индексов для сохранения в user_states
     )
 
-    # ШАГ 3.3: Разделяем отправку на info_message и menu
-    # Это решает проблему: текст с улучшенным вопросом остается видимым при выборе индекса
-    # info_message НЕ удаляется автоматически (в отличие от menu)
+    # ИСПРАВЛЕНИЕ КРИТИЧЕСКОЕ 2 (2025-11-23):
+    # Объединяем текст улучшенного вопроса и кнопки в одно сообщение
+    # Это позволяет MessageTracker корректно удалить ВСЁ при переходе
+    # Было: info_message (НЕ удаляется) + menu (удаляется) = захламление чата
+    # Стало: одно menu (удаляется целиком) = чистый UI
     try:
-        # 1. Отправляем текст с улучшенным вопросом как info_message (не удаляется)
-        await track_and_send(
-            chat_id=chat_id,
-            app=app,
-            text=info_text,
-            message_type="info_message"
-        )
-
-        # 2. Отправляем кнопки как отдельное menu
-        await send_menu(chat_id, app, menu_text, markup)
+        # Объединяем текст улучшенного вопроса и подпись в одно сообщение типа menu
+        full_text = f"{info_text}\n{menu_text}"
+        await send_menu(chat_id, app, full_text, markup)
     except Exception as e:
         # Если всё равно превышен лимит (например, из-за original вопроса) - используем fallback
         if "MESSAGE_TOO_LONG" in str(e):
