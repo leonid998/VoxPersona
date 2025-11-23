@@ -114,7 +114,7 @@ def chats_menu_markup_dynamic(user_id: int) -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton("    Новый чат    ", callback_data="new_chat"),
-            InlineKeyboardButton(f"    {BUTTON_BACK}    ", callback_data="menu_main")
+            InlineKeyboardButton("    Гл меню    ", callback_data="menu_main")
         ],
         [
             InlineKeyboardButton("    Статистика    ", callback_data="show_stats"),
@@ -208,7 +208,7 @@ def chats_menu_markup():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("    Новый чат    ", callback_data="new_chat"),
-            InlineKeyboardButton(f"    {BUTTON_BACK}    ", callback_data="menu_main")
+            InlineKeyboardButton("    Гл меню    ", callback_data="menu_main")
         ],
         [
             InlineKeyboardButton("    Статистика    ", callback_data="show_stats"),
