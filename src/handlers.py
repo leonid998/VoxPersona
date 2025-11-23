@@ -3489,6 +3489,7 @@ async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
     # Извлечение данных запроса
     original_question = st.get("original_question", "")
     expanded_question = st.get("expanded_question", "")
+    pending_question = st.get("pending_question", "")  # FIX: для raw_search_mode
     conversation_id = st.get("conversation_id", "")
     deep_search = st.get("deep_search", False)
     selected_index = st.get("selected_index")  # Может быть None
@@ -3511,8 +3512,16 @@ async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
                 top_indices = expansion_data.get("top_indices", None)
                 break
 
+    # FIX: Используем pending_question как fallback для original_question (raw_search_mode)
+    if not original_question and pending_question:
+        original_question = pending_question
+
+    # FIX: В raw_search_mode expanded_question пустой - используем original_question
+    if not expanded_question and original_question:
+        expanded_question = original_question
+
     # ИСПРАВЛЕНИЕ: Проверка данных ПЕРЕД callback.answer(), чтобы избежать двойного вызова
-    if not original_question or not expanded_question:
+    if not original_question:
         await callback.answer(
             "⚠️ Данные запроса не найдены. Попробуйте задать вопрос заново.",
             show_alert=True
