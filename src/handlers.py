@@ -2583,7 +2583,10 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
 
         # Сохраняем данные для последующего использования при выборе индекса
         st = user_states.get(chat_id, {})
-        st["pending_question"] = expanded_question  # Улучшенный вопрос
+        st["pending_question"] = expanded_question  # Улучшенный вопрос для поиска
+        # Шаг 62.3: Явно сохраняем для приоритета 3 и отображения
+        st["expanded_question"] = expanded_question  # Улучшенный вопрос
+        st["original_question"] = expansion_data.get("original", "")  # Исходный для отображения
         st["conversation_id"] = conversation_id
         st["deep_search"] = deep_search
         st["top_indices"] = top_indices
@@ -2594,16 +2597,29 @@ async def handle_expand_send(callback: CallbackQuery, app: Client):
         user_states[chat_id] = st
 
         from markups import make_index_selection_markup
+        from index_selector import format_index_recommendations
 
         # ИСПРАВЛЕНИЕ ВАЖНОЕ 2 (2025-11-23):
         # Включаем улучшенный вопрос в меню индексов для контекста
         # CODE REVIEW FIX (2025-11-23): Добавлена защита от None значений
         question = expansion_data.get("expanded") or expansion_data.get("original") or "Ваш вопрос"
 
-        # Формируем текст меню с улучшенным вопросом
+        # Шаг 62.2: Получаем исходный вопрос для отображения
+        # (top_indices уже получен на строке 2563)
+        original_question_display = expansion_data.get("original", "") or "[не указан]"
+
+        # Формируем текст рекомендаций
+        index_recommendations = ""
+        if top_indices:
+            index_recommendations = format_index_recommendations(top_indices) + "\n\n"
+
+        # Формируем полный текст меню с исходным и улучшенным вопросом
         index_menu_text = (
+            f"📝 **Исходный вопрос:**\n"
+            f"_{original_question_display}_\n\n"
             f"✨ **Улучшенный вопрос:**\n"
-            f"_{question}_\n\n"
+            f"*{question}*\n\n"
+            f"{index_recommendations}"
             f"**Выбор индекса для поиска**\n\n"
             f"Выберите индекс, в котором искать ответ:"
         )

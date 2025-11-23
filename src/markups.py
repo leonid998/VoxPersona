@@ -473,8 +473,7 @@ def make_query_expansion_markup(
         # Кнопка 2: Уточнить запрос еще раз
         # Шаг 3.3: Изменен текст кнопки для ясности - решает проблему непонятного действия
         [InlineKeyboardButton("Улучшить ещё раз", callback_data=refine_data)],
-        # Кнопка 3: Выбрать индекс вручную (НОВАЯ)
-        [InlineKeyboardButton("Выбрать индекс вручную", callback_data="select_index_manual")],
-        # Кнопка 4: Назад
+        # Кнопка 3: Назад
+        # Шаг 62.1: Удалена кнопка "Выбрать индекс вручную" (она дублировала функционал кнопки "Отправить как есть")
         [InlineKeyboardButton("Назад", callback_data="menu_dialog")]
     ])
