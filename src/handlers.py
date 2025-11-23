@@ -3156,7 +3156,8 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         # а не в user_states[chat_id]. См. markups.py:452-453
         if not question:
             for key in list(user_states.keys()):  # user_states, НЕ st
-                if key.startswith("expansion_"):
+                # Проверяем тип ключа, т.к. user_states содержит и int (chat_id) и str (expansion_*)
+                if isinstance(key, str) and key.startswith("expansion_"):
                     expansion_data = user_states[key]
                     question = expansion_data.get("expanded", "") or expansion_data.get("original", "")
                     deep_search = expansion_data.get("deep_search", False)
@@ -3243,7 +3244,8 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         # Очистка expansion_* данных после успешного выполнения поиска
         # Ранее данные удалялись преждевременно в handle_expand_send
         for key in list(user_states.keys()):
-            if key.startswith("expansion_"):
+            # Проверяем тип ключа, т.к. user_states содержит и int (chat_id) и str (expansion_*)
+            if isinstance(key, str) and key.startswith("expansion_"):
                 user_states.pop(key, None)
 
         await callback.answer(f"Поиск в индексе: {display_name}")
@@ -3266,7 +3268,8 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
     # а не в user_states[chat_id] (st). Аналогично исправлению в строках 3108-3118
     if not original_question:
         for key in list(user_states.keys()):  # user_states, НЕ st
-            if key.startswith("expansion_"):
+            # Проверяем тип ключа, т.к. user_states содержит и int (chat_id) и str (expansion_*)
+            if isinstance(key, str) and key.startswith("expansion_"):
                 expansion_data = user_states[key]  # user_states, НЕ st
                 original_question = expansion_data.get("original", "")
                 expanded_question = expansion_data.get("expanded", "")
@@ -3343,10 +3346,12 @@ async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
     top_indices = None
 
     # Fallback: поиск по expansion_{hash} ключам
+    # Данные expansion_{hash} хранятся в user_states (верхний уровень), а не в user_states[chat_id]
     if not original_question:
-        for key in st.keys():
-            if key.startswith("expansion_"):
-                expansion_data = st[key]
+        for key in list(user_states.keys()):  # user_states, НЕ st
+            # Проверяем тип ключа, т.к. user_states содержит и int (chat_id) и str (expansion_*)
+            if isinstance(key, str) and key.startswith("expansion_"):
+                expansion_data = user_states[key]  # user_states, НЕ st
                 original_question = expansion_data.get("original", "")
                 expanded_question = expansion_data.get("expanded", "")
                 conversation_id = expansion_data.get("conversation_id", "")
