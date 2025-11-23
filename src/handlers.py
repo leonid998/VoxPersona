@@ -2653,6 +2653,11 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
         )
         return
 
+    # ИСПРАВЛЕНИЕ QueryIdInvalid (2025-11-23):
+    # callback.answer() ДОЛЖЕН вызываться СРАЗУ после валидации, ДО длительных операций
+    # expand_query и evaluate_report_relevance занимают 10-60+ секунд
+    await callback.answer(f"Уточняю вопрос (попытка {refine_count + 1}/3)...")
+
     try:
         original_question = expansion_data["original"]
         conversation_id = expansion_data["conversation_id"]
@@ -2703,7 +2708,7 @@ async def handle_expand_refine(callback: CallbackQuery, app: Client):
             top_indices=new_top_indices      # FIX R1: Передаем пересчитанные top_indices
         )
 
-        await callback.answer(f"🔄 Уточнено (попытка {refine_count + 1}/3)")
+        # callback.answer() уже вызван после валидации в начале функции
 
     finally:
         # Очистка не требуется для этого обработчика
@@ -2872,10 +2877,15 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
         if not top_indices:
             # Не удалось получить рекомендации индексов
             logging.warning(f"[Query Choice] Router Agent вернул пустой список для chat_id={chat_id}")
-            await callback.answer(
-                "⚠️ Не удалось определить индекс, отправляю оригинальный вопрос",
-                show_alert=True
-            )
+            # ИСПРАВЛЕНИЕ QueryIdInvalid (2025-11-23): callback.answer уже вызван выше
+            # Повторный вызов может вызвать ошибку, оборачиваем в try-except
+            try:
+                await callback.answer(
+                    "⚠️ Не удалось определить индекс, отправляю оригинальный вопрос",
+                    show_alert=True
+                )
+            except Exception:
+                pass  # callback.answer уже был вызван ранее
             await _execute_search_without_expansion(
                 chat_id, original_question, deep_search, conversation_id, app
             )
@@ -2922,10 +2932,14 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
                 f"[Query Choice] Enhancement failed for chat_id={chat_id}: "
                 f"enhanced == original, best_index={best_index}"
             )
-            await callback.answer(
-                "⚠️ Улучшение не применилось, отправляю оригинальный вопрос",
-                show_alert=True
-            )
+            # ИСПРАВЛЕНИЕ QueryIdInvalid (2025-11-23): callback.answer уже вызван выше
+            try:
+                await callback.answer(
+                    "⚠️ Улучшение не применилось, отправляю оригинальный вопрос",
+                    show_alert=True
+                )
+            except Exception:
+                pass  # callback.answer уже был вызван ранее
             await _execute_search_without_expansion(
                 chat_id, original_question, deep_search, conversation_id, app
             )
@@ -2934,10 +2948,14 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
     except Exception as e:
         # Обработка критической ошибки (Router Agent или enhance_question_for_index)
         logging.error(f"[Query Choice] Enhancement pipeline failed: {e}", exc_info=True)
-        await callback.answer(
-            "⚠️ Не удалось улучшить вопрос, отправляю оригинал",
-            show_alert=True
-        )
+        # ИСПРАВЛЕНИЕ QueryIdInvalid (2025-11-23): callback.answer уже вызван выше
+        try:
+            await callback.answer(
+                "⚠️ Не удалось улучшить вопрос, отправляю оригинал",
+                show_alert=True
+            )
+        except Exception:
+            pass  # callback.answer уже был вызван ранее
         # Fallback: отправка без улучшения
         await _execute_search_without_expansion(
             chat_id, original_question, deep_search, conversation_id, app
@@ -3108,10 +3126,6 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
     # ШАГ 30.3: Проверка rags перед поиском
     logger.info(f"[handle_index_selected] rags loaded: {bool(rags)}, count={len(rags) if rags else 0}, keys={list(rags.keys()) if rags else []}")
 
-    # Инициализация состояния если не существует
-    if chat_id not in user_states:
-        user_states[chat_id] = {}
-
     # Валидация index_name
     if index_name not in INDEX_DISPLAY_NAMES:
         await callback.answer("Неверный индекс", show_alert=True)
@@ -3127,9 +3141,6 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
 
     # ФАЗА 3: Проверка raw_search_mode (поиск без улучшения)
     if st.get("raw_search_mode"):
-        # Очищаем флаг
-        user_states[chat_id].pop("raw_search_mode", None)
-
         # ШАГ 30.2: Исправленная логика поиска question при raw_search_mode
         # При "Отправить как есть" expanded_question ПУСТО, поэтому сначала ищем original_question
         # (который мы теперь копируем из pending_question в handle_query_send_as_is)
@@ -3165,11 +3176,18 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
                     logger.info(f"[Raw Search] Поиск вопроса - expansion_data: {'найден' if question else 'пусто'}")
                     break
 
+        # ИСПРАВЛЕНИЕ: Проверка question ПЕРЕД callback.answer(), чтобы избежать двойного вызова
         if not question:
             await callback.answer("Вопрос не найден.", show_alert=True)
             return
 
+        # callback.answer() вызывается только ПОСЛЕ успешной проверки question
         display_name = INDEX_DISPLAY_NAMES.get(index_name, index_name)
+        await callback.answer(f"Поиск в индексе: {display_name}")
+
+        # Очищаем флаг
+        user_states[chat_id].pop("raw_search_mode", None)
+
         logger.info(f"[Raw Search] chat_id={chat_id} selected index: {index_name} for search without expansion")
 
         # Показываем loading
@@ -3248,7 +3266,7 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
             if isinstance(key, str) and key.startswith("expansion_"):
                 user_states.pop(key, None)
 
-        await callback.answer(f"Поиск в индексе: {display_name}")
+        # callback.answer() уже вызван в начале блока raw_search_mode
         return
 
     # ОРИГИНАЛЬНАЯ ЛОГИКА: Выбор индекса ПОСЛЕ улучшения вопроса
@@ -3287,6 +3305,11 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         logger.warning(f"[Manual Index Selection] No query data for chat_id={chat_id}")
         return
 
+    # ИСПРАВЛЕНИЕ QueryIdInvalid (2025-11-23):
+    # callback.answer() ДОЛЖЕН вызываться ДО show_expanded_query_menu
+    display_name = INDEX_DISPLAY_NAMES.get(index_name, index_name)
+    await callback.answer(f"Выбран индекс: {display_name}")
+
     # Возвращаемся к меню улучшенного вопроса с указанием выбранного индекса
     from run_analysis import show_expanded_query_menu
 
@@ -3301,9 +3324,6 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
         selected_index=index_name,
         top_indices=top_indices  # ДОБАВЛЕНО: передача top_indices
     )
-
-    display_name = INDEX_DISPLAY_NAMES.get(index_name, index_name)
-    await callback.answer(f"✅ Выбран индекс: {display_name}")
 
 
 async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
@@ -3360,13 +3380,16 @@ async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
                 top_indices = expansion_data.get("top_indices", None)
                 break
 
-    # Валидация
+    # ИСПРАВЛЕНИЕ: Проверка данных ПЕРЕД callback.answer(), чтобы избежать двойного вызова
     if not original_question or not expanded_question:
         await callback.answer(
             "⚠️ Данные запроса не найдены. Попробуйте задать вопрос заново.",
             show_alert=True
         )
         return
+
+    # callback.answer() вызывается только ПОСЛЕ успешной валидации
+    await callback.answer("Возврат к меню")
 
     # Возврат к меню
     from run_analysis import show_expanded_query_menu
@@ -3382,8 +3405,6 @@ async def handle_back_to_query_menu(callback: CallbackQuery, app: Client):
         selected_index=selected_index,  # Передаем текущий выбор
         top_indices=top_indices         # FIX R2: Передаем top_indices
     )
-
-    await callback.answer("Возврат к меню")
 
 # ============ END MANUAL INDEX SELECTION HANDLERS ============
 
@@ -3401,6 +3422,11 @@ async def handle_search_auto_index(callback: CallbackQuery, app: Client):
         2. Запустить run_dialog_mode с skip_expansion=True
         3. Router Agent автоматически выберет индекс
     """
+    # ИСПРАВЛЕНИЕ QueryIdInvalid (2025-11-23):
+    # callback.answer() ДОЛЖЕН вызываться СРАЗУ в начале функции
+    # Перемещен из конца (строка ~3470) в начало, ДО длительных операций run_dialog_mode
+    await callback.answer("Автоматический поиск...")
+
     chat_id = callback.message.chat.id
     st = user_states.get(chat_id, {})
 
@@ -3461,7 +3487,7 @@ async def handle_search_auto_index(callback: CallbackQuery, app: Client):
         st_ev.set()
         sp_th.join()
 
-    await callback.answer()
+    # callback.answer() уже вызван в начале функции
 
 
 async def handle_search_manual_index(callback: CallbackQuery, app: Client):
