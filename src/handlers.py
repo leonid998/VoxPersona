@@ -2857,7 +2857,8 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
         - Реализует путь "Улучшить вопрос"
     """
     chat_id = callback.message.chat.id
-    st = user_states.get(chat_id, {})
+    # ИСПРАВЛЕНИЕ v10: setdefault вместо get для избежания race condition
+    st = user_states.setdefault(chat_id, {})
 
     original_question = st.get("pending_question")
     conversation_id = st.get("conversation_id")
@@ -2908,19 +2909,31 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
 
         if not top_indices:
             # Не удалось получить рекомендации индексов
+            # ИСПРАВЛЕНИЕ v10 (2025-11-23): Показываем меню выбора индекса вместо автопоиска
             logging.warning(f"[Query Choice] Router Agent вернул пустой список для chat_id={chat_id}")
-            # ИСПРАВЛЕНИЕ QueryIdInvalid (2025-11-23): callback.answer уже вызван выше
-            # Повторный вызов может вызвать ошибку, оборачиваем в try-except
+
+            # Сохраняем данные для handle_index_selected
+            st["original_question"] = original_question
+            st["pending_question"] = original_question
+            st["raw_search_mode"] = True  # Отметка что Router Agent не смог определить индекс
+            st["step"] = "awaiting_index_selection"
+
+            # Формируем текст меню с вопросом
+            from markups import make_index_selection_markup
+            index_menu_text = (
+                f"⚠️ **Не удалось автоматически определить индекс**\n\n"
+                f"📝 **Ваш вопрос:**\n"
+                f"_{original_question}_\n\n"
+                f"**Выберите индекс для поиска:**"
+            )
+
+            await send_menu(chat_id, app, index_menu_text, make_index_selection_markup())
+
+            # ИСПРАВЛЕНИЕ QueryIdInvalid: callback.answer уже вызван выше
             try:
-                await callback.answer(
-                    "⚠️ Не удалось определить индекс, отправляю оригинальный вопрос",
-                    show_alert=True
-                )
+                await callback.answer("Выберите индекс для поиска")
             except Exception:
                 pass  # callback.answer уже был вызван ранее
-            await _execute_search_without_expansion(
-                chat_id, original_question, deep_search, conversation_id, app
-            )
             return
 
         # Определяем лучший индекс для улучшения вопроса
@@ -2960,38 +2973,68 @@ async def handle_query_improve(callback: CallbackQuery, app: Client):
             return  # Предотвращаем выполнение fallback блока
         else:
             # Улучшение не сработало (enhance_question_for_index вернул оригинал)
+            # ИСПРАВЛЕНИЕ v10 (2025-11-23): Вместо автоматического поиска - показ меню выбора индекса
+            # Это позволяет пользователю самому выбрать индекс для поиска
             logging.warning(
                 f"[Query Choice] Enhancement failed for chat_id={chat_id}: "
                 f"enhanced == original, best_index={best_index}"
             )
+
+            # Сохраняем данные для handle_index_selected
+            st["original_question"] = original_question
+            st["pending_question"] = original_question
+            st["raw_search_mode"] = True  # Отметка что улучшение не применилось
+            st["step"] = "awaiting_index_selection"
+            user_states[chat_id] = st
+
+            # Формируем текст меню с вопросом
+            from markups import make_index_selection_markup
+            index_menu_text = (
+                f"⚠️ **Улучшение вопроса не применилось**\n\n"
+                f"📝 **Ваш вопрос:**\n"
+                f"_{original_question}_\n\n"
+                f"**Выберите индекс для поиска:**"
+            )
+
+            await send_menu(chat_id, app, index_menu_text, make_index_selection_markup())
+
             # ИСПРАВЛЕНИЕ QueryIdInvalid (2025-11-23): callback.answer уже вызван выше
             try:
-                await callback.answer(
-                    "⚠️ Улучшение не применилось, отправляю оригинальный вопрос",
-                    show_alert=True
-                )
+                await callback.answer("Выберите индекс для поиска")
             except Exception:
                 pass  # callback.answer уже был вызван ранее
-            await _execute_search_without_expansion(
-                chat_id, original_question, deep_search, conversation_id, app
-            )
             return
 
     except Exception as e:
         # Обработка критической ошибки (Router Agent или enhance_question_for_index)
+        # ИСПРАВЛЕНИЕ v10 (2025-11-23): Вместо автоматического поиска - показ меню выбора индекса
+        # Это позволяет пользователю самому выбрать индекс для поиска при ошибке
         logging.error(f"[Query Choice] Enhancement pipeline failed: {e}", exc_info=True)
+
+        # Сохраняем данные для handle_index_selected
+        st = user_states.setdefault(chat_id, {})
+        st["original_question"] = original_question
+        st["pending_question"] = original_question
+        st["raw_search_mode"] = True  # Отметка что улучшение не применилось
+        st["step"] = "awaiting_index_selection"
+        user_states[chat_id] = st
+
+        # Формируем текст меню с вопросом
+        from markups import make_index_selection_markup
+        index_menu_text = (
+            f"⚠️ **Ошибка улучшения вопроса**\n\n"
+            f"📝 **Ваш вопрос:**\n"
+            f"_{original_question}_\n\n"
+            f"**Выберите индекс для поиска:**"
+        )
+
+        await send_menu(chat_id, app, index_menu_text, make_index_selection_markup())
+
         # ИСПРАВЛЕНИЕ QueryIdInvalid (2025-11-23): callback.answer уже вызван выше
         try:
-            await callback.answer(
-                "⚠️ Не удалось улучшить вопрос, отправляю оригинал",
-                show_alert=True
-            )
+            await callback.answer("Выберите индекс для поиска")
         except Exception:
             pass  # callback.answer уже был вызван ранее
-        # Fallback: отправка без улучшения
-        await _execute_search_without_expansion(
-            chat_id, original_question, deep_search, conversation_id, app
-        )
 
 
 async def _execute_search_without_expansion(
