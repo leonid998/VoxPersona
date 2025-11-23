@@ -99,6 +99,8 @@ COPY src/ ./src/
 COPY prompts/ ./prompts/
 COPY prompts-by-scenario/ ./prompts-by-scenario/
 COPY Description/ ./Description/
+# Копирование data/ для промптов релевантности индексов
+COPY data/ ./data/
 
 # Only copy sql_scripts if it exists (conditional copy)
 COPY sql_scripts* ./sql_scripts/
