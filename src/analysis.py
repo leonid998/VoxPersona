@@ -142,7 +142,7 @@ def extract_from_chunk(text: str, chunk: str, extract_prompt: str) -> str:
 
 def generate_db_answer(query: str,
                        db_index: FAISS, # векторная база знаний
-                       k: int=15,      # используемое к-во чанков
+                       k: int=30,      # используемое к-во чанков
                        verbose: bool=True, # выводить ли на экран выбранные чанки
                        model: str | None=REPORT_MODEL_NAME
                        ):
