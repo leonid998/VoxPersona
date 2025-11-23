@@ -2822,7 +2822,10 @@ async def handle_query_send_as_is(callback: CallbackQuery, app: Client):
     # Проблема: при "Отправить как есть" expanded_question пусто, и поиск не находил вопрос
     if "pending_question" in st:
         st["original_question"] = st["pending_question"]
-        logger.info(f"[Raw Search Mode] Скопирован pending_question -> original_question для chat_id={chat_id}")
+        # ИСПРАВЛЕНИЕ CODE REVIEW v13 (2025-11-23):
+        # Очищаем expanded_question чтобы не использовать старое улучшенное значение
+        st["expanded_question"] = ""
+        logger.info(f"[Raw Search Mode] Скопирован pending_question -> original_question, очищен expanded_question для chat_id={chat_id}")
 
     user_states[chat_id] = st
 
@@ -3232,25 +3235,25 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
 
     # ФАЗА 3: Проверка raw_search_mode (поиск без улучшения)
     if st.get("raw_search_mode"):
-        # ШАГ 30.2: Исправленная логика поиска question при raw_search_mode
-        # При "Отправить как есть" expanded_question ПУСТО, поэтому сначала ищем original_question
-        # (который мы теперь копируем из pending_question в handle_query_send_as_is)
+        # ШАГ 68.1 (2025-11-23): ИСПРАВЛЕННЫЙ приоритет поиска вопроса при raw_search_mode
+        # После handle_expand_send: expanded_question = улучшенный, original_question = исходный
+        # ВАЖНО: В поиск должен идти УЛУЧШЕННЫЙ вопрос (expanded_question), не исходный!
         deep_search = st.get("deep_search", False)
         conversation_id = st.get("conversation_id", "")
 
-        # ПРИОРИТЕТ 1: original_question (заполняется в handle_query_send_as_is из pending_question)
-        question = st.get("original_question", "")
-        logger.info(f"[Raw Search] Поиск вопроса - original_question: {'найден' if question else 'пусто'}")
+        # ПРИОРИТЕТ 1: expanded_question - УЛУЧШЕННЫЙ вопрос (главный после "Улучшить через AI")
+        question = st.get("expanded_question", "")
+        logger.info(f"[Raw Search] Поиск вопроса - expanded_question: {'найден' if question else 'пусто'}")
 
-        # ПРИОРИТЕТ 2: pending_question (если original_question не был установлен)
+        # ПРИОРИТЕТ 2: pending_question - альтернатива улучшенного вопроса
         if not question:
             question = st.get("pending_question", "")
             logger.info(f"[Raw Search] Поиск вопроса - pending_question: {'найден' if question else 'пусто'}")
 
-        # ПРИОРИТЕТ 3: expanded_question (на случай если был вызван expand_query до этого)
+        # ПРИОРИТЕТ 3: original_question - ИСХОДНЫЙ (fallback, только если улучшения нет)
         if not question:
-            question = st.get("expanded_question", "")
-            logger.info(f"[Raw Search] Поиск вопроса - expanded_question: {'найден' if question else 'пусто'}")
+            question = st.get("original_question", "")
+            logger.info(f"[Raw Search] Поиск вопроса - original_question: {'найден' if question else 'пусто'}")
 
         # ПРИОРИТЕТ 4: Fallback на expansion_{hash} ключи
         # ИСПРАВЛЕНИЕ КРИТИЧЕСКАЯ ПРОБЛЕМА 1 (2025-11-23):
@@ -3261,11 +3264,19 @@ async def handle_index_selected(callback: CallbackQuery, app: Client, index_name
                 # Проверяем тип ключа, т.к. user_states содержит и int (chat_id) и str (expansion_*)
                 if isinstance(key, str) and key.startswith("expansion_"):
                     expansion_data = user_states[key]
+                    # ИСПРАВЛЕНИЕ CODE REVIEW v13 (2025-11-23):
+                    # Проверяем что данные относятся к текущему пользователю
+                    expansion_chat_id = expansion_data.get("chat_id")
+                    if expansion_chat_id and expansion_chat_id != chat_id:
+                        continue  # Пропускаем данные других пользователей
                     question = expansion_data.get("expanded", "") or expansion_data.get("original", "")
                     deep_search = expansion_data.get("deep_search", False)
                     conversation_id = expansion_data.get("conversation_id", "")
                     logger.info(f"[Raw Search] Поиск вопроса - expansion_data: {'найден' if question else 'пусто'}")
                     break
+
+        # ШАГ 68.2 (2025-11-23): Логирование финального вопроса для диагностики
+        logger.info(f"[Raw Search] ФИНАЛЬНЫЙ вопрос для поиска: {question[:150] if question else 'ПУСТО'}...")
 
         # ИСПРАВЛЕНИЕ: Проверка question ПЕРЕД callback.answer(), чтобы избежать двойного вызова
         if not question:
